@@ -1,0 +1,48 @@
+# ===============================================
+# COMMIT THESE (Essential for team collaboration):
+# - Assets/           (all game content, scripts, scenes)
+# - ProjectSettings/  (project configuration)
+# - Packages/         (manifest.json and packages-lock.json)
+# ===============================================
+
+# Unity generated folders (DO NOT COMMIT - auto-generated)
+[Ll]ibrary/
+[Tt]emp/
+[Oo]bj/
+[Bb]uild/
+[Bb]uilds/
+[Ll]ogs/
+[Mm]emoryCaptures/
+[Rr]ecordings/
+UserSettings/
+
+# Unity generated files (DO NOT COMMIT - auto-generated)
+*.csproj
+*.unityproj
+*.sln
+*.suo
+*.tmp
+*.user
+*.userprefs
+*.pidb
+*.booproj
+*.svd
+*.pdb
+*.mdb
+*.opendb
+*.VC.db
+
+# Unity asset bundle meta files
+*.pidb.meta
+*.pdb.meta
+*.mdb.meta
+
+# Visual Studio / Rider (IDE-specific, not needed by team)
+.vs/
+.idea/
+*.DotSettings.user
+
+# OS files (not needed by team)
+.DS_Store
+Thumbs.db
+Desktop.ini
