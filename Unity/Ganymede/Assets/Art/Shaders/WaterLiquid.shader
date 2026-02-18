@@ -18,7 +18,7 @@ Shader "Custom/WaterLiquid"
             #pragma fragment frag
 
             #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Core.hlsl"
-            
+            #include "Assets/Art/Shaders/Includes/WaterHelpers.hlsl"
             // Structs
             struct MeshInput
             {
