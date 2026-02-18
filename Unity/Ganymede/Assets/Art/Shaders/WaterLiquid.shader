@@ -2,10 +2,13 @@ Shader "Custom/WaterLiquid"
 {
     Properties
     {
-        // Depth Based Coloring
-        _ShallowColor("Shallow Color", Color) = (0.20, 0.60, 0.70, 1.0)
-        _DeepColor("Deep Color", Color) = (0.00, 0.08, 0.18, 1.0)
-        _Alpha("Water Alpha", Range(0.0, 1.0)) = 0.75
+        _WaterColor("Water Color", Color) = (0.1, 0.4, 0.6, 1.0)
+        // The power of the Fresnel effect, controlling how strongly it affects the water's appearance. Higher values will make the effect more pronounced, especially at glancing angles.
+        _FresnelPower("Fresnel Power", Range(1.0, 10.0)) = 3.
+        // specular parameters 
+        _Smoothness("Smoothness", Range(0.0, 1.0)) = 0.9
+        _SpecularStrength("Specular Strength", Range(0.0, 5.0)) = 1.5
+
     }
 
     SubShader
@@ -28,13 +31,17 @@ Shader "Custom/WaterLiquid"
             #pragma fragment frag
 
             #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Core.hlsl"
+           
             #include "Assets/Art/Shaders/Includes/WaterHelpers.hlsl"
-            #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/DeclareDepthTexture.hlsl" // for depth texture include
 
-            // STRUCTS
+            // used to getmainlight
+             #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Lighting.hlsl"
+            
+             // STRUCTS
             struct MeshInput
             {
                 float4 positionOS : POSITION;
+                float3 normalOS   : NORMAL;  
                 float2 uv : TEXCOORD0;
             };
 
@@ -42,7 +49,8 @@ Shader "Custom/WaterLiquid"
             {
                 float4 positionHCS : SV_POSITION;
                 float2 uv : TEXCOORD0;
-                float4 screenPos : TEXCOORD1;
+                float3 normalWS : TEXCOORD1;
+                float3 positionWS  : TEXCOORD2;
             };
 
 
@@ -50,9 +58,10 @@ Shader "Custom/WaterLiquid"
             SAMPLER(sampler_BaseMap);
 
             CBUFFER_START(UnityPerMaterial)
-                half4 _ShallowColor;
-                half4 _DeepColor;
-                half _Alpha;
+                half4 _WaterColor;
+                half _FresnelPower;
+                half _Smoothness;
+                half _SpecularStrength;
             CBUFFER_END
             
 
@@ -60,22 +69,28 @@ Shader "Custom/WaterLiquid"
             Interpolators vert(MeshInput IN)
             {
                 Interpolators OUT;
-                OUT.positionHCS = TransformObjectToHClip(IN.positionOS);
+                
+                OUT.positionHCS = TransformObjectToHClip(IN.positionOS.xyz);
                 OUT.uv = IN.uv;
-                OUT.screenPos = ComputeScreenPos(OUT.positionHCS);
-                return OUT;
+                OUT.normalWS = TransformObjectToWorldNormal(IN.normalOS);
+                OUT.positionWS = TransformObjectToWorld(IN.positionOS.xyz);
+               
+               return OUT; 
             }
 
-
+            // Voxels water particles so that when there is physics engine to move them it will 
+            // very realistic visually 
             // FRAGMENT SHADER
             half4 frag(Interpolators IN) : SV_Target
             {   
-                float2 screenUV = IN.screenPos.xy / IN.screenPos.w; 
-                float rawDepth = SampleSceneDepth(screenUV);
+                float fresnel = CalculateFresnel(IN.normalWS, IN.positionWS, _FresnelPower);
 
+                Light mainLight = GetMainLight();
+                float spec = CalculateSpecular(IN.normalWS, mainLight.direction, IN.positionWS, _Smoothness, _SpecularStrength);
+                half3 specColor = spec * mainLight.color;
 
-                half4 color = half4(rawDepth.xxx, _Alpha);
-                return color;
+                half3 finalColor = _WaterColor.rgb + specColor;
+                return half4(finalColor, fresnel);
             }
 
             ENDHLSL
