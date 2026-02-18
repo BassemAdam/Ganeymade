@@ -8,6 +8,8 @@ Shader "Custom/WaterLiquid"
         // specular parameters 
         _Smoothness("Smoothness", Range(0.0, 1.0)) = 0.9
         _SpecularStrength("Specular Strength", Range(0.0, 5.0)) = 1.5
+        // refraction parameters
+        _RefractionStrength("Refraction Strength", Range(0.0, 0.1)) = 0.02
 
     }
 
@@ -31,6 +33,7 @@ Shader "Custom/WaterLiquid"
             #pragma fragment frag
 
             #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Core.hlsl"
+            #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/DeclareOpaqueTexture.hlsl" // gives us SampleSceneColor(screenUV)
            
             #include "Assets/Art/Shaders/Includes/WaterHelpers.hlsl"
 
@@ -51,6 +54,7 @@ Shader "Custom/WaterLiquid"
                 float2 uv : TEXCOORD0;
                 float3 normalWS : TEXCOORD1;
                 float3 positionWS  : TEXCOORD2;
+                float4 screenPos : TEXCOORD3; // clip space → [0,1] screen UV via xy/w
             };
 
 
@@ -62,6 +66,7 @@ Shader "Custom/WaterLiquid"
                 half _FresnelPower;
                 half _Smoothness;
                 half _SpecularStrength;
+                half _RefractionStrength;
             CBUFFER_END
             
 
@@ -74,6 +79,7 @@ Shader "Custom/WaterLiquid"
                 OUT.uv = IN.uv;
                 OUT.normalWS = TransformObjectToWorldNormal(IN.normalOS);
                 OUT.positionWS = TransformObjectToWorld(IN.positionOS.xyz);
+                OUT.screenPos = ComputeScreenPos(OUT.positionHCS); // packages clip pos for perspective-correct screen UV
                
                return OUT; 
             }
@@ -89,7 +95,8 @@ Shader "Custom/WaterLiquid"
                 float spec = CalculateSpecular(IN.normalWS, mainLight.direction, IN.positionWS, _Smoothness, _SpecularStrength);
                 half3 specColor = spec * mainLight.color;
 
-                half3 finalColor = _WaterColor.rgb + specColor;
+                half3 refraction = CalculateRefraction(IN.normalWS, IN.screenPos, _RefractionStrength);
+                half3 finalColor = refraction + specColor;
                 return half4(finalColor, fresnel);
             }
 

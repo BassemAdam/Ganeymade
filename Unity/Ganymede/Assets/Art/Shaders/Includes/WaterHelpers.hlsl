@@ -23,4 +23,13 @@ float CalculateSpecular(float3 normalWS, float3 lightDir, float3 positionWS, flo
     return pow(NdotH, specPower) * strength;
 }
 
+// Returns the refracted background color by offsetting screen UV using the surface normal
+// Approximates Snell's Law: tilt of normal nudges the sample point, simulating light bending
+half3 CalculateRefraction(float3 normalWS, float4 screenPos, float strength)
+{
+    float2 screenUV = screenPos.xy / screenPos.w;           // perspective divide -> [0,1]
+    float2 offset = normalize(normalWS).xy * strength;      // tilt direction from normal
+    return SampleSceneColor(screenUV + offset);             // sample opaque texture at distorted UV
+}
+
 #endif
