@@ -22,14 +22,14 @@ Shader "Custom/WaterLiquid"
 
 
             HLSLPROGRAM
-            
+
             // INCLUDEs & DEFINES
             #pragma vertex vert
             #pragma fragment frag
 
             #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Core.hlsl"
             #include "Assets/Art/Shaders/Includes/WaterHelpers.hlsl"
-
+            #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/DeclareDepthTexture.hlsl" // for depth texture include
 
             // STRUCTS
             struct MeshInput
@@ -42,6 +42,7 @@ Shader "Custom/WaterLiquid"
             {
                 float4 positionHCS : SV_POSITION;
                 float2 uv : TEXCOORD0;
+                float4 screenPos : TEXCOORD1;
             };
 
 
@@ -61,14 +62,19 @@ Shader "Custom/WaterLiquid"
                 Interpolators OUT;
                 OUT.positionHCS = TransformObjectToHClip(IN.positionOS);
                 OUT.uv = IN.uv;
+                OUT.screenPos = ComputeScreenPos(OUT.positionHCS);
                 return OUT;
             }
 
 
             // FRAGMENT SHADER
             half4 frag(Interpolators IN) : SV_Target
-            {
-                half4 color = half4(_ShallowColor.rgb, _Alpha);
+            {   
+                float2 screenUV = IN.screenPos.xy / IN.screenPos.w; 
+                float rawDepth = SampleSceneDepth(screenUV);
+
+
+                half4 color = half4(rawDepth.xxx, _Alpha);
                 return color;
             }
 
