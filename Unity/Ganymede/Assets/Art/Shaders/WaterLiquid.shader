@@ -8,6 +8,9 @@ Shader "Custom/WaterLiquid"
         // specular parameters 
         _Smoothness("Smoothness", Range(0.0, 1.0)) = 0.9
         _SpecularStrength("Specular Strength", Range(0.0, 5.0)) = 1.5
+        // reflection parameters
+        _ReflectionStrength("Reflection Strength", Range(0.0, 1.0)) = 0.5
+
         // refraction parameters
         _RefractionStrength("Refraction Strength", Range(0.0, 0.1)) = 0.02
         _MinAlpha("Min Alpha", Range(0.0, 1.0)) = 0.1  // ensures cubes always contribute opacity for accumulation
@@ -34,12 +37,9 @@ Shader "Custom/WaterLiquid"
             #pragma fragment frag
 
             #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Core.hlsl"
+            #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Lighting.hlsl"          
             #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/DeclareOpaqueTexture.hlsl" // gives us SampleSceneColor(screenUV)
-           
             #include "Assets/Art/Shaders/Includes/WaterHelpers.hlsl"
-
-            // used to getmainlight
-             #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Lighting.hlsl"
             
              // STRUCTS
             struct MeshInput
@@ -69,6 +69,7 @@ Shader "Custom/WaterLiquid"
                 half _SpecularStrength;
                 half _RefractionStrength;
                 half _MinAlpha;
+                half _ReflectionStrength;
             CBUFFER_END
             
 
@@ -98,8 +99,13 @@ Shader "Custom/WaterLiquid"
                 half3 specColor = spec * mainLight.color;
 
                 half3 refraction = CalculateRefraction(IN.normalWS, IN.screenPos, _RefractionStrength);
-                half3 finalColor = refraction * _WaterColor.rgb + specColor; // tint accumulates per particle via overdraw
+                half3 reflection = CalculateReflection(IN.normalWS, IN.positionWS, _Smoothness, IN.screenPos) * _ReflectionStrength;
+
+                half3 finalColor = refraction * _WaterColor.rgb + specColor + reflection ;
                 return half4(finalColor, max(fresnel, _MinAlpha));
+                // DEBUG: output reflection only — full alpha so it shows on cube faces
+                
+                // return half4(reflection, 1.0);
             }
 
             ENDHLSL

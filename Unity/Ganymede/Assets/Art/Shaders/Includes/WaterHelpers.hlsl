@@ -23,6 +23,18 @@ float CalculateSpecular(float3 normalWS, float3 lightDir, float3 positionWS, flo
     return pow(NdotH, specPower) * strength;
 }
 
+// Returns environment reflection color sampled from reflection probe or skybox
+// perceptualRoughness = 1 - smoothness selects mip level (sharp vs blurry)
+half3 CalculateReflection(float3 normalWS, float3 positionWS, float smoothness, float4 screenPos)
+{
+    float3 N = normalize(normalWS);
+    float3 V = normalize(_WorldSpaceCameraPos - positionWS);
+    float3 R = reflect(-V, N);                                   // bounce view ray off surface
+    half perceptualRoughness = 1.0 - smoothness;                 // smooth=sharp mip, rough=blurry mip
+    float2 screenUV = screenPos.xy / screenPos.w;                // normalized screen space UV
+    return GlossyEnvironmentReflection(R, positionWS, perceptualRoughness, 1.0, screenUV);
+}
+
 // Returns the refracted background color by offsetting screen UV using the surface normal
 // Approximates Snell's Law: tilt of normal nudges the sample point, simulating light bending
 half3 CalculateRefraction(float3 normalWS, float4 screenPos, float strength)
