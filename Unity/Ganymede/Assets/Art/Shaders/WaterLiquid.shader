@@ -10,6 +10,7 @@ Shader "Custom/WaterLiquid"
         _SpecularStrength("Specular Strength", Range(0.0, 5.0)) = 1.5
         // refraction parameters
         _RefractionStrength("Refraction Strength", Range(0.0, 0.1)) = 0.02
+        _MinAlpha("Min Alpha", Range(0.0, 1.0)) = 0.1  // ensures cubes always contribute opacity for accumulation
 
     }
 
@@ -67,6 +68,7 @@ Shader "Custom/WaterLiquid"
                 half _Smoothness;
                 half _SpecularStrength;
                 half _RefractionStrength;
+                half _MinAlpha;
             CBUFFER_END
             
 
@@ -96,8 +98,8 @@ Shader "Custom/WaterLiquid"
                 half3 specColor = spec * mainLight.color;
 
                 half3 refraction = CalculateRefraction(IN.normalWS, IN.screenPos, _RefractionStrength);
-                half3 finalColor = refraction + specColor;
-                return half4(finalColor, fresnel);
+                half3 finalColor = refraction * _WaterColor.rgb + specColor; // tint accumulates per particle via overdraw
+                return half4(finalColor, max(fresnel, _MinAlpha));
             }
 
             ENDHLSL

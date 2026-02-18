@@ -40,6 +40,8 @@ Material:
     m_Ints: []
     m_Floats:
     - _FresnelPower: 1.05
+    - _MinAlpha: 0.406
+    - _RefractionStrength: 0.1
     - _Smoothness: 0.447
     - _SpecularStrength: 2.85
     m_Colors:
