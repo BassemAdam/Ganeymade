@@ -1,18 +1,16 @@
 #ifndef WATER_HELPERS_INCLUDED
 #define WATER_HELPERS_INCLUDED
 
-// Returns fresnel factor [0..1]
-// 0 = camera looks straight at surface (transparent center)
-// 1 = camera at grazing angle (opaque edge)
 float CalculateFresnel(float3 normalWS, float3 positionWS, float power)
 {
     float3 N = normalize(normalWS);
     float3 V = normalize(_WorldSpaceCameraPos - positionWS);
-    return pow(1.0 - saturate(dot(N, V)), power);
+    float NdotV = saturate(dot(N, V));
+    float F0 = 0.02;  // water at normal incidence reflects only 2% of light
+    return F0 + (1.0 - F0) * pow(1.0 - NdotV, power);
 }
 
-// Returns specular intensity scaled by strength
-// N = surface normal, L = light direction, V = view direction, smoothness = sharpness
+
 float CalculateSpecular(float3 normalWS, float3 lightDir, float3 positionWS, float smoothness, float strength)
 {
     float3 N = normalize(normalWS);
@@ -23,8 +21,7 @@ float CalculateSpecular(float3 normalWS, float3 lightDir, float3 positionWS, flo
     return pow(NdotH, specPower) * strength;
 }
 
-// Returns environment reflection color sampled from reflection probe or skybox
-// perceptualRoughness = 1 - smoothness selects mip level (sharp vs blurry)
+
 half3 CalculateReflection(float3 normalWS, float3 positionWS, float smoothness, float4 screenPos)
 {
     float3 N = normalize(normalWS);
@@ -35,13 +32,30 @@ half3 CalculateReflection(float3 normalWS, float3 positionWS, float smoothness, 
     return GlossyEnvironmentReflection(R, positionWS, perceptualRoughness, 1.0, screenUV);
 }
 
-// Returns the refracted background color by offsetting screen UV using the surface normal
-// Approximates Snell's Law: tilt of normal nudges the sample point, simulating light bending
-half3 CalculateRefraction(float3 normalWS, float4 screenPos, float strength)
+
+half3 CalculateRefraction(float3 normalWS, float4 screenPos, float strength, float thickness, float blurRadius)
 {
-    float2 screenUV = screenPos.xy / screenPos.w;           // perspective divide -> [0,1]
-    float2 offset = normalize(normalWS).xy * strength;      // tilt direction from normal
-    return SampleSceneColor(screenUV + offset);             // sample opaque texture at distorted UV
+    float2 screenUV = screenPos.xy / screenPos.w;
+    float2 offset = normalize(normalWS).xy * strength * thickness;
+    float2 centerUV = screenUV + offset;
+
+    float r = blurRadius * thickness;
+
+    half3 col = 0;
+    col += SampleSceneColor(centerUV);
+    col += SampleSceneColor(centerUV + float2( r,  0.0));
+    col += SampleSceneColor(centerUV + float2(-r,  0.0));
+    col += SampleSceneColor(centerUV + float2(0.0,  r));
+    col += SampleSceneColor(centerUV + float2(0.0, -r));
+    col += SampleSceneColor(centerUV + float2( r,  r) * 0.707);
+    col += SampleSceneColor(centerUV + float2(-r,  r) * 0.707);
+    col += SampleSceneColor(centerUV + float2( r, -r) * 0.707);
+    col += SampleSceneColor(centerUV + float2(-r, -r) * 0.707);
+    col += SampleSceneColor(centerUV + float2( 2.0 * r, 0.0));
+    col += SampleSceneColor(centerUV + float2(-2.0 * r, 0.0));
+    col += SampleSceneColor(centerUV + float2(0.0,  2.0 * r));
+    col += SampleSceneColor(centerUV + float2(0.0, -2.0 * r));
+    return col / 13.0;
 }
 
 #endif

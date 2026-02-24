@@ -4,7 +4,7 @@ Shader "Custom/WaterLiquid"
     {
         _WaterColor("Water Color", Color) = (0.1, 0.4, 0.6, 1.0)
         // The power of the Fresnel effect, controlling how strongly it affects the water's appearance. Higher values will make the effect more pronounced, especially at glancing angles.
-        _FresnelPower("Fresnel Power", Range(1.0, 10.0)) = 3.
+        _FresnelPower("Fresnel Power", Range(1.0, 10.0)) = 5.0
         // specular parameters 
         _Smoothness("Smoothness", Range(0.0, 1.0)) = 0.9
         _SpecularStrength("Specular Strength", Range(0.0, 5.0)) = 1.5
@@ -12,8 +12,10 @@ Shader "Custom/WaterLiquid"
         _ReflectionStrength("Reflection Strength", Range(0.0, 1.0)) = 0.5
 
         // refraction parameters
-        _RefractionStrength("Refraction Strength", Range(0.0, 0.1)) = 0.02
-        _MinAlpha("Min Alpha", Range(0.0, 1.0)) = 0.1  // ensures cubes always contribute opacity for accumulation
+        _RefractionStrength("Refraction Strength", Range(0.0, 0.3)) = 0.05
+        _BlurRadius("Blur Radius", Range(0.0, 0.08)) = 0.03
+
+        _MinAlpha("Min Alpha", Range(0.0, 1.0)) = 1  // ensures cubes always contribute opacity for accumulation
 
     }
 
@@ -25,10 +27,15 @@ Shader "Custom/WaterLiquid"
         {
             // PIPELINES STATES
             
-            Blend SrcAlpha OneMinusSrcAlpha // src*A + dst*B Alpha Blending
+            Blend SrcAlpha OneMinusSrcAlpha // src*A + dst*B Alpha Blending 
 
-            ZWrite Off //DONT WRITE TO DEPTH BUFFER
-
+            //Now i write to depth buffer,
+            // but i will still be sorted in the transparent queue, 
+            //so it will be drawn after opaque objects and before other transparent objects.
+            // This allows for correct depth testing against opaque geometry 
+            //while still allowing for proper blending with other transparent objects.
+            // for blending with opaque object i handle this in refraction 
+            ZWrite On 
 
             HLSLPROGRAM
 
@@ -39,6 +46,7 @@ Shader "Custom/WaterLiquid"
             #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Core.hlsl"
             #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Lighting.hlsl"          
             #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/DeclareOpaqueTexture.hlsl" // gives us SampleSceneColor(screenUV)
+            #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/DeclareDepthTexture.hlsl"
             #include "Assets/Art/Shaders/Includes/WaterHelpers.hlsl"
             
              // STRUCTS
@@ -68,6 +76,7 @@ Shader "Custom/WaterLiquid"
                 half _Smoothness;
                 half _SpecularStrength;
                 half _RefractionStrength;
+                half _BlurRadius;
                 half _MinAlpha;
                 half _ReflectionStrength;
             CBUFFER_END
@@ -87,23 +96,31 @@ Shader "Custom/WaterLiquid"
                return OUT; 
             }
 
-            // Voxels water particles so that when there is physics engine to move them it will 
-            // very realistic visually 
+
             // FRAGMENT SHADER
             half4 frag(Interpolators IN) : SV_Target
             {   
+                // Fresnel 
+                // for blending reflection and refraction based on view angle
                 float fresnel = CalculateFresnel(IN.normalWS, IN.positionWS, _FresnelPower);
 
+                // Specular and Light Color
                 Light mainLight = GetMainLight();
                 float spec = CalculateSpecular(IN.normalWS, mainLight.direction, IN.positionWS, _Smoothness, _SpecularStrength);
                 half3 specColor = spec * mainLight.color;
 
-                half3 refraction = CalculateRefraction(IN.normalWS, IN.screenPos, _RefractionStrength);
+                // reflection and refraction
+                half3 refraction = CalculateRefraction(IN.normalWS, IN.screenPos, _RefractionStrength, 1.0 - fresnel, _BlurRadius); 
                 half3 reflection = CalculateReflection(IN.normalWS, IN.positionWS, _Smoothness, IN.screenPos) * _ReflectionStrength;
 
-                half3 finalColor = refraction * _WaterColor.rgb + specColor + reflection ;
-                return half4(finalColor, max(fresnel, _MinAlpha));
-                // DEBUG: output reflection only — full alpha so it shows on cube faces
+              
+          
+                half alpha = max(fresnel, _MinAlpha);
+
+                half3 desiredColor = refraction * _WaterColor.rgb + specColor + reflection;
+
+                return half4(desiredColor, alpha);
+              
                 
                 // return half4(reflection, 1.0);
             }
