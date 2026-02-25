@@ -28,7 +28,7 @@ Material:
   m_InvalidKeywords: []
   m_LightmapFlags: 4
   m_EnableInstancingVariants: 0
-  m_DoubleSidedGI: 0
+  m_DoubleSidedGI: 1
   m_CustomRenderQueue: -1
   stringTagMap: {}
   disabledShaderPasses:
@@ -40,16 +40,17 @@ Material:
     m_Ints: []
     m_Floats:
     - _BleedCompensation: 0.615
-    - _BlurRadius: 0.006
+    - _BlurRadius: 0.0034
     - _BlurStrength: 0.0111
+    - _DepthScale: 0.47
     - _FoamDistance: 1.912
     - _FoamSharpness: 4.98
-    - _FresnelPower: 1
-    - _MinAlpha: 0.6
-    - _ReflectionStrength: 0.01
-    - _RefractionStrength: 0.127
-    - _Smoothness: 0.447
-    - _SpecularStrength: 2.85
+    - _FresnelPower: 3
+    - _MinAlpha: 1
+    - _ReflectionStrength: 0.053
+    - _RefractionStrength: 0.111
+    - _Smoothness: 0.548
+    - _SpecularStrength: 1.02
     m_Colors:
     - _FoamColor: {r: 1, g: 1, b: 1, a: 1}
     - _WaterColor: {r: 0.09999997, g: 0.39999998, b: 0.6, a: 1}
