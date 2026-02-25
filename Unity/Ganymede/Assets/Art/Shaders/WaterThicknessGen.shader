@@ -14,8 +14,10 @@ Shader "Hidden/WaterThicknessGen"
             // Turn off depth writing so voxels don't block each other
             ZWrite Off 
             
-            // Standard ZTest so we don't process voxels that are completely behind the camera's far plane
-            ZTest LEqual 
+            // Always render both faces, even when behind opaque objects.
+            // The min(fragDepth, sceneDepth) logic in the fragment shader
+            // correctly caps the contribution to the opaque surface depth.
+            ZTest Always 
             
             // THE CULLING TRICK: Render both Front and Back faces at the same time
             Cull Off 
