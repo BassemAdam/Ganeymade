@@ -58,4 +58,35 @@ half3 CalculateRefraction(float3 normalWS, float4 screenPos, float strength, flo
     return col / 13.0;
 }
 
+
+// =========================================================================
+// DEPTH-BASED WATER ABSORPTION (Beer's Law)
+// =========================================================================
+// In real life, light is absorbed exponentially as it travels through water.
+// Shallow water → you see the scene behind it clearly, tinted by the water color.
+// Deep water → the scene is nearly invisible, replaced by a deep dark color.
+//
+// Parameters:
+//   sceneColor    = the refracted color of what's behind the water
+//   shallowColor  = the tint color for shallow water (e.g. light turquoise)
+//   deepColor     = the color for very deep water (e.g. dark navy blue)
+//   depth         = water thickness in meters (from _WaterThicknessMap)
+//   absorptionRate = how fast light gets absorbed (higher = murkier water)
+// =========================================================================
+half3 CalculateDepthColor(half3 sceneColor, half3 shallowColor, half3 deepColor, float depth, float absorptionRate)
+{
+    // Beer's Law: light decays exponentially through a medium
+    // absorption = 1.0 at depth=0 (fully see through), → 0.0 as depth increases (fully opaque water)
+    float absorption = exp(-depth * absorptionRate);
+
+    // Tint the scene color toward the shallow water color based on depth
+    half3 tintedScene = lerp(shallowColor, sceneColor, absorption);
+
+    // Blend between the tinted scene and the deep water color
+    // As depth increases, absorption → 0, so we see more deepColor
+    half3 finalColor = lerp(deepColor, tintedScene, absorption);
+
+    return finalColor;
+}
+
 #endif
