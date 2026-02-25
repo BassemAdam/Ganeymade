@@ -33,6 +33,7 @@ public class WaterThicknessFeature : ScriptableRendererFeature
         thicknessPass = new WaterThicknessPass(settings.waterLayer, thicknessMaterial);
     }
 
+    // call back runs every frame before renderer executes passes
     public override void AddRenderPasses(ScriptableRenderer renderer, ref RenderingData renderingData)
     {
         if (settings.thicknessShader == null || thicknessPass == null)

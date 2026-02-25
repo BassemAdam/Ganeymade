@@ -55,11 +55,11 @@ Shader "Hidden/WaterThicknessGen"
                 float signMultiplier = (vface > 0.0) ? -1.0 : 1.0;
 
                 // 2. Calculate the depth of THIS specific voxel face (in meters)
-                float2 screenUV = IN.screenPos.xy / IN.screenPos.w;
                 float rawFragDepth = IN.positionHCS.z; 
                 float fragLinearEyeDepth = LinearEyeDepth(rawFragDepth, _ZBufferParams);
 
                 // 3. Sample the Opaque Scene Depth (the rocks, the floor)
+                float2 screenUV = IN.screenPos.xy / IN.screenPos.w;
                 float rawSceneDepth = SampleSceneDepth(screenUV);
                 float sceneLinearEyeDepth = LinearEyeDepth(rawSceneDepth, _ZBufferParams);
 
@@ -71,7 +71,6 @@ Shader "Hidden/WaterThicknessGen"
                 float finalThickness = validDepth * signMultiplier;
 
                 // Output the value. We output to all channels (RGBA) just to be safe, 
-                // but we will only read the 'R' channel later.
                 return float4(finalThickness, finalThickness, finalThickness, 1.0);
             }
             ENDHLSL
