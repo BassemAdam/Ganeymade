@@ -1,5 +1,6 @@
 // Each #kernel tells which function to compile; you can have many kernels
 #pragma kernel March
+#include "MarchingTables.hlsl"
 
 // DATA STRUCTURES
 struct Triangle{
@@ -19,7 +20,12 @@ float isoLevel; // The "surface" level. For our SDF, water Surface is exactly at
 // OUTPUTS (From GPU to c#)
 AppendStructuredBuffer<Triangle> OutputTriangles; // note append becuase some threads might finish before other
 
-
+//Helper functions
+float SampleSDF(uint3 pos) {
+    // Convert 3D index to 1D index
+    uint index = pos.x + GridSize.x * (pos.y + GridSize.y * pos.z);
+    return SDFGrid[index];
+}
 
 [numthreads(8,8,8)]
 void March (uint3 id : SV_DispatchThreadID)

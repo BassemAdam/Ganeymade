@@ -1,41 +1,29 @@
-using System.Collections;
-using System.Collections.Generic;
-using UnityEngine;
+// MarchingTables.hlsl
 
-public static class MarchingTable
-{
-	public static Vector3Int[] Corners = new Vector3Int[8] {
+// The 8 corners of a single voxel relative to its origin
+static const float3 cornerOffsets[8] = {
+		float3(0, 0, 0),
+		float3(1, 0, 0),
+		float3(1, 1, 0),
+		float3(0, 1, 0),
+		float3(0, 0, 1),
+		float3(1, 0, 1),
+		float3(1, 1, 1),
+		float3(0, 1, 1)
+};
 
-		new Vector3Int(0, 0, 0),
-		new Vector3Int(1, 0, 0),
-		new Vector3Int(1, 1, 0),
-		new Vector3Int(0, 1, 0),
-		new Vector3Int(0, 0, 1),
-		new Vector3Int(1, 0, 1),
-		new Vector3Int(1, 1, 1),
-		new Vector3Int(0, 1, 1)
+// The 12 edges of a single voxel, defined by the two corner offsets they connect
+// This tells us which two corners (0-7) make up each of the 12 edges of the cube.
+// For example, Edge 0 connects Corner 0 and Corner 1.
+static const int edgeConnection[12][2] = {
+    {0,1}, {1,2}, {2,3}, {3,0},
+    {4,5}, {5,6}, {6,7}, {7,4},
+    {0,4}, {1,5}, {2,6}, {3,7}
+};
 
-	};
-
-	public static Vector3[,] Edges = new Vector3[12, 2] {
-
-		{ new Vector3(0.0f, 0.0f, 0.0f), new Vector3(1.0f, 0.0f, 0.0f) },
-		{ new Vector3(1.0f, 0.0f, 0.0f), new Vector3(1.0f, 1.0f, 0.0f) },
-		{ new Vector3(0.0f, 1.0f, 0.0f), new Vector3(1.0f, 1.0f, 0.0f) },
-		{ new Vector3(0.0f, 0.0f, 0.0f), new Vector3(0.0f, 1.0f, 0.0f) },
-		{ new Vector3(0.0f, 0.0f, 1.0f), new Vector3(1.0f, 0.0f, 1.0f) },
-		{ new Vector3(1.0f, 0.0f, 1.0f), new Vector3(1.0f, 1.0f, 1.0f) },
-		{ new Vector3(0.0f, 1.0f, 1.0f), new Vector3(1.0f, 1.0f, 1.0f) },
-		{ new Vector3(0.0f, 0.0f, 1.0f), new Vector3(0.0f, 1.0f, 1.0f) },
-		{ new Vector3(0.0f, 0.0f, 0.0f), new Vector3(0.0f, 0.0f, 1.0f) },
-		{ new Vector3(1.0f, 0.0f, 0.0f), new Vector3(1.0f, 0.0f, 1.0f) },
-		{ new Vector3(1.0f, 1.0f, 0.0f), new Vector3(1.0f, 1.0f, 1.0f) },
-		{ new Vector3(0.0f, 1.0f, 0.0f), new Vector3(0.0f, 1.0f, 1.0f) }
-
-	};
-
-	public static int[,] Triangles = new int[,] {
-
+// This tells the GPU exactly which vertices to connect to build the triangles.
+// A value of -1 means "Stop drawing, the shape is finished."
+static const int triTable[256][16] = {
 		{-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1},
 		{0, 8, 3, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1},
 		{0, 1, 9, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1},
@@ -292,6 +280,4 @@ public static class MarchingTable
 		{0, 9, 1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1},
 		{0, 3, 8, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1},
 		{-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1}
-
-	};
-}
+};
