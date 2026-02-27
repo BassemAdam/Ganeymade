@@ -83,6 +83,11 @@ public class SDFGenerator : MonoBehaviour
         return minDistance;
     }
 
+    public float[,,] GetSDFGrid()
+    {
+        return sdfGrid;
+    }
+
     // VISUALIZATION: Let's see the math!
     private void OnDrawGizmosSelected()
     {
