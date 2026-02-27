@@ -7,7 +7,7 @@ struct Triangle{
     float3 vertexA;
     float3 vertexB;
     float3 vertexC;
-}
+};
 
 // INPUTS (From c# to GPU)
 StructuredBuffer<float> SDFGrid;
@@ -27,12 +27,45 @@ float SampleSDF(uint3 pos) {
     return SDFGrid[index];
 }
 
+float3 VertexInterp(float isoLevel, float3 p1, float3 p2, float valp1, float valp2) {
+    if (abs(isoLevel - valp1) < 0.00001)
+        return p1;
+    if (abs(isoLevel - valp2) < 0.00001)
+        return p2;
+    if (abs(valp1 - valp2) < 0.00001)
+        return p1;
+
+    float perc = (isoLevel - valp1) / (valp2 - valp1); // % or lerp
+    return p1 + perc * (p2 - p1);
+
+}
+
 [numthreads(8,8,8)]
 void March (uint3 id : SV_DispatchThreadID)
 {
     if (id.x >= GridSize.x - 1 || id.y >= GridSize.y - 1 || id.z >= GridSize.z - 1) return; // out of bounds check
     
-    // TODO: insert actual code here!
+    // Sample the 8 corners of the current voxel
+    float cubeValues[8];
+    float3 cubePositions[8];
+    int cubeIndex = 0;
+    
+    for (int i = 0; i < 8; i++) {
+        uint3 cornerCoord = id + cornerOffsets[i];
+        float val = SampleSDF(cornerCoord);
+        
+        cubeValues[i] = val;
+        cubePositions[i] = cornerCoord * VoxelSize; // Convert to world position
+        
+        //  bitwise operation to get cubeIndex 
+        cubeIndex |= (val < isoLevel) << i; 
+    }
 
-   
+    // No triangles if all corners are inside or outside the surface
+    if (cubeIndex == 0 || cubeIndex == 255) return; 
+
+    // calculate edge Intersections
+
+    // Build and Append the Triangles
+    
 }
