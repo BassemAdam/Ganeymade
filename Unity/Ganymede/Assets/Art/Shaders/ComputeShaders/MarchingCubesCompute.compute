@@ -65,7 +65,23 @@ void March (uint3 id : SV_DispatchThreadID)
     if (cubeIndex == 0 || cubeIndex == 255) return; 
 
     // calculate edge Intersections
+    float3 vertList[12];
+    for (int e = 0; e < 12; e++) {
+        int cornerA = edgeConnection[e][0];
+        int cornerB = edgeConnection[e][1];
+        
+        vertList[e] = VertexInterp(isoLevel, 
+                                   cubePositions[cornerA], cubePositions[cornerB], 
+                                   cubeValues[cornerA], cubeValues[cornerB]);
+    }
 
     // Build and Append the Triangles
-    
+    for (int t = 0; triTable[cubeIndex][t] != -1; t += 3) {
+        Triangle tri;
+        tri.vertexA = vertList[triTable[cubeIndex][t]];
+        tri.vertexB = vertList[triTable[cubeIndex][t+1]];
+        tri.vertexC = vertList[triTable[cubeIndex][t+2]];
+        
+        OutputTriangles.Append(tri);
+    }
 }
