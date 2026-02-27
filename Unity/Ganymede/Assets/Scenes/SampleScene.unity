@@ -378,7 +378,7 @@ SphereCollider:
     serializedVersion: 2
     m_Bits: 0
   m_LayerOverridePriority: 0
-  m_IsTrigger: 0
+  m_IsTrigger: 1
   m_ProvidesContacts: 0
   m_Enabled: 1
   serializedVersion: 3
@@ -450,7 +450,7 @@ Transform:
   m_GameObject: {fileID: 167573866}
   serializedVersion: 2
   m_LocalRotation: {x: -0.0028210813, y: -0.02861833, z: -0.00008076804, w: 0.9995864}
-  m_LocalPosition: {x: 7.874, y: 3.359, z: 3.396}
+  m_LocalPosition: {x: 8.087, y: 3.359, z: 3.252}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
@@ -564,6 +564,78 @@ Transform:
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
   m_LocalPosition: {x: 0.21, y: 0.805, z: 4.507}
   m_LocalScale: {x: -1.1336967, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!1 &238588253
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 238588256}
+  - component: {fileID: 238588255}
+  - component: {fileID: 238588254}
+  m_Layer: 0
+  m_Name: SDF Detector
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!114 &238588254
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 238588253}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: f34ec347cf594b747adc4d5a4a789b35, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::SDFDebugVisualizer
+  resolution: 8
+  useSmooth: 0
+  smoothK: 0.5
+  maxDotSize: 0.15
+  densityScale: 1
+  minDensityToShow: -999
+  detector: {fileID: 0}
+  cachedDensities: []
+  hasData: 0
+--- !u!114 &238588255
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 238588253}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 83385c997c57c0240be774fdb0225ae2, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::ShapeDetector
+  worldMin: {x: 0, y: 0, z: 0}
+  worldMax: {x: 24.14, y: 16.17, z: 22.1}
+  detectionLayer:
+    m_Bits: 16
+  filterTag: Water
+  detectedShapes: []
+--- !u!4 &238588256
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 238588253}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 7.22, y: 3.21, z: 3.91}
+  m_LocalScale: {x: 2.9179027, y: 3.4804, z: 3.6055}
   m_ConstrainProportionsScale: 0
   m_Children: []
   m_Father: {fileID: 0}
@@ -939,7 +1011,7 @@ Transform:
   m_GameObject: {fileID: 565970154}
   serializedVersion: 2
   m_LocalRotation: {x: -0, y: -0, z: -0.7562212, w: 0.6543161}
-  m_LocalPosition: {x: 8.542, y: 2.071, z: 4.05}
+  m_LocalPosition: {x: 10.34, y: 3.56, z: 7.734}
   m_LocalScale: {x: 0.38453, y: 1, z: 0.34524}
   m_ConstrainProportionsScale: 0
   m_Children: []
@@ -979,7 +1051,7 @@ SphereCollider:
     serializedVersion: 2
     m_Bits: 0
   m_LayerOverridePriority: 0
-  m_IsTrigger: 0
+  m_IsTrigger: 1
   m_ProvidesContacts: 0
   m_Enabled: 1
   serializedVersion: 3
@@ -1091,7 +1163,7 @@ BoxCollider:
     serializedVersion: 2
     m_Bits: 0
   m_LayerOverridePriority: 0
-  m_IsTrigger: 0
+  m_IsTrigger: 1
   m_ProvidesContacts: 0
   m_Enabled: 1
   serializedVersion: 3
@@ -1203,7 +1275,7 @@ BoxCollider:
     serializedVersion: 2
     m_Bits: 0
   m_LayerOverridePriority: 0
-  m_IsTrigger: 0
+  m_IsTrigger: 1
   m_ProvidesContacts: 0
   m_Enabled: 1
   serializedVersion: 3
@@ -1275,7 +1347,7 @@ Transform:
   m_GameObject: {fileID: 1267718496}
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: 7.279, y: 2.92, z: 4.507}
+  m_LocalPosition: {x: 7.456, y: 2.838, z: 4.585}
   m_LocalScale: {x: -1.1336967, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
@@ -1315,7 +1387,7 @@ BoxCollider:
     serializedVersion: 2
     m_Bits: 0
   m_LayerOverridePriority: 0
-  m_IsTrigger: 0
+  m_IsTrigger: 1
   m_ProvidesContacts: 0
   m_Enabled: 1
   serializedVersion: 3
@@ -1387,7 +1459,7 @@ Transform:
   m_GameObject: {fileID: 1602565504}
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: 0.62, y: 2.42, z: 1.91}
+  m_LocalPosition: {x: 7.854, y: 3.411, z: 2.159}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
@@ -1539,7 +1611,7 @@ BoxCollider:
     serializedVersion: 2
     m_Bits: 0
   m_LayerOverridePriority: 0
-  m_IsTrigger: 0
+  m_IsTrigger: 1
   m_ProvidesContacts: 0
   m_Enabled: 1
   serializedVersion: 3
@@ -1634,3 +1706,4 @@ SceneRoots:
   - {fileID: 1646926050}
   - {fileID: 140983807}
   - {fileID: 565970158}
+  - {fileID: 238588256}

@@ -92,6 +92,7 @@ public class WaterThicknessFeature : ScriptableRendererFeature
         {
             if (thicknessMaterial == null) return;
             
+            // Fetch Context
             UniversalRenderingData renderingData = frameData.Get<UniversalRenderingData>();
             UniversalCameraData cameraData = frameData.Get<UniversalCameraData>();
 
