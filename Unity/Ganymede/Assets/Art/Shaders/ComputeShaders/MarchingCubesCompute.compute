@@ -1,14 +1,32 @@
 // Each #kernel tells which function to compile; you can have many kernels
 #pragma kernel March
 
-// Create a RenderTexture with enableRandomWrite flag and set it
-// with cs.SetTexture
-RWTexture2D<float4> Result;
+// DATA STRUCTURES
+struct Triangle{
+    float3 vertexA;
+    float3 vertexB;
+    float3 vertexC;
+}
 
-[numthreads(8,8,1)]
+// INPUTS (From c# to GPU)
+StructuredBuffer<float> SDFGrid;
+
+// Dimensions of the SDF grid
+uint3 GridSize;
+float3 VoxelSize;
+float isoLevel; // The "surface" level. For our SDF, water Surface is exactly at 0.0
+
+// OUTPUTS (From GPU to c#)
+AppendStructuredBuffer<Triangle> OutputTriangles; // note append becuase some threads might finish before other
+
+
+
+[numthreads(8,8,8)]
 void March (uint3 id : SV_DispatchThreadID)
 {
+    if (id.x >= GridSize.x - 1 || id.y >= GridSize.y - 1 || id.z >= GridSize.z - 1) return; // out of bounds check
+    
     // TODO: insert actual code here!
 
-    Result[id.xy] = float4(id.x & id.y, (id.x & 15)/15.0, (id.y & 15)/15.0, 0.0);
+   
 }
