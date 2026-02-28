@@ -94,10 +94,36 @@ public class MarchingCubesMeshGenerator : MonoBehaviour
         argBuffer.Release();
     }
 
-    private void ConstructUnityMesh(Triangle[] triangles)
-    {
-        
-    }
+    private void ConstructUnityMesh(Triangle[] gpuTriangles)
+        {
+            Vector3[] vertices = new Vector3[gpuTriangles.Length * 3];
+            int[] triangles = new int[gpuTriangles.Length * 3];
+
+            for (int i = 0; i < gpuTriangles.Length; i++)
+            {
+                // Extract the 3 points of the triangle
+                vertices[i * 3 + 0] = gpuTriangles[i].vertexA;
+                vertices[i * 3 + 1] = gpuTriangles[i].vertexB;
+                vertices[i * 3 + 2] = gpuTriangles[i].vertexC;
+
+                // Tell Unity what order to draw them in
+                triangles[i * 3 + 0] = i * 3 + 0;
+                triangles[i * 3 + 1] = i * 3 + 2;
+                triangles[i * 3 + 2] = i * 3 + 1;
+            }
+
+            Mesh mesh = new Mesh();
+            mesh.indexFormat = UnityEngine.Rendering.IndexFormat.UInt32; // Allows for high-poly meshes
+            mesh.vertices = vertices;
+            mesh.triangles = triangles;
+            mesh.RecalculateNormals(); // Automatically calculates light reflections!
+
+            meshFilter.mesh = mesh;
+
+            // Set the tag and layer of the GameObject to "Water"
+            gameObject.tag = "Water";
+            gameObject.layer = LayerMask.NameToLayer("Water");
+        }
 
 
     //helpers

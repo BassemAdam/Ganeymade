@@ -46,10 +46,10 @@ Material:
     - _DepthScale: 0.47
     - _FoamDistance: 1.912
     - _FoamSharpness: 4.98
-    - _FresnelPower: 3
+    - _FresnelPower: 1.9
     - _IOR: 1.556
     - _MinAlpha: 1
-    - _ReflectionStrength: 0.048
+    - _ReflectionStrength: 0.05
     - _RefractionStrength: 0.116
     - _Smoothness: 0.548
     - _SpecularStrength: 1.02
