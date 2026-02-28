@@ -1,0 +1,86 @@
+// Each #kernel tells which function to compile; you can have many kernels
+#pragma kernel March
+#include "MarchingTables.hlsl"
+
+// DATA STRUCTURES
+struct Triangle{
+    float3 vertexA;
+    float3 vertexB;
+    float3 vertexC;
+};
+
+// INPUTS (From c# to GPU)
+StructuredBuffer<float> SDFGrid;
+
+// Dimensions of the SDF grid
+uint3 GridSize;
+float3 VoxelSize;
+float isoLevel; // The "surface" level. For our SDF, water Surface is exactly at 0.0
+
+// OUTPUTS (From GPU to c#)
+AppendStructuredBuffer<Triangle> OutputTriangles; // note append becuase some threads might finish before other
+
+//Helper functions
+float SampleSDF(uint3 pos) {
+    // Convert 3D index to 1D index
+    uint index = pos.x + GridSize.x * (pos.y + GridSize.y * pos.z);
+    return SDFGrid[index];
+}
+
+float3 VertexInterp(float isoLevel, float3 p1, float3 p2, float valp1, float valp2) {
+    if (abs(isoLevel - valp1) < 0.00001)
+        return p1;
+    if (abs(isoLevel - valp2) < 0.00001)
+        return p2;
+    if (abs(valp1 - valp2) < 0.00001)
+        return p1;
+
+    float perc = (isoLevel - valp1) / (valp2 - valp1); // % or lerp
+    return p1 + perc * (p2 - p1);
+
+}
+
+[numthreads(8,8,8)]
+void March (uint3 id : SV_DispatchThreadID)
+{
+    if (id.x >= GridSize.x - 1 || id.y >= GridSize.y - 1 || id.z >= GridSize.z - 1) return; // out of bounds check
+    
+    // Sample the 8 corners of the current voxel
+    float cubeValues[8];
+    float3 cubePositions[8];
+    int cubeIndex = 0;
+    
+    for (int i = 0; i < 8; i++) {
+        uint3 cornerCoord = id + cornerOffsets[i];
+        float val = SampleSDF(cornerCoord);
+        
+        cubeValues[i] = val;
+        cubePositions[i] = cornerCoord * VoxelSize; // Convert to world position
+        
+        //  bitwise operation to get cubeIndex 
+        cubeIndex |= (val < isoLevel) << i; 
+    }
+
+    if (cubeIndex == 0 || cubeIndex == 255) return; 
+
+    // calculate edge Intersections
+    float3 vertList[12];
+    for (int e = 0; e < 12; e++) {
+        int cornerA = edgeConnection[e][0];
+        int cornerB = edgeConnection[e][1];
+        
+        vertList[e] = VertexInterp(isoLevel, 
+                                   cubePositions[cornerA], cubePositions[cornerB], 
+                                   cubeValues[cornerA], cubeValues[cornerB]);
+    }
+
+    // Build and Append the Triangles
+    for (int t = 0; triTable[cubeIndex][t] != -1; t += 3) {
+        Triangle tri;
+        tri.vertexA = vertList[triTable[cubeIndex][t]];
+        tri.vertexB = vertList[triTable[cubeIndex][t+1]];
+        tri.vertexC = vertList[triTable[cubeIndex][t+2]];
+        
+        OutputTriangles.Append(tri);
+    }
+}

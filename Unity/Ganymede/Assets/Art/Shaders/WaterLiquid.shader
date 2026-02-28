@@ -17,6 +17,11 @@ Shader "Custom/WaterLiquid"
 
         _MinAlpha("Min Alpha", Range(0.0, 1.0)) = 1  // ensures cubes always contribute opacity for accumulation
 
+        // depth-based color parameters
+        [Header(Depth Absorption)]
+        _ShallowColor("Shallow Water Color", Color) = (0.3, 0.8, 0.8, 1.0)
+        _DeepColor("Deep Water Color", Color) = (0.02, 0.05, 0.15, 1.0)
+        _AbsorptionRate("Absorption Rate", Range(0.1, 5.0)) = 1.0
     }
 
     SubShader
@@ -63,12 +68,14 @@ Shader "Custom/WaterLiquid"
                 float2 uv : TEXCOORD0;
                 float3 normalWS : TEXCOORD1;
                 float3 positionWS  : TEXCOORD2;
-                float4 screenPos : TEXCOORD3; // clip space → [0,1] screen UV via xy/w
+                float4 screenPos : TEXCOORD3; 
             };
 
 
             // RESOURCES
             SAMPLER(sampler_BaseMap);
+            TEXTURE2D(_WaterThicknessMap);
+            SAMPLER(sampler_WaterThicknessMap);
 
             CBUFFER_START(UnityPerMaterial)
                 half4 _WaterColor;
@@ -79,6 +86,9 @@ Shader "Custom/WaterLiquid"
                 half _BlurRadius;
                 half _MinAlpha;
                 half _ReflectionStrength;
+                half4 _ShallowColor;
+                half4 _DeepColor;
+                half _AbsorptionRate;
             CBUFFER_END
             
 
@@ -91,7 +101,7 @@ Shader "Custom/WaterLiquid"
                 OUT.uv = IN.uv;
                 OUT.normalWS = TransformObjectToWorldNormal(IN.normalOS);
                 OUT.positionWS = TransformObjectToWorld(IN.positionOS.xyz);
-                OUT.screenPos = ComputeScreenPos(OUT.positionHCS); // packages clip pos for perspective-correct screen UV
+                OUT.screenPos = ComputeScreenPos(OUT.positionHCS); 
                
                return OUT; 
             }
@@ -100,6 +110,12 @@ Shader "Custom/WaterLiquid"
             // FRAGMENT SHADER
             half4 frag(Interpolators IN) : SV_Target
             {   
+                // Screen UV for sampling screen-space textures
+                float2 screenUV = IN.screenPos.xy / IN.screenPos.w;
+
+                // Sample the water thickness at this pixel (in meters)
+                float waterDepth = SAMPLE_TEXTURE2D(_WaterThicknessMap, sampler_WaterThicknessMap, screenUV).r;
+
                 // Fresnel 
                 // for blending reflection and refraction based on view angle
                 float fresnel = CalculateFresnel(IN.normalWS, IN.positionWS, _FresnelPower);
@@ -113,16 +129,14 @@ Shader "Custom/WaterLiquid"
                 half3 refraction = CalculateRefraction(IN.normalWS, IN.screenPos, _RefractionStrength, 1.0 - fresnel, _BlurRadius); 
                 half3 reflection = CalculateReflection(IN.normalWS, IN.positionWS, _Smoothness, IN.screenPos) * _ReflectionStrength;
 
-              
-          
+                // Apply depth-based absorption (Beer's Law)
+                half3 depthTintedColor = CalculateDepthColor(refraction, _ShallowColor.rgb, _DeepColor.rgb, waterDepth, _AbsorptionRate);
+
                 half alpha = max(fresnel, _MinAlpha);
 
-                half3 desiredColor = refraction * _WaterColor.rgb + specColor + reflection;
+                half3 desiredColor = depthTintedColor * _WaterColor.rgb + specColor + reflection;
 
                 return half4(desiredColor, alpha);
-              
-                
-                // return half4(reflection, 1.0);
             }
 
             ENDHLSL
