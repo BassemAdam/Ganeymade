@@ -61,7 +61,6 @@ void March (uint3 id : SV_DispatchThreadID)
         cubeIndex |= (val < isoLevel) << i; 
     }
 
-    // No triangles if all corners are inside or outside the surface 
     if (cubeIndex == 0 || cubeIndex == 255) return; 
 
     // calculate edge Intersections
