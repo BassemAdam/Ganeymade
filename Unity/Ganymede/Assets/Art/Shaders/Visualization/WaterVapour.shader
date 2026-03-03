@@ -4,6 +4,12 @@ Shader "Custom/WaterVapour"
     {
         [MainColor] _BaseColor("Base Color", Color) = (1, 1, 1, 1)
         [MainTexture] _BaseMap("Base Map", 2D) = "white" {}
+
+        [Header(Noise)]
+        _NoiseScale     ("Noise Scale",      Range(0.1, 10.0)) = 1.0
+        _NoiseDriftDir  ("Drift Direction",  Vector)           = (0, 1, 0, 0)
+        _NoiseDriftSpeed("Drift Speed",       Range(0.0,  5.0)) = 0.3
+        _NoiseOctaves   ("Noise Octaves",     Range(1, 8))      = 5
     }
 
     SubShader
@@ -32,6 +38,7 @@ Shader "Custom/WaterVapour"
             #pragma fragment frag
 
             #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Core.hlsl"
+            #include "../Includes/WaterVapourHelpers.hlsl"
 
             struct MeshInput
             {
@@ -51,8 +58,13 @@ Shader "Custom/WaterVapour"
             SAMPLER(sampler_BaseMap);
 
             CBUFFER_START(UnityPerMaterial)
-                half4 _BaseColor;
-                float4 _BaseMap_ST;
+                half4   _BaseColor;
+                float4  _BaseMap_ST;
+                // Noise
+                float   _NoiseScale;
+                float4  _NoiseDriftDir;   // xyz = direction, w unused
+                float   _NoiseDriftSpeed;
+                int     _NoiseOctaves;
             CBUFFER_END
 
             Interpolators vert(MeshInput IN)
