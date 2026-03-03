@@ -95,21 +95,27 @@ float FBM(float3 p, int octaves, float lacunarity, float gain)
 }
 
 // -----------------------------------------------------------------------------
-//  SECTION 2 — DENSITY FIELD  (implemented in Step 4)
+//  SECTION 2 — DENSITY FIELD
 // -----------------------------------------------------------------------------
 
 // SampleDensity
-//   Full density pipeline: animate position → domain warp → FBM → power curve
-//   → physics bridge blend. Returns the final density at a world-space point.
-//   Input  : worldPos      — world-space position to evaluate
-//            time          — _Time.y from the shader
-//            driftDir      — normalized direction the vapor drifts toward
-//            driftSpeed    — how fast the drift scroll moves
-//            noiseScale    — world-space size of the noise features
-//            octaves       — FBM octave count
-//            densityPower  — power curve exponent (>1 sharpens, <1 softens)
-//            physicsDensity — scalar from the physics engine [0, 1]
-//            physicsBlend  — 0 = pure noise, 1 = physics modulates noise
+//   Full density pipeline in one call:
+//     1. Drift  — scroll world position along driftDir over time (vapor rising/moving)
+//     2. Warp   — domain warping displaces the sample position using cheap single-octave
+//                 noise, breaking any grid regularity and creating organic turbulence
+//     3. FBM    — sample the warped, drifted position for detailed wispy structure
+//     4. Shape  — remap and apply a power curve (>1 sharpens wisps, <1 softens them)
+//     5. Bridge — blend between pure noise and physics-scaled result
+//
+//   Input  : worldPos       — world-space position to evaluate
+//            time           — _Time.y from the shader
+//            driftDir       — direction the vapor scrolls (e.g. float3(0,1,0) = rising)
+//            driftSpeed     — scroll speed in world units per second
+//            noiseScale     — divides worldPos before noise — larger = bigger blobs
+//            octaves        — FBM octave count
+//            densityPower   — power curve exponent applied after FBM
+//            physicsDensity — scalar [0,1] from physics engine (1.0 = full vapor)
+//            physicsBlend   — 0 = pure noise preview, 1 = physics modulates noise
 //   Output : final density in [0, 1]
 float SampleDensity(float3 worldPos, float time,
                     float3 driftDir,  float driftSpeed,
@@ -117,8 +123,47 @@ float SampleDensity(float3 worldPos, float time,
                     float  densityPower,
                     float  physicsDensity, float physicsBlend)
 {
-    // TODO: Step 4
-    return 0.0;
+    // --- 1. Drift -----------------------------------------------------------
+    // Offset the sample position along driftDir at driftSpeed units/sec.
+    // This makes the entire noise field scroll smoothly — vapor rises, drifts.
+    float3 driftedPos = worldPos + driftDir * (time * driftSpeed);
+
+    // Scale into noise space. Larger noiseScale = zoomed-in noise = bigger features.
+    float3 p = driftedPos / noiseScale;
+
+    // --- 2. Domain Warp (Turbulence) ----------------------------------------
+    // Sample three cheap single-octave noise values at offset seeds to get
+    // a 3D displacement vector. Add it to p before the main FBM sample.
+    // This bends the noise field on itself — creating swirling, organic turbulence
+    // without any explicit simulation. Strength is 1/3 of noiseScale so it
+    // distorts features but doesn’t completely destroy them.
+    float3 warpOffset = float3(
+        ValueNoise3D(p * 0.7 + float3(1.72, 9.23, 5.41)),
+        ValueNoise3D(p * 0.7 + float3(8.31, 2.84, 3.26)),
+        ValueNoise3D(p * 0.7 + float3(4.17, 6.73, 1.92))
+    ) * 2.0 - 1.0;  // remap [0,1] -> [-1,1] so warp pushes in all directions
+
+    float3 warpedP = p + warpOffset * 0.35;
+
+    // --- 3. FBM -------------------------------------------------------------
+    // Sample the fractal noise at the warped position.
+    // lacunarity=2 (each octave is 2x finer), gain=0.5 (each octave is half as loud).
+    float rawNoise = FBM(warpedP, octaves, 2.0, 0.5);
+
+    // --- 4. Power Curve & Remap ---------------------------------------------
+    // FBM output already in [0,1]. Apply power to reshape the distribution:
+    //   densityPower > 1  → pushes midtones darker, creates sharp wispy edges
+    //   densityPower < 1  →  brightens midtones, creates soft puffy clouds
+    float shaped = pow(saturate(rawNoise), densityPower);
+
+    // --- 5. Physics Engine Bridge -------------------------------------------
+    // When physicsBlend = 0 : result is pure noise (design/preview mode)
+    // When physicsBlend = 1 : physicsDensity scales the noise
+    //   (e.g. physicsDensity=0 means no vapor — noise fades to black)
+    float physicsModulated = shaped * physicsDensity;
+    float finalDensity = lerp(shaped, physicsModulated, physicsBlend);
+
+    return saturate(finalDensity);
 }
 
 // -----------------------------------------------------------------------------
