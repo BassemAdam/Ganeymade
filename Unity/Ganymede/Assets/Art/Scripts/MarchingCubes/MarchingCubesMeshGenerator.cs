@@ -23,6 +23,9 @@ public class MarchingCubesMeshGenerator : MonoBehaviour
         public Vector3 vertexA;
         public Vector3 vertexB;
         public Vector3 vertexC;
+        public Vector3 normalA;
+        public Vector3 normalB;
+        public Vector3 normalC;
     }
 
     void Start()
@@ -54,9 +57,9 @@ public class MarchingCubesMeshGenerator : MonoBehaviour
         // max triangles = number of voxels * 5
         // number of voxels determined by grid resolution - 1 in each dimension
         // also dont forget each traignle have 3 verticies each vertex is a Vector3 (3 floats)
-        // so so 5*9 floats per voxel
+        // so 5*18 floats per voxel (3 positions + 3 normals, each float3 = 3 floats)
         int maxTriangles = res.x * res.y * res.z * 5;
-        ComputeBuffer triangleBuffer = new ComputeBuffer(maxTriangles, sizeof(float) * 9, ComputeBufferType.Append);
+        ComputeBuffer triangleBuffer = new ComputeBuffer(maxTriangles, sizeof(float) * 18, ComputeBufferType.Append);
         triangleBuffer.SetCounterValue(0);
 
         // Load data to compute shader
@@ -97,13 +100,20 @@ public class MarchingCubesMeshGenerator : MonoBehaviour
     private void ConstructUnityMesh(Triangle[] gpuTriangles)
         {
             Vector3[] vertices = new Vector3[gpuTriangles.Length * 3];
-            int[] triangles = new int[gpuTriangles.Length * 3];
+            Vector3[] normals  = new Vector3[gpuTriangles.Length * 3];
+            int[] triangles    = new int[gpuTriangles.Length * 3];
 
             for (int i = 0; i < gpuTriangles.Length; i++)
             {
                 vertices[i * 3 + 0] = gpuTriangles[i].vertexA;
                 vertices[i * 3 + 1] = gpuTriangles[i].vertexB;
                 vertices[i * 3 + 2] = gpuTriangles[i].vertexC;
+
+                // SDF gradient normals: flip because SDF points outward from surface
+                // and winding order swap (t+1 <-> t+2) means we also flip normals
+                normals[i * 3 + 0] = gpuTriangles[i].normalA;
+                normals[i * 3 + 1] = gpuTriangles[i].normalC;
+                normals[i * 3 + 2] = gpuTriangles[i].normalB;
 
                 triangles[i * 3 + 0] = i * 3 + 0;
                 triangles[i * 3 + 1] = i * 3 + 2;
@@ -114,7 +124,7 @@ public class MarchingCubesMeshGenerator : MonoBehaviour
             mesh.indexFormat = UnityEngine.Rendering.IndexFormat.UInt32; 
             mesh.vertices = vertices;
             mesh.triangles = triangles;
-            mesh.RecalculateNormals(); 
+            mesh.normals = normals; // SDF gradient normals — smooth per-vertex, no RecalculateNormals needed
 
             meshFilter.mesh = mesh;
 
