@@ -120,7 +120,7 @@ public class WaterThicknessFeature : ScriptableRendererFeature
                     drawingSettings.SetShaderPassName(i, shaderTagIdList[i]);
                 }
                 drawingSettings.overrideMaterial = thicknessMaterial;
-                drawingSettings.overrideMaterialPassIndex = 0;
+                drawingSettings.overrideMaterialPassIndex = thicknessMaterial.FindPass("WaterThicknessGen");
 
                 // Make the renderer list based on our filter criteria
                 var rendererListParams = new RendererListParams(renderingData.cullResults, drawingSettings, filteringSettings);
