@@ -7,6 +7,9 @@ struct Triangle{
     float3 vertexA;
     float3 vertexB;
     float3 vertexC;
+    float3 normalA;
+    float3 normalB;
+    float3 normalC;
 };
 
 // INPUTS (From c# to GPU)
@@ -25,6 +28,29 @@ float SampleSDF(uint3 pos) {
     // Convert 3D index to 1D index
     uint index = pos.x + GridSize.x * (pos.y + GridSize.y * pos.z);
     return SDFGrid[index];
+}
+
+// Clamped sample: safely samples SDF with int3 coords (handles boundary voxels)
+float SampleSDFSafe(int3 pos) {
+    int3 clamped = clamp(pos, int3(0,0,0), int3(GridSize) - int3(1,1,1));
+    return SampleSDF((uint3)clamped);
+}
+
+// SDF gradient via central differences = outward surface normal
+float3 ComputeNormal(uint3 pos) {
+    int3 p = (int3)pos;
+    float dx = SampleSDFSafe(p + int3(1,0,0)) - SampleSDFSafe(p - int3(1,0,0));
+    float dy = SampleSDFSafe(p + int3(0,1,0)) - SampleSDFSafe(p - int3(0,1,0));
+    float dz = SampleSDFSafe(p + int3(0,0,1)) - SampleSDFSafe(p - int3(0,0,1));
+    return normalize(float3(dx, dy, dz));
+}
+
+float3 NormalInterp(float isoLevel, float3 n1, float3 n2, float valp1, float valp2) {
+    if (abs(isoLevel - valp1) < 0.00001) return n1;
+    if (abs(isoLevel - valp2) < 0.00001) return n2;
+    if (abs(valp1 - valp2) < 0.00001) return n1;
+    float perc = (isoLevel - valp1) / (valp2 - valp1);
+    return normalize(n1 + perc * (n2 - n1));
 }
 
 float3 VertexInterp(float isoLevel, float3 p1, float3 p2, float valp1, float valp2) {
@@ -48,6 +74,7 @@ void March (uint3 id : SV_DispatchThreadID)
     // Sample the 8 corners of the current voxel
     float cubeValues[8];
     float3 cubePositions[8];
+    float3 cubeNormals[8];
     int cubeIndex = 0;
     
     for (int i = 0; i < 8; i++) {
@@ -56,6 +83,7 @@ void March (uint3 id : SV_DispatchThreadID)
         
         cubeValues[i] = val;
         cubePositions[i] = cornerCoord * VoxelSize; // Convert to world position
+        cubeNormals[i] = ComputeNormal(cornerCoord); // SDF gradient = surface normal
         
         //  bitwise operation to get cubeIndex 
         cubeIndex |= (val < isoLevel) << i; 
@@ -63,14 +91,18 @@ void March (uint3 id : SV_DispatchThreadID)
 
     if (cubeIndex == 0 || cubeIndex == 255) return; 
 
-    // calculate edge Intersections
+    // calculate edge Intersections (positions + interpolated normals)
     float3 vertList[12];
+    float3 normList[12];
     for (int e = 0; e < 12; e++) {
         int cornerA = edgeConnection[e][0];
         int cornerB = edgeConnection[e][1];
         
         vertList[e] = VertexInterp(isoLevel, 
                                    cubePositions[cornerA], cubePositions[cornerB], 
+                                   cubeValues[cornerA], cubeValues[cornerB]);
+        normList[e] = NormalInterp(isoLevel,
+                                   cubeNormals[cornerA], cubeNormals[cornerB],
                                    cubeValues[cornerA], cubeValues[cornerB]);
     }
 
@@ -80,6 +112,9 @@ void March (uint3 id : SV_DispatchThreadID)
         tri.vertexA = vertList[triTable[cubeIndex][t]];
         tri.vertexB = vertList[triTable[cubeIndex][t+1]];
         tri.vertexC = vertList[triTable[cubeIndex][t+2]];
+        tri.normalA = normList[triTable[cubeIndex][t]];
+        tri.normalB = normList[triTable[cubeIndex][t+1]];
+        tri.normalC = normList[triTable[cubeIndex][t+2]];
         
         OutputTriangles.Append(tri);
     }
