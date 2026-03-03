@@ -8,7 +8,21 @@ Shader "Custom/WaterVapour"
 
     SubShader
     {
-        Tags { "RenderType" = "Opaque" "RenderPipeline" = "UniversalPipeline" }
+        Tags
+        {
+            "RenderType" = "Transparent"
+            "Queue" = "Transparent"
+            "RenderPipeline" = "UniversalPipeline"
+        }
+
+        // No depth write — vapor must not occlude objects behind it
+        ZWrite Off
+
+        // Standard alpha blending
+        Blend SrcAlpha OneMinusSrcAlpha
+
+        // No backface culling — vapor has no real surface orientation
+        Cull Off
 
         Pass
         {
@@ -19,16 +33,18 @@ Shader "Custom/WaterVapour"
 
             #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Core.hlsl"
 
-            struct Attributes
+            struct MeshInput
             {
                 float4 positionOS : POSITION;
                 float2 uv : TEXCOORD0;
             };
 
-            struct Varyings
+            struct Interpolators
             {
                 float4 positionHCS : SV_POSITION;
-                float2 uv : TEXCOORD0;
+                float2 uv         : TEXCOORD0;
+                float3 positionWS : TEXCOORD1; // world-space position — drives noise & raymarching
+                float3 viewDirWS  : TEXCOORD2; // world-space view direction — drives Fresnel & phase function
             };
 
             TEXTURE2D(_BaseMap);
@@ -39,15 +55,19 @@ Shader "Custom/WaterVapour"
                 float4 _BaseMap_ST;
             CBUFFER_END
 
-            Varyings vert(Attributes IN)
+            Interpolators vert(MeshInput IN)
             {
-                Varyings OUT;
-                OUT.positionHCS = TransformObjectToHClip(IN.positionOS.xyz);
-                OUT.uv = TRANSFORM_TEX(IN.uv, _BaseMap);
+                Interpolators OUT;
+                OUT.positionWS  = TransformObjectToWorld(IN.positionOS.xyz);
+                OUT.positionHCS = TransformWorldToHClip(OUT.positionWS);
+                OUT.uv          = TRANSFORM_TEX(IN.uv, _BaseMap);
+                // GetWorldSpaceViewDir returns (cameraPos - positionWS), unnormalized
+                // We normalize in the fragment shader where we need it per-pixel
+                OUT.viewDirWS   = GetWorldSpaceViewDir(OUT.positionWS);
                 return OUT;
             }
 
-            half4 frag(Varyings IN) : SV_Target
+            half4 frag(Interpolators IN) : SV_Target
             {
                 half4 color = SAMPLE_TEXTURE2D(_BaseMap, sampler_BaseMap, IN.uv) * _BaseColor;
                 return color;
