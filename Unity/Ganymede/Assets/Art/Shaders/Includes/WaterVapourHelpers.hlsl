@@ -226,9 +226,9 @@ bool IntersectRayAABBOS(float3 rayOriginOS, float3 rayDirOS, float3 bmin, float3
 //   Computes the valid world-space ray segment through the voxel bounds:
 //   entryWS -> exitWS, plus ray direction and segment length.
 //   Works whether camera is outside OR inside the volume.
+//   marchDistance covers the FULL segment — no artificial cap.
 bool ComputeVoxelRaySegmentWS(float3 cameraWS, float3 sampleWS,
                               float3 boundsMinOS, float3 boundsMaxOS,
-                              float maxMarchDistance,
                               out float3 entryWS, out float3 rayDirWS, out float marchDistance)
 {
     float3 viewRayWS = normalize(sampleWS - cameraWS);
@@ -264,7 +264,9 @@ bool ComputeVoxelRaySegmentWS(float3 cameraWS, float3 sampleWS,
     }
 
     rayDirWS = normalize(exitWS - entryWS);
-    marchDistance = min(segmentDistanceWS, maxMarchDistance);
+    // Cover the full segment through the volume — no cap.
+    // Absorption and march steps control the density budget.
+    marchDistance = segmentDistanceWS;
     return true;
 }
 
@@ -294,7 +296,8 @@ float4 RaymarchVapour(float3 rayOrigin, float3 rayDir,
                       float3 driftDir,   float driftSpeed,
                       float  noiseScale, int octaves,
                       float  densityPower,
-                      float  physicsDensity, float physicsBlend)
+                      float  physicsDensity, float physicsBlend,
+                      float  sceneLinearDepth)
 {
     float stepSize    = marchDistance / (float)marchSteps;
     float transmit    = 1.0;   // starts fully transparent, darkens as ray travels through
@@ -308,6 +311,13 @@ float4 RaymarchVapour(float3 rayOrigin, float3 rayDir,
     {
         // Current sample position: march away from camera into the volume
         float3 samplePos = rayOrigin + rayDir * (stepSize * (i + 0.5));
+
+        // Stop if this step has passed an opaque surface.
+        // mul(UNITY_MATRIX_V, ...).z is view-space Z; negate for eye depth.
+        // This is unambiguous regardless of matrix storage order.
+        float sampleEyeDepth = -mul(UNITY_MATRIX_V, float4(samplePos, 1.0)).z;
+        if (sampleEyeDepth >= sceneLinearDepth)
+            break;
 
         float density = SampleDensity(
             samplePos, time,

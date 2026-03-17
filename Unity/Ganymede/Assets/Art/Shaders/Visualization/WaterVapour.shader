@@ -75,10 +75,15 @@ Shader "Custom/WaterVapour"
                 float2 uv         : TEXCOORD0;
                 float3 positionWS : TEXCOORD1; // world-space position — drives noise & raymarching
                 float3 viewDirWS  : TEXCOORD2; // world-space view direction — drives Fresnel & phase function
+                float4 screenPos  : TEXCOORD3; // homogeneous screen coords — used to sample depth texture
             };
 
             TEXTURE2D(_BaseMap);
             SAMPLER(sampler_BaseMap);
+
+            // Scene depth — lets the ray stop when it hits opaque geometry
+            TEXTURE2D_X_FLOAT(_CameraDepthTexture);
+            SAMPLER(sampler_CameraDepthTexture);
 
             CBUFFER_START(UnityPerMaterial)
                 half4   _BaseColor;
@@ -115,6 +120,8 @@ Shader "Custom/WaterVapour"
                 // GetWorldSpaceViewDir returns (cameraPos - positionWS), unnormalized
                 // We normalize in the fragment shader where we need it per-pixel
                 OUT.viewDirWS   = GetWorldSpaceViewDir(OUT.positionWS);
+                // ComputeScreenPos gives homogeneous coords → divide by .w in frag for UV
+                OUT.screenPos   = ComputeScreenPos(OUT.positionHCS);
                 return OUT;
             }
 
@@ -135,13 +142,11 @@ Shader "Custom/WaterVapour"
                 float  marchDistance = 0.0;
                 float3 boundsMinOS = (float3)_VoxelBoundsMin.xyz;
                 float3 boundsMaxOS = (float3)_VoxelBoundsMax.xyz;
-                float  maxMarchDistance = (float)_MarchDistance;
                 if (!ComputeVoxelRaySegmentWS(
                     cameraWS,
                     IN.positionWS,
                     boundsMinOS,
                     boundsMaxOS,
-                    maxMarchDistance,
                     entryWS,
                     rayDir,
                     marchDistance
@@ -149,6 +154,13 @@ Shader "Custom/WaterVapour"
                 {
                     return half4(0, 0, 0, 0);
                 }
+
+                // --- Scene depth: stop marching when we hit opaque geometry ---
+                // Perspective-correct UV from screen-space homogeneous coords
+                float2 screenUV = IN.screenPos.xy / IN.screenPos.w;
+                float rawDepth  = SAMPLE_TEXTURE2D_X(_CameraDepthTexture, sampler_CameraDepthTexture, screenUV).r;
+                // Convert to linear eye depth (distance along camera forward axis, in world units)
+                float sceneLinearDepth = LinearEyeDepth(rawDepth, _ZBufferParams);
 
                 // --- Real URP main directional light ---
                 Light mainLight   = GetMainLight();
@@ -169,7 +181,8 @@ Shader "Custom/WaterVapour"
                     driftDir, _NoiseDriftSpeed,
                     _NoiseScale, noiseOctaves,
                     _DensityPower,
-                    _Density, _PhysicsBlend
+                    _Density, _PhysicsBlend,
+                    sceneLinearDepth
                 );
 
                 half3 col = volume.rgb * _BaseColor.rgb;
