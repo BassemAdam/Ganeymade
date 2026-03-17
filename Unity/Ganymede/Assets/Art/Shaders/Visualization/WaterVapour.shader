@@ -210,7 +210,8 @@ Shader "Custom/WaterVapour"
                     _Density, _PhysicsBlend,
                     sceneLinearDepth,
                     boundsMinOS, boundsMaxOS,
-                    _EdgeSoftness
+                    _EdgeSoftness,
+                    screenUV
                 );
 
                 // ---- STEP 8 : Color & Appearance ----

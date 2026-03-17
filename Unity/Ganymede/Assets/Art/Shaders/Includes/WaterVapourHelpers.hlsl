@@ -330,7 +330,8 @@ float4 RaymarchVapour(float3 rayOrigin, float3 rayDir,
                       float  physicsDensity, float physicsBlend,
                       float  sceneLinearDepth,
                       float3 boundsMinOS, float3 boundsMaxOS,
-                      float  edgeSoftness)
+                      float  edgeSoftness,
+                      float2 screenUV)
 {
     float stepSize    = marchDistance / (float)marchSteps;
     float transmit    = 1.0;
@@ -342,9 +343,16 @@ float4 RaymarchVapour(float3 rayOrigin, float3 rayDir,
     float3 boundsCenter  = (boundsMinOS + boundsMaxOS) * 0.5;
     float3 boundsExtents = (boundsMaxOS - boundsMinOS) * 0.5;
 
+    // Interleaved Gradient Noise (IGN) for dithering the start position
+    // This perfectly breaks the planar alignment of samples that causes the
+    // vapour to look like a solid box when the camera is outside.
+    float2 pixelCoords = screenUV * _ScreenParams.xy;
+    float jitter = frac(52.9829189 * frac(dot(pixelCoords, float2(0.06711056, 0.00583715))));
+
     for (int i = 0; i < marchSteps; i++)
     {
-        float3 samplePos = rayOrigin + rayDir * (stepSize * (i + 0.5));
+        // Use jitter instead of 0.5 to randomly offset the sample plane per-pixel
+        float3 samplePos = rayOrigin + rayDir * (stepSize * (i + jitter));
 
         // Depth termination against opaque scene geometry
         float sampleEyeDepth = -mul(UNITY_MATRIX_V, float4(samplePos, 1.0)).z;
