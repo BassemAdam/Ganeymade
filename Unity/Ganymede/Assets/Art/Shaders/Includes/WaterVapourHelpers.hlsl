@@ -167,53 +167,180 @@ float SampleDensity(float3 worldPos, float time,
 }
 
 // -----------------------------------------------------------------------------
-//  SECTION 3 — VOLUMETRIC LIGHTING  (implemented in Step 6)
+//  SECTION 3 — VOLUMETRIC LIGHTING
 // -----------------------------------------------------------------------------
 
 // HenyeyGreenstein
-//   Models how a particle scatters light at a given angle.
-//   This is the Mie scattering approximation used for vapor and clouds.
-//   Input  : cosTheta — dot(viewDir, lightDir)  [-1, 1]
-//            g        — anisotropy factor: 0 = isotropic, +1 = full forward scatter
-//                        vapor is typically 0.3 – 0.7
-//   Output : phase weight — higher means more light reaches the viewer
+//   The standard real-time approximation for Mie scattering — the dominant
+//   scattering mode for particles the size of water droplets.
+//
+//   Physics: a particle scatters MORE light toward the direction light came FROM
+//   (forward scatter) and LESS in the opposite direction. The parameter g controls
+//   how strongly forward-biased this is.
+//
+//   Formula (unnormalized, 4π omitted since we tune brightness via other props):
+//     p(cosθ, g) = (1 - g²) / (1 + g² - 2g·cosθ)^(3/2)
+//
+//   Results at g = 0.5:
+//     cosθ =  1  (ray toward light, vapor backlit)  → ~6.0  (bright halo)
+//     cosθ =  0  (perpendicular)                    → ~0.53 (medium)
+//     cosθ = -1  (ray away from light)               → ~0.07 (dark)
+//
+//   Input  : cosTheta — dot(-rayDir, lightDir)  range [-1, 1]
+//            g        — anisotropy: 0 = isotropic, 0.3–0.7 = typical vapor
+//   Output : phase weight (unitless, use to scale scattered light)
 float HenyeyGreenstein(float cosTheta, float g)
 {
-    // TODO: Step 6
-    return 1.0;
+    float g2    = g * g;
+    float denom = 1.0 + g2 - 2.0 * g * cosTheta;
+    // abs() guards against numerical precision issues near denom ≈ 0
+    return (1.0 - g2) / pow(abs(denom), 1.5);
 }
 
 // -----------------------------------------------------------------------------
-//  SECTION 4 — RAYMARCHING  (implemented in Step 5 + 6 combined)
+//  SECTION 4 — RAYMARCHING
 // -----------------------------------------------------------------------------
+
+// IntersectRayAABBOS
+//   Slab intersection in OBJECT space.
+//   Returns entry/exit distances along the ray when a hit exists.
+bool IntersectRayAABBOS(float3 rayOriginOS, float3 rayDirOS, float3 bmin, float3 bmax, out float tEnter, out float tExit)
+{
+    // Epsilon-protected reciprocal avoids division-by-zero on axis-aligned rays.
+    float3 safeDir = sign(rayDirOS) * max(abs(rayDirOS), 1e-6);
+    float3 invDir = 1.0 / safeDir;
+
+    float3 t0 = (bmin - rayOriginOS) * invDir;
+    float3 t1 = (bmax - rayOriginOS) * invDir;
+
+    float3 tMin3 = min(t0, t1);
+    float3 tMax3 = max(t0, t1);
+
+    tEnter = max(max(tMin3.x, tMin3.y), tMin3.z);
+    tExit  = min(min(tMax3.x, tMax3.y), tMax3.z);
+
+    return tExit >= tEnter;
+}
+
+// ComputeVoxelRaySegmentWS
+//   Computes the valid world-space ray segment through the voxel bounds:
+//   entryWS -> exitWS, plus ray direction and segment length.
+//   Works whether camera is outside OR inside the volume.
+bool ComputeVoxelRaySegmentWS(float3 cameraWS, float3 sampleWS,
+                              float3 boundsMinOS, float3 boundsMaxOS,
+                              float maxMarchDistance,
+                              out float3 entryWS, out float3 rayDirWS, out float marchDistance)
+{
+    float3 viewRayWS = normalize(sampleWS - cameraWS);
+
+    float3 rayOriginOS = TransformWorldToObject(cameraWS);
+    float3 rayDirOS = normalize(TransformWorldToObjectDir(viewRayWS));
+
+    float tEnter;
+    float tExit;
+    if (!IntersectRayAABBOS(rayOriginOS, rayDirOS, boundsMinOS, boundsMaxOS, tEnter, tExit))
+    {
+        entryWS = 0.0;
+        rayDirWS = 0.0;
+        marchDistance = 0.0;
+        return false;
+    }
+
+    // If camera is inside, tEnter < 0. Start marching from camera.
+    tEnter = max(tEnter, 0.0);
+
+    float3 entryOS = rayOriginOS + rayDirOS * tEnter;
+    float3 exitOS  = rayOriginOS + rayDirOS * tExit;
+
+    entryWS = TransformObjectToWorld(entryOS);
+    float3 exitWS = TransformObjectToWorld(exitOS);
+
+    float segmentDistanceWS = distance(entryWS, exitWS);
+    if (segmentDistanceWS <= 1e-5)
+    {
+        rayDirWS = 0.0;
+        marchDistance = 0.0;
+        return false;
+    }
+
+    rayDirWS = normalize(exitWS - entryWS);
+    marchDistance = min(segmentDistanceWS, maxMarchDistance);
+    return true;
+}
 
 // RaymarchVapour
 //   Steps a ray through the voxel volume accumulating density and scattered light.
-//   Uses Beer-Lambert law for transmittance and Henyey-Greenstein at each step.
-//   Input  : rayOrigin      — world-space start of the ray (fragment position)
-//            rayDir         — normalized direction from fragment toward camera
-//            lightDir       — normalized direction toward the main light
-//            lightColor     — main light color
-//            marchSteps     — number of steps (quality vs perf tradeoff)
-//            marchDistance  — total distance to march (tie to voxel size)
-//            g              — Henyey-Greenstein anisotropy
-//            absorptionCoeff — how strongly the medium absorbs light (Beer-Lambert)
-//            [density field params forwarded to SampleDensity]
-//   Output : float4 where .rgb = accumulated in-scattered light color
-//                          .a   = accumulated opacity  (1 - transmittance)
+//
+//   How it works:
+//     - Ray starts at the fragment (front face of the voxel) and marches INTO the
+//       volume away from the camera, one step at a time.
+//     - At each step we sample the density field.
+//     - Beer-Lambert law: each step attenuates a "transmittance" value, modelling
+//       how much light can still pass through remaining medium.
+//         transmittance *= exp(-density * absorption * stepSize)
+//     - The light scattered toward the viewer at each step is:
+//         scatter += transmittance * density * stepSize
+//       (HenyeyGreenstein weighting added in Step 6)
+//     - Early exit: once transmittance falls below 0.01 the ray contributes
+//       less than 1% more — no point continuing.
+//
+//   Output : .rgb = accumulated scattered light (flat white until Step 6 adds HG)
+//            .a   = accumulated opacity = 1 - final transmittance
 float4 RaymarchVapour(float3 rayOrigin, float3 rayDir,
                       float3 lightDir,  half3 lightColor,
                       int    marchSteps, float marchDistance,
                       float  g, float absorptionCoeff,
-                      // density field params
-                      float time,
+                      float  time,
                       float3 driftDir,   float driftSpeed,
                       float  noiseScale, int octaves,
                       float  densityPower,
                       float  physicsDensity, float physicsBlend)
 {
-    // TODO: Steps 5 & 6
-    return float4(0, 0, 0, 0);
+    float stepSize    = marchDistance / (float)marchSteps;
+    float transmit    = 1.0;   // starts fully transparent, darkens as ray travels through
+    float3 scatter    = 0.0;   // accumulated in-scattered light
+
+    // HenyeyGreenstein phase is stubbed at 1.0 until Step 6 —
+    // cosTheta computed already so wiring is trivial next step.
+    float cosTheta = dot(-rayDir, lightDir); // angle between march direction and light
+
+    for (int i = 0; i < marchSteps; i++)
+    {
+        // Current sample position: march away from camera into the volume
+        float3 samplePos = rayOrigin + rayDir * (stepSize * (i + 0.5));
+
+        float density = SampleDensity(
+            samplePos, time,
+            driftDir, driftSpeed,
+            noiseScale, octaves,
+            densityPower,
+            physicsDensity, physicsBlend
+        );
+
+        // Only accumulate where there is actually vapor
+        if (density > 0.001)
+        {
+            // Beer-Lambert: how much of the remaining light is absorbed this step
+            // exp(-density * absorption * stepSize) gives physically correct falloff
+            float absorption = density * absorptionCoeff * stepSize;
+            float stepTransmit = exp(-absorption);
+
+            // In-scattered light this step:
+            // The phase function (HG) stays at 1.0 — replaced in Step 6
+            float phase = HenyeyGreenstein(cosTheta, g);
+            scatter += transmit * density * stepSize * phase * lightColor;
+
+            // Attenuate transmittance for all future steps
+            transmit *= stepTransmit;
+        }
+
+        // Early exit: ray is almost fully blocked — further steps contribute < 1%
+        if (transmit < 0.01)
+            break;
+    }
+
+    float opacity = 1.0 - transmit; // 0 = fully transparent, 1 = fully opaque
+    return float4(scatter, opacity);
 }
 
 // -----------------------------------------------------------------------------
