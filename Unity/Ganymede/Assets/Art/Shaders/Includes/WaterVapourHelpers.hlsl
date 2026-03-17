@@ -198,6 +198,37 @@ float HenyeyGreenstein(float cosTheta, float g)
 }
 
 // -----------------------------------------------------------------------------
+//  SECTION 3b — EDGE FADE HELPER  (needed by RaymarchVapour below)
+// -----------------------------------------------------------------------------
+
+// ComputeEdgeFade
+//   Returns a [0,1] mask that is 1 in the interior of the AABB and fades to 0
+//   near all six faces. This eliminates the hard geometric cutoff at the cube
+//   boundary — the vapor density naturally tapers off at the edges.
+//
+//   Input  : posOS    — sample position in object space
+//            boundsMin, boundsMax — AABB extents in object space
+//            softness — fraction of each half-extent used for the fade band
+//   Output : edge fade weight in [0, 1]
+float ComputeEdgeFade(float3 posOS, float3 boundsMin, float3 boundsMax, float softness)
+{
+    // Normalize position to [0, 1] within the AABB
+    float3 t = (posOS - boundsMin) / max(boundsMax - boundsMin, 1e-6);
+
+    // Distance-to-edge in each axis: min(t, 1-t) is 0 at the face, 0.5 at center
+    float3 edgeDist = min(t, 1.0 - t);
+
+    // Remap: 0 at face, 1 once past the softness band
+    float3 fade = saturate(edgeDist / max(softness * 0.5, 1e-6));
+
+    // Quintic smooth step — no visible discontinuity at band boundary
+    fade = fade * fade * fade * (fade * (fade * 6.0 - 15.0) + 10.0);
+
+    // Weakest axis wins: fade to 0 whenever ANY axis is at an edge
+    return min(min(fade.x, fade.y), fade.z);
+}
+
+// -----------------------------------------------------------------------------
 //  SECTION 4 — RAYMARCHING
 // -----------------------------------------------------------------------------
 
@@ -297,27 +328,46 @@ float4 RaymarchVapour(float3 rayOrigin, float3 rayDir,
                       float  noiseScale, int octaves,
                       float  densityPower,
                       float  physicsDensity, float physicsBlend,
-                      float  sceneLinearDepth)
+                      float  sceneLinearDepth,
+                      float3 boundsMinOS, float3 boundsMaxOS,
+                      float  edgeSoftness)
 {
     float stepSize    = marchDistance / (float)marchSteps;
-    float transmit    = 1.0;   // starts fully transparent, darkens as ray travels through
-    float3 scatter    = 0.0;   // accumulated in-scattered light
+    float transmit    = 1.0;
+    float3 scatter    = 0.0;
 
-    // HenyeyGreenstein phase is stubbed at 1.0 until Step 6 —
-    // cosTheta computed already so wiring is trivial next step.
-    float cosTheta = dot(-rayDir, lightDir); // angle between march direction and light
+    float cosTheta = dot(-rayDir, lightDir);
+
+    // Precompute ellipsoid center and inverse extents for the radial blob mask.
+    float3 boundsCenter  = (boundsMinOS + boundsMaxOS) * 0.5;
+    float3 boundsExtents = (boundsMaxOS - boundsMinOS) * 0.5;
 
     for (int i = 0; i < marchSteps; i++)
     {
-        // Current sample position: march away from camera into the volume
         float3 samplePos = rayOrigin + rayDir * (stepSize * (i + 0.5));
 
-        // Stop if this step has passed an opaque surface.
-        // mul(UNITY_MATRIX_V, ...).z is view-space Z; negate for eye depth.
-        // This is unambiguous regardless of matrix storage order.
+        // Depth termination against opaque scene geometry
         float sampleEyeDepth = -mul(UNITY_MATRIX_V, float4(samplePos, 1.0)).z;
         if (sampleEyeDepth >= sceneLinearDepth)
             break;
+
+        // --- Per-step shape masking (Step 7) ---
+        // Transform to object space to measure AABB distance.
+        float3 sampleOS = TransformWorldToObject(samplePos);
+
+        // 1. Axis-aligned edge fade: density tapers to 0 near each face.
+        //    Removes the hard box cutoff at every AABB boundary.
+        float axialFade = ComputeEdgeFade(sampleOS, boundsMinOS, boundsMaxOS, edgeSoftness);
+
+        // 2. Radial ellipsoid mask: density falls off at the corners of the
+        //    ellipsoid that fits the box, breaking the rectangular silhouette
+        //    and producing an organic, amorphous blob shape.
+        float3 normPos    = (sampleOS - boundsCenter) / max(boundsExtents, 1e-6);
+        float  radialDist = length(normPos);
+        float  radialFade = saturate(1.0 - radialDist);
+        radialFade = radialFade * radialFade * (3.0 - 2.0 * radialFade); // smoothstep
+
+        float shapeMask = axialFade * radialFade;
 
         float density = SampleDensity(
             samplePos, time,
@@ -327,48 +377,74 @@ float4 RaymarchVapour(float3 rayOrigin, float3 rayDir,
             physicsDensity, physicsBlend
         );
 
-        // Only accumulate where there is actually vapor
+        // Shape mask tapers density to 0 at AABB walls and outside the ellipsoid
+        density *= shapeMask;
+
         if (density > 0.001)
         {
-            // Beer-Lambert: how much of the remaining light is absorbed this step
-            // exp(-density * absorption * stepSize) gives physically correct falloff
-            float absorption = density * absorptionCoeff * stepSize;
+            float absorption   = density * absorptionCoeff * stepSize;
             float stepTransmit = exp(-absorption);
 
-            // In-scattered light this step:
-            // The phase function (HG) stays at 1.0 — replaced in Step 6
             float phase = HenyeyGreenstein(cosTheta, g);
             scatter += transmit * density * stepSize * phase * lightColor;
 
-            // Attenuate transmittance for all future steps
             transmit *= stepTransmit;
         }
 
-        // Early exit: ray is almost fully blocked — further steps contribute < 1%
         if (transmit < 0.01)
             break;
     }
 
-    float opacity = 1.0 - transmit; // 0 = fully transparent, 1 = fully opaque
+    float opacity = 1.0 - transmit;
     return float4(scatter, opacity);
 }
 
 // -----------------------------------------------------------------------------
-//  SECTION 5 — FRESNEL  (implemented in Step 7)
+//  SECTION 5 — FRESNEL & EDGE SOFTNESS  (Step 7)
 // -----------------------------------------------------------------------------
 
 // FresnelEdge
-//   Approximates Schlick Fresnel using the density gradient as the surface normal.
-//   Returns a value that is HIGH at silhouette edges and LOW face-on.
-//   Used to brighten and soften vapor edges.
-//   Input  : viewDir  — normalized world-space view direction
-//            normal   — surface-like normal (estimated from density gradient)
-//            power    — exponent controlling how tight the edge glow is
-//   Output : Fresnel weight in [0, 1]
+//   Schlick Fresnel approximation — returns a weight that is HIGH at silhouette
+//   edges (grazing angle) and LOW when looking straight at the vapor.
+//
+//   Normal: we approximate the vapor "surface" normal as the view ray direction
+//   itself, since the volume has no real geometric normal. This makes every
+//   fragment respond to how oblique the view angle is relative to incidence.
+//
+//   Physics: at a grazing angle (dot(viewDir, normal) ≈ 0), light exits the
+//   surface boundary more readily — vapor edges appear brighter and denser.
+//
+//   Input  : viewDir — normalized world-space view direction (toward camera)
+//            normal  — surface-like outward normal (use -rayDir from march)
+//            power   — exponent: higher = tighter, sharper edge glow (2–8 typical)
+//   Output : Fresnel weight in [0, 1]; 0 = face-on, 1 = grazing
 float FresnelEdge(float3 viewDir, float3 normal, float power)
 {
-    // TODO: Step 7
-    return 0.0;
+    // cosTheta = dot of view direction and outward normal.
+    // At the silhouette edge this approaches 0, giving Fresnel → 1.
+    float cosTheta = saturate(dot(viewDir, normal));
+    // Schlick: F = (1 - cosTheta)^power
+    return pow(1.0 - cosTheta, power);
+}
+
+// ComputeEdgeFade — defined in Section 3b above (must precede RaymarchVapour)
+
+// ComputeSoftParticleFade
+//   Fades the vapor's opacity to zero where the vapor surface (outer cube) is
+//   very close to opaque geometry (intersection line). Removes the hard clip
+//   edge that appears when a transparent surface meets an opaque object.
+//
+//   Input  : sceneLinearDepth — LinearEyeDepth of the opaque scene surface
+//            fragLinearDepth  — LinearEyeDepth of the current fragment (outer cube face)
+//            fadeRange        — world-unit depth range over which to blend
+//   Output : fade weight in [0, 1]; 0 at the intersection, 1 when far from it
+float ComputeSoftParticleFade(float sceneLinearDepth, float fragLinearDepth, float fadeRange)
+{
+    // Depth difference between opaque surface and transparent fragment.
+    // When the opaque surface is very close to (or behind) the fragment,
+    // depthDiff is small → fade toward 0.
+    float depthDiff = sceneLinearDepth - fragLinearDepth;
+    return saturate(depthDiff / max(fadeRange, 1e-5));
 }
 
 #endif // WATER_VAPOUR_HELPERS_INCLUDED

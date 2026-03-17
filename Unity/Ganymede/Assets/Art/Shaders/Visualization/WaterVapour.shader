@@ -2,34 +2,53 @@ Shader "Custom/WaterVapour"
 {
     Properties
     {
-        [MainColor] _BaseColor("Base Color", Color) = (1, 1, 1, 1)
-        [MainTexture] _BaseMap("Base Map", 2D) = "white" {}
+        // ---- APPEARANCE ---------------------------------------------------------
+        // These are the first things an artist touches: colour palette and glow.
+        [Header(Appearance)]
+        [MainColor]
+        _BaseColor          ("Base Color",              Color)            = (1.00, 1.00, 1.00, 1)
+        _WarmColor          ("Warm Tint (hot steam)",   Color)            = (1.00, 0.92, 0.80, 1)
+        _CoolColor          ("Cool Tint (cold mist)",   Color)            = (0.80, 0.90, 1.00, 1)
+        _TemperatureBlend   ("Temperature  0=mist  1=steam", Range(0.0, 1.0))  = 0.6
+        _ShadowColor        ("Shadow Side Tint",        Color)            = (0.04, 0.07, 0.18, 1)
+        _EmissionColor      ("Emission Color",          Color)            = (1.00, 0.95, 0.85, 1)
+        _EmissionStrength   ("Emission Strength",       Range(0.0,  3.0)) = 0.5
 
+        // ---- NOISE --------------------------------------------------------------
+        // Controls the shape and animation of the density field.
         [Header(Noise)]
-        _NoiseScale     ("Noise Scale",      Range(0.1, 10.0)) = 1.0
-        _NoiseDriftDir  ("Drift Direction",  Vector)           = (0, 1, 0, 0)
-        _NoiseDriftSpeed("Drift Speed",       Range(0.0,  5.0)) = 0.3
-        _NoiseOctaves   ("Noise Octaves",     Range(1, 8))      = 5
+        _NoiseScale         ("Noise Scale",             Range(0.1, 20.0)) = 2.0
+        _NoiseDriftDir      ("Drift Direction",         Vector)           = (0, 1, 0, 0)
+        _NoiseDriftSpeed    ("Drift Speed",              Range(0.0,  5.0)) = 0.3
+        _NoiseOctaves       ("Noise Octaves",            Range(1, 8))      = 5
 
-        [Header(Density)]
-        _DensityPower   ("Density Power",    Range(0.1, 5.0))  = 1.5
-        _Density        ("Density (Physics)",Range(0.0, 1.0))  = 1.0
-        _PhysicsBlend   ("Physics Blend",    Range(0.0, 1.0))  = 0.0
+        // ---- VOLUMETRICS --------------------------------------------------------
+        // Raymarching quality, absorption, lighting, and edge behaviour.
+        [Header(Volumetrics)]
+        _MarchSteps         ("March Steps",             Range(8, 64))     = 32
+        _AbsorptionCoeff    ("Absorption",               Range(0.1, 20.0)) = 8.0
+        _DensityPower       ("Density Sharpness",       Range(0.1,  5.0)) = 1.5
+        _ScatterAnisotropy  ("Scatter Anisotropy (g)",  Range(0.0,  0.95))= 0.5
+        _BackscatterStrength("Backscatter Strength",    Range(0.0,  2.0)) = 0.4
+        _AmbientColor       ("Ambient / Shadow Color",  Color)            = (0.05, 0.08, 0.15, 1)
+        _AmbientStrength    ("Ambient Strength",        Range(0.0,  1.0)) = 0.35
+        _FresnelPower       ("Fresnel Power",           Range(1.0, 10.0)) = 3.0
+        _FresnelStrength    ("Fresnel Brightness",      Range(0.0,  2.0)) = 0.6
+        _EdgeSoftness       ("Edge Softness",           Range(0.0,  0.5)) = 0.2
+        _SoftParticleRange  ("Soft Particle Range",     Range(0.0,  5.0)) = 1.0
 
-        [Header(Raymarching)]
-        _MarchSteps     ("March Steps",      Range(4, 64))     = 24
-        _MarchDistance  ("March Distance",   Range(0.1, 10.0)) = 1.0
-        _AbsorptionCoeff("Absorption",        Range(0.1, 20.0)) = 8.0
+        // ---- PHYSICS BRIDGE -----------------------------------------------------
+        // Set at runtime by the physics engine. _Density and _PhysicsBlend must
+        // keep these exact names so C# can find them with Renderer.SetFloat().
+        [Header(Physics Bridge)]
+        _Density            ("Density (physics-set)",   Range(0.0,  1.0)) = 1.0
+        _PhysicsBlend       ("Physics Blend",           Range(0.0,  1.0)) = 0.0
 
-        [Header(Volumetric Lighting)]
-        _ScatterAnisotropy  ("Scatter Anisotropy (g)", Range(0.0, 0.95)) = 0.5
-        _BackscatterStrength("Backscatter Strength",   Range(0.0, 2.0))  = 0.4
-        _AmbientColor       ("Ambient / Shadow Color", Color)            = (0.05, 0.08, 0.15, 1)
-        _AmbientStrength    ("Ambient Strength",       Range(0.0, 1.0))  = 0.35
-
-        [Header(Voxel Bounds (Object Space))]
-        _VoxelBoundsMin("Bounds Min", Vector) = (-0.5, -0.5, -0.5, 0)
-        _VoxelBoundsMax("Bounds Max", Vector) = ( 0.5,  0.5,  0.5, 0)
+        // ---- INTERNAL -----------------------------------------------------------
+        // Object-space AABB used by the raymarcher. Match to the mesh extents.
+        [Header(Voxel Bounds Object Space)]
+        _VoxelBoundsMin     ("Bounds Min",              Vector)           = (-0.5, -0.5, -0.5, 0)
+        _VoxelBoundsMax     ("Bounds Max",              Vector)           = ( 0.5,  0.5,  0.5, 0)
     }
 
     SubShader
@@ -78,35 +97,40 @@ Shader "Custom/WaterVapour"
                 float4 screenPos  : TEXCOORD3; // homogeneous screen coords — used to sample depth texture
             };
 
-            TEXTURE2D(_BaseMap);
-            SAMPLER(sampler_BaseMap);
-
             // Scene depth — lets the ray stop when it hits opaque geometry
             TEXTURE2D_X_FLOAT(_CameraDepthTexture);
             SAMPLER(sampler_CameraDepthTexture);
 
             CBUFFER_START(UnityPerMaterial)
+                // Appearance
                 half4   _BaseColor;
-                float4  _BaseMap_ST;
+                half4   _WarmColor;
+                half4   _CoolColor;
+                float   _TemperatureBlend;
+                half4   _ShadowColor;
+                half4   _EmissionColor;
+                float   _EmissionStrength;
                 // Noise
                 float   _NoiseScale;
                 float4  _NoiseDriftDir;
                 float   _NoiseDriftSpeed;
                 int     _NoiseOctaves;
-                // Density
-                float   _DensityPower;
-                float   _Density;
-                float   _PhysicsBlend;
-                // Raymarching
+                // Volumetrics
                 int     _MarchSteps;
-                float   _MarchDistance;
                 float   _AbsorptionCoeff;
-                // Volumetric Lighting
+                float   _DensityPower;
                 float   _ScatterAnisotropy;
                 float   _BackscatterStrength;
                 half4   _AmbientColor;
                 float   _AmbientStrength;
-                // Voxel bounds in object space (for robust camera-inside marching)
+                float   _FresnelPower;
+                float   _FresnelStrength;
+                float   _EdgeSoftness;
+                float   _SoftParticleRange;
+                // Physics bridge
+                float   _Density;
+                float   _PhysicsBlend;
+                // Voxel bounds
                 float4  _VoxelBoundsMin;
                 float4  _VoxelBoundsMax;
             CBUFFER_END
@@ -116,7 +140,7 @@ Shader "Custom/WaterVapour"
                 Interpolators OUT;
                 OUT.positionWS  = TransformObjectToWorld(IN.positionOS.xyz);
                 OUT.positionHCS = TransformWorldToHClip(OUT.positionWS);
-                OUT.uv          = TRANSFORM_TEX(IN.uv, _BaseMap);
+                OUT.uv          = IN.uv;
                 // GetWorldSpaceViewDir returns (cameraPos - positionWS), unnormalized
                 // We normalize in the fragment shader where we need it per-pixel
                 OUT.viewDirWS   = GetWorldSpaceViewDir(OUT.positionWS);
@@ -171,6 +195,8 @@ Shader "Custom/WaterVapour"
                 int    noiseOctaves = _NoiseOctaves;
                 float3 driftDir = normalize((float3)_NoiseDriftDir.xyz);
 
+
+
                 float4 volume = RaymarchVapour(
                     entryWS, rayDir,
                     lightDir, lightColor,
@@ -182,29 +208,80 @@ Shader "Custom/WaterVapour"
                     _NoiseScale, noiseOctaves,
                     _DensityPower,
                     _Density, _PhysicsBlend,
-                    sceneLinearDepth
+                    sceneLinearDepth,
+                    boundsMinOS, boundsMaxOS,
+                    _EdgeSoftness
                 );
 
-                half3 col = volume.rgb * _BaseColor.rgb;
+                // ---- STEP 8 : Color & Appearance ----
+
+                // --- Temperature-based base tint ---
+                // Blends between a cool blue-white mist and a warm off-white steam.
+                // _TemperatureBlend = 0 → cold fog, 1 → hot steam.
+                half3 tempTint = lerp((half3)_CoolColor.rgb, (half3)_WarmColor.rgb, _TemperatureBlend);
+
+                // Combine scattered light with base color and temperature tint
+                half3 col = volume.rgb * _BaseColor.rgb * tempTint;
+
+                // --- Lit vs shadow tinting ---
+                // The raymarcher's scatter already encodes how much light reached
+                // each step. Regions where scatter is low (shadow side) get tinted
+                // with _ShadowColor. dot(lightDir, volume.rgb) is a rough proxy for
+                // how lit this fragment is.
+                float litness = saturate(length(volume.rgb) / max(length(lightColor), 0.001));
+                col = lerp((half3)_ShadowColor.rgb * volume.a, col, litness);
 
                 // --- Ambient / shadow-side fill ---
-                // Adds a cool tint to regions that receive little direct scatter.
-                // Prevents vapor in shadow from being pure black.
-                col += _AmbientColor.rgb * _AmbientStrength * volume.a;
+                col += _AmbientColor.rgb * _AmbientStrength * (1.0 - litness) * volume.a;
 
                 // --- Backscatter halo ---
-                // When light is behind the vapor (cosTheta > 0 from the viewer’s side)
-                // the HG phase is very high. We add a post-march glow term so the
-                // vapor silhouette brightens toward the light source — the classic
-                // steam-in-sunlight look.
                 float cosTheta  = dot(-rayDir, lightDir);
                 float backPhase = HenyeyGreenstein(cosTheta, _ScatterAnisotropy);
-                // Normalize backPhase so it stays in a usable range (HG can spike high)
-                float hgNorm    = HenyeyGreenstein(0.0, _ScatterAnisotropy); // reference at 90°
-                float backGlow  = saturate(backPhase / (hgNorm * 8.0));       // relative brightness
+                float hgNorm    = HenyeyGreenstein(0.0, _ScatterAnisotropy);
+                float backGlow  = saturate(backPhase / (hgNorm * 8.0));
                 col += backGlow * _BackscatterStrength * lightColor * volume.a;
 
-                return half4(col, volume.a);
+                // --- Emission glow (lit face) ---
+                // Adds a bright self-illumination on the most-lit regions of the vapor.
+                // Simulates the intense white-out glow of steam in direct sunlight.
+                // Scales with litness so only the sun-facing side emits.
+                col += (half3)_EmissionColor.rgb * _EmissionStrength * litness * volume.a;
+
+                // ---- STEP 7 : Fresnel & Edge Softness ----
+
+                float3 viewDirWS = normalize(IN.viewDirWS);
+
+                // --- Fresnel edge brightening ---
+                float fresnel = FresnelEdge(viewDirWS, -rayDir, _FresnelPower);
+                col += fresnel * _FresnelStrength * lightColor * volume.a;
+
+                // --- Soft particles (geometry intersection fade) ---
+                // Edge softness is now baked into each march step via the shape mask.
+                // Soft particle fade handles only the surface-vs-geometry clip line.
+                float fragLinearDepth = -mul(UNITY_MATRIX_V, float4(IN.positionWS, 1.0)).z;
+                float softFade = ComputeSoftParticleFade(
+                    sceneLinearDepth, fragLinearDepth, _SoftParticleRange
+                );
+
+                // ---- STEP 9 : Alpha & Transparency ----
+
+                // Fresnel edge factor also boosts ALPHA at silhouette edges —
+                // the vapour appears denser when viewed at a grazing angle,
+                // matching the visual density of real steam at its edges.
+                // We use a fraction of _FresnelStrength so the boost is subtle.
+                float fresnelAlpha = 1.0 + fresnel * _FresnelStrength * 0.35;
+
+                // Physics density gate:
+                // When _PhysicsBlend > 0, _Density from the physics engine scales alpha.
+                // _Density = 0  → vapor is invisible (empty voxel)
+                // _Density = 1  → vapor at full opacity
+                // When _PhysicsBlend = 0, physicsFade = 1 (pure noise preview, unaffected).
+                float physicsFade = lerp(1.0, saturate(_Density), _PhysicsBlend);
+
+                // Combine: march opacity × Fresnel × soft-particle fade × physics gate
+                float finalAlpha = saturate(volume.a * fresnelAlpha * softFade * physicsFade);
+
+                return half4(col, finalAlpha);
             }
             ENDHLSL
         }
