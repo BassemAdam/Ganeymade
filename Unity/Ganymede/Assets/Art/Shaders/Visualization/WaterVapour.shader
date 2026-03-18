@@ -56,7 +56,11 @@ Shader "Custom/WaterVapour"
         Tags
         {
             "RenderType" = "Transparent"
-            "Queue" = "Transparent" 
+            // Queue 3000 = Transparent (default). Water uses 3000.
+            // Fog must render strictly AFTER water so it always composites on top.
+            // Without this, Unity's back-to-front pivot sort can flip their order
+            // as the camera moves, making water appear completely fog-free at some angles.
+            "Queue" = "Transparent+100"
             "RenderPipeline" = "UniversalPipeline"
         }
 
