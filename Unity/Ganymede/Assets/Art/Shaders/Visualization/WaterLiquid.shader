@@ -41,6 +41,7 @@ Shader "Custom/WaterLiquid"
             //while still allowing for proper blending with other transparent objects.
             // for blending with opaque object i handle this in refraction 
             ZWrite On 
+            Cull Off
 
             HLSLPROGRAM
 

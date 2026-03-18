@@ -269,14 +269,6 @@ Shader "Custom/WaterVapour"
                 float fresnel = FresnelEdge(viewDirWS, -rayDir, _FresnelPower);
                 col += fresnel * _FresnelStrength * lightColor * volume.a;
 
-                // --- Soft particles (geometry intersection fade) ---
-                // Edge softness is now baked into each march step via the shape mask.
-                // Soft particle fade handles only the surface-vs-geometry clip line.
-                float fragLinearDepth = -mul(UNITY_MATRIX_V, float4(IN.positionWS, 1.0)).z;
-                float softFade = ComputeSoftParticleFade(
-                    sceneLinearDepth, fragLinearDepth, _SoftParticleRange
-                );
-
                 // ---- STEP 9 : Alpha & Transparency ----
 
                 // Fresnel edge factor also boosts ALPHA at silhouette edges —
@@ -292,8 +284,16 @@ Shader "Custom/WaterVapour"
                 // When _PhysicsBlend = 0, physicsFade = 1 (pure noise preview, unaffected).
                 float physicsFade = lerp(1.0, saturate(_Density), _PhysicsBlend);
 
-                // Combine: march opacity × Fresnel × soft-particle fade × physics gate
-                float finalAlpha = saturate(volume.a * fresnelAlpha * softFade * physicsFade);
+                // NOTE: ComputeSoftParticleFade is NOT used here.
+                // We use Cull Front, so IN.positionWS is the BACK face of the cube —
+                // always further from the camera than any opaque object inside the volume.
+                // That makes sceneDepth - fragDepth negative for interior objects,
+                // which would saturate to 0 and make the entire fog invisible.
+                // The raymarcher's per-step depth break already handles stopping at
+                // opaque surfaces correctly, so no extra fade is needed here.
+
+                // Combine: march opacity × Fresnel × physics gate
+                float finalAlpha = saturate(volume.a * fresnelAlpha * physicsFade);
 
                 return half4(col, finalAlpha);
             }
