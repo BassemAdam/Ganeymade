@@ -35,7 +35,6 @@ Shader "Custom/WaterVapour"
         _FresnelPower       ("Fresnel Power",           Range(1.0, 10.0)) = 3.0
         _FresnelStrength    ("Fresnel Brightness",      Range(0.0,  2.0)) = 0.6
         _EdgeSoftness       ("Edge Softness",           Range(0.0,  0.5)) = 0.2
-        _SoftParticleRange  ("Soft Particle Range",     Range(0.0,  5.0)) = 1.0
 
         // ---- PHYSICS BRIDGE -----------------------------------------------------
         // Set at runtime by the physics engine. _Density and _PhysicsBlend must
@@ -102,16 +101,14 @@ Shader "Custom/WaterVapour"
             struct MeshInput
             {
                 float4 positionOS : POSITION;
-                float2 uv : TEXCOORD0;
             };
 
             struct Interpolators
             {
                 float4 positionHCS : SV_POSITION;
-                float2 uv         : TEXCOORD0;
-                float3 positionWS : TEXCOORD1; // world-space position — drives noise & raymarching
-                float3 viewDirWS  : TEXCOORD2; // world-space view direction — drives Fresnel & phase function
-                float4 screenPos  : TEXCOORD3; // homogeneous screen coords — used to sample depth texture
+                float3 positionWS : TEXCOORD0; // world-space position — drives noise & raymarching
+                float3 viewDirWS  : TEXCOORD1; // world-space view direction — drives Fresnel & phase function
+                float4 screenPos  : TEXCOORD2; // homogeneous screen coords — used to sample depth texture
             };
 
             // Scene depth — lets the ray stop when it hits opaque geometry
@@ -143,7 +140,6 @@ Shader "Custom/WaterVapour"
                 float   _FresnelPower;
                 float   _FresnelStrength;
                 float   _EdgeSoftness;
-                float   _SoftParticleRange;
                 // Physics bridge
                 float   _Density;
                 float   _PhysicsBlend;
@@ -157,7 +153,6 @@ Shader "Custom/WaterVapour"
                 Interpolators OUT;
                 OUT.positionWS  = TransformObjectToWorld(IN.positionOS.xyz);
                 OUT.positionHCS = TransformWorldToHClip(OUT.positionWS);
-                OUT.uv          = IN.uv;
                 // GetWorldSpaceViewDir returns (cameraPos - positionWS), unnormalized
                 // We normalize in the fragment shader where we need it per-pixel
                 OUT.viewDirWS   = GetWorldSpaceViewDir(OUT.positionWS);
@@ -287,14 +282,6 @@ Shader "Custom/WaterVapour"
                 // _Density = 1  → vapor at full opacity
                 // When _PhysicsBlend = 0, physicsFade = 1 (pure noise preview, unaffected).
                 float physicsFade = lerp(1.0, saturate(_Density), _PhysicsBlend);
-
-                // NOTE: ComputeSoftParticleFade is NOT used here.
-                // We use Cull Front, so IN.positionWS is the BACK face of the cube —
-                // always further from the camera than any opaque object inside the volume.
-                // That makes sceneDepth - fragDepth negative for interior objects,
-                // which would saturate to 0 and make the entire fog invisible.
-                // The raymarcher's per-step depth break already handles stopping at
-                // opaque surfaces correctly, so no extra fade is needed here.
 
                 // Combine: march opacity × Fresnel × physics gate
                 float finalAlpha = saturate(volume.a * fresnelAlpha * physicsFade);

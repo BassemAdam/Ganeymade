@@ -449,22 +449,4 @@ float FresnelEdge(float3 viewDir, float3 normal, float power)
 
 // ComputeEdgeFade — defined in Section 3b above (must precede RaymarchVapour)
 
-// ComputeSoftParticleFade
-//   Fades the vapor's opacity to zero where the vapor surface (outer cube) is
-//   very close to opaque geometry (intersection line). Removes the hard clip
-//   edge that appears when a transparent surface meets an opaque object.
-//
-//   Input  : sceneLinearDepth — LinearEyeDepth of the opaque scene surface
-//            fragLinearDepth  — LinearEyeDepth of the current fragment (outer cube face)
-//            fadeRange        — world-unit depth range over which to blend
-//   Output : fade weight in [0, 1]; 0 at the intersection, 1 when far from it
-float ComputeSoftParticleFade(float sceneLinearDepth, float fragLinearDepth, float fadeRange)
-{
-    // Depth difference between opaque surface and transparent fragment.
-    // When the opaque surface is very close to (or behind) the fragment,
-    // depthDiff is small → fade toward 0.
-    float depthDiff = sceneLinearDepth - fragLinearDepth;
-    return saturate(depthDiff / max(fadeRange, 1e-5));
-}
-
 #endif // WATER_VAPOUR_HELPERS_INCLUDED
