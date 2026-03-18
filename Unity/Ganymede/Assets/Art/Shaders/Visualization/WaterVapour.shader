@@ -63,11 +63,24 @@ Shader "Custom/WaterVapour"
         // No depth write — vapor must not occlude objects behind it
         ZWrite Off
 
+        // Render back faces only (Cull Front).
+        // With Cull Off, both the front AND back walls of the box execute the
+        // raymarcher for the same screen pixels. Where they overlap at the
+        // silhouette edges, opacity is accumulated twice — producing a bright
+        // hard line that perfectly traces the rectangle outline.
+        // Drawing only back faces means each pixel gets exactly one ray march,
+        // and the camera can fly through the front wall without it disappearing.
+        Cull Front
+
+        // ZTest Always is required alongside Cull Front.
+        // The back faces are geometrically behind the front faces in depth, so
+        // a normal ZTest would hide them when an opaque object sits inside the
+        // volume. We already do manual depth testing inside the raymarch loop
+        // via the CameraDepthTexture, so it is safe to bypass the hardware test.
+        ZTest Always
+
         // Standard alpha blending
         Blend SrcAlpha OneMinusSrcAlpha
-
-        // No backface culling — vapor has no real surface orientation
-        Cull Off
 
         Pass
         {

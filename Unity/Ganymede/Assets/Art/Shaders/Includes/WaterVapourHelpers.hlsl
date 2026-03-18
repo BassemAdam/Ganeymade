@@ -198,34 +198,46 @@ float HenyeyGreenstein(float cosTheta, float g)
 }
 
 // -----------------------------------------------------------------------------
-//  SECTION 3b — EDGE FADE HELPER  (needed by RaymarchVapour below)
+//  SECTION 3b — SDF EDGE FADE HELPER  (needed by RaymarchVapour below)
 // -----------------------------------------------------------------------------
 
+// sdBox
+//   Signed Distance Field for a box centred at the origin with half-extents b.
+//   Returns a NEGATIVE value inside the box whose magnitude is the distance
+//   to the nearest face, and a POSITIVE value outside.
+//   This is the standard formula used to force density to exactly 0 at bounds.
+float sdBox(float3 p, float3 b)
+{
+    float3 d = abs(p) - b;
+    return min(max(d.x, max(d.y, d.z)), 0.0) + length(max(d, 0.0));
+}
+
 // ComputeEdgeFade
-//   Returns a [0,1] mask that is 1 in the interior of the AABB and fades to 0
-//   near all six faces. This eliminates the hard geometric cutoff at the cube
-//   boundary — the vapor density naturally tapers off at the edges.
+//   Uses sdBox to compute how far inward from the AABB surface the sample is,
+//   then applies smoothstep to produce a [0,1] density multiplier:
+//     - Exactly 0.0 at (and beyond) every face — density is mathematically
+//       guaranteed to be zero at the bounding box boundary, so no hard edge.
+//     - Rises to 1.0 once the sample is 'softness' world units inward.
+//
+//   Correct formula per the SDF approach:
+//     Density_final = Density_noise * smoothstep(0, fadeDistance, -sdBox(p, extents))
 //
 //   Input  : posOS    — sample position in object space
 //            boundsMin, boundsMax — AABB extents in object space
-//            softness — fraction of each half-extent used for the fade band
-//   Output : edge fade weight in [0, 1]
+//            softness — inward fade band width in object-space units
+//   Output : fade multiplier in [0, 1]
 float ComputeEdgeFade(float3 posOS, float3 boundsMin, float3 boundsMax, float softness)
 {
-    // Normalize position to [0, 1] within the AABB
-    float3 t = (posOS - boundsMin) / max(boundsMax - boundsMin, 1e-6);
+    float3 boundsCenter  = (boundsMin + boundsMax) * 0.5;
+    float3 boundsExtents = (boundsMax - boundsMin) * 0.5;
 
-    // Distance-to-edge in each axis: min(t, 1-t) is 0 at the face, 0.5 at center
-    float3 edgeDist = min(t, 1.0 - t);
+    // sdBox is negative inside (distance to nearest wall, inward).
+    // Negate it so we get a positive "how far from the wall am I" value.
+    float distInward = -sdBox(posOS - boundsCenter, boundsExtents);
 
-    // Remap: 0 at face, 1 once past the softness band
-    float3 fade = saturate(edgeDist / max(softness * 0.5, 1e-6));
-
-    // Quintic smooth step — no visible discontinuity at band boundary
-    fade = fade * fade * fade * (fade * (fade * 6.0 - 15.0) + 10.0);
-
-    // Weakest axis wins: fade to 0 whenever ANY axis is at an edge
-    return min(min(fade.x, fade.y), fade.z);
+    // smoothstep: 0 exactly at the surface, 1 once 'softness' units inward.
+    // This guarantees density = 0 at every face regardless of what the noise produces.
+    return smoothstep(0.0, max(softness, 1e-5), distInward);
 }
 
 // -----------------------------------------------------------------------------
