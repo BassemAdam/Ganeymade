@@ -117,22 +117,22 @@ Material:
     - _GlossMapScale: 0
     - _Glossiness: 0
     - _GlossyReflections: 0
-    - _LiquidAbsorptionRate: 1.11
-    - _LiquidFresnelPower: 7.54
+    - _LiquidAbsorptionRate: 1.34
+    - _LiquidFresnelPower: 6.51
     - _LiquidOpacityCoeff: 30
-    - _LiquidReflectionStrength: 0.866
-    - _LiquidRefractionStrength: 0.261
-    - _LiquidSmoothness: 0.857
-    - _LiquidSpecularStrength: 4.66
-    - _MarchSteps: 96
+    - _LiquidReflectionStrength: 0.674
+    - _LiquidRefractionStrength: 0.269
+    - _LiquidSmoothness: 1
+    - _LiquidSpecularStrength: 5
+    - _MarchSteps: 35.4
     - _Metallic: 0
-    - _NoiseDriftSpeed: 4.09
+    - _NoiseDriftSpeed: 0.8
     - _NoiseOctaves: 7.62
     - _NoiseScale: 1.8
     - _OcclusionStrength: 1
     - _Parallax: 0.005
-    - _PhaseTransitionWidth: 0.033
-    - _PhysicsBlend: 0.753
+    - _PhaseTransitionWidth: 0.01
+    - _PhysicsBlend: 1
     - _QueueOffset: 0
     - _ReceiveShadows: 1
     - _Smoothness: 0.5
@@ -143,12 +143,13 @@ Material:
     - _Surface: 0
     - _TemperatureBlend: 0.457
     - _VapourAbsorption: 8
+    - _VapourAmbientOcclusionProxy: 0.683
     - _VapourAmbientStrength: 0.315
-    - _VapourBackscatter: 0.4
-    - _VapourEmissionStrength: 0.5
+    - _VapourBackscatter: 2
+    - _VapourEmissionStrength: 2.28
     - _VapourFresnelPower: 3
     - _VapourFresnelStrength: 0.6
-    - _VapourScatterG: 0.5
+    - _VapourScatterG: 0.079
     - _WorkflowMode: 1
     - _XRMotionVectorsPass: 1
     - _ZWrite: 1

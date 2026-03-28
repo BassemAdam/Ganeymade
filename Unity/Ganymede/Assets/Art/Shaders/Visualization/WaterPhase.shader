@@ -22,6 +22,7 @@ Shader "Custom/WaterPhase"
         _VapourShadowColor      ("Vapour Shadow Tint", Color) = (0.04, 0.07, 0.18, 1)
         _VapourAmbientColor     ("Vapour Ambient Color", Color) = (0.05, 0.08, 0.15, 1)
         _VapourAmbientStrength  ("Vapour Ambient Strength", Range(0.0, 1.0)) = 0.35
+        _VapourAmbientOcclusionProxy ("Vapour Ambient Occlusion Proxy", Range(0.0, 1.0)) = 0.6
         _VapourEmissionColor    ("Vapour Emission Color", Color) = (1.0, 0.95, 0.85, 1)
         _VapourEmissionStrength ("Vapour Emission Strength", Range(0.0, 3.0)) = 0.5
         _VapourAbsorption       ("Vapour Absorption", Range(0.1, 20.0)) = 8.0
@@ -115,6 +116,7 @@ Shader "Custom/WaterPhase"
                 half4   _VapourShadowColor;
                 half4   _VapourAmbientColor;
                 float   _VapourAmbientStrength;
+                float   _VapourAmbientOcclusionProxy;
                 half4   _VapourEmissionColor;
                 float   _VapourEmissionStrength;
                 float   _VapourAbsorption;
@@ -225,7 +227,11 @@ Shader "Custom/WaterPhase"
 
                 float vapourLitness = saturate(length(phaseResult.vapourScatter) / max(length(lightColor), 0.001));
                 vapourCol = lerp((half3)_VapourShadowColor.rgb * phaseResult.vapourAlpha, vapourCol, vapourLitness);
-                vapourCol += _VapourAmbientColor.rgb * _VapourAmbientStrength * (1.0 - vapourLitness) * phaseResult.vapourAlpha;
+
+                // AO proxy: denser vapour (lower transmittance) receives less ambient fill.
+                float vapourTransmittance = saturate(1.0 - phaseResult.vapourAlpha);
+                float ambientOcclusionProxy = lerp(1.0, vapourTransmittance, _VapourAmbientOcclusionProxy);
+                vapourCol += _VapourAmbientColor.rgb * _VapourAmbientStrength * (1.0 - vapourLitness) * phaseResult.vapourAlpha * ambientOcclusionProxy;
 
                 float cosTheta = dot(-rayDir, lightDir);
                 float backPhase = HenyeyGreenstein(cosTheta, _VapourScatterG);
