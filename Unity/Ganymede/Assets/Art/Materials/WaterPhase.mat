@@ -41,6 +41,10 @@ Material:
         m_Texture: {fileID: 0}
         m_Scale: {x: 1, y: 1}
         m_Offset: {x: 0, y: 0}
+    - _BlueNoiseTex:
+        m_Texture: {fileID: 2800000, guid: 58235e595e7510346b0ec6127a6d9785, type: 3}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
     - _BumpMap:
         m_Texture: {fileID: 0}
         m_Scale: {x: 1, y: 1}
@@ -100,19 +104,22 @@ Material:
     - _AlphaToMask: 0
     - _Blend: 0
     - _BlendModePreserveSpecular: 1
+    - _BlueNoiseScale: 0.7
+    - _BlueNoiseStrength: 0.5
+    - _BlueNoiseTimeSpeed: 1.94
     - _BumpScale: 1
     - _ClearCoatMask: 0
     - _ClearCoatSmoothness: 0
     - _Cull: 2
     - _Cutoff: 0.5
     - _Density: 1
-    - _DensityPhaseThreshold: 0
-    - _DensityPower: 2.75
+    - _DensityPhaseThreshold: 1
+    - _DensityPower: 5
     - _DetailAlbedoMapScale: 1
     - _DetailNormalMapScale: 1
     - _DstBlend: 0
     - _DstBlendAlpha: 0
-    - _EdgeSoftness: 0.2
+    - _EdgeSoftness: 0.5
     - _EnvironmentReflections: 1
     - _GlossMapScale: 0
     - _Glossiness: 0
@@ -124,14 +131,14 @@ Material:
     - _LiquidRefractionStrength: 0.269
     - _LiquidSmoothness: 1
     - _LiquidSpecularStrength: 5
-    - _MarchSteps: 35.4
+    - _MarchSteps: 32
     - _Metallic: 0
-    - _NoiseDriftSpeed: 0.8
-    - _NoiseOctaves: 7.62
-    - _NoiseScale: 1.8
+    - _NoiseDriftSpeed: 1.18
+    - _NoiseOctaves: 8
+    - _NoiseScale: 1.7
     - _OcclusionStrength: 1
     - _Parallax: 0.005
-    - _PhaseTransitionWidth: 0.01
+    - _PhaseTransitionWidth: 0.5
     - _PhysicsBlend: 1
     - _QueueOffset: 0
     - _ReceiveShadows: 1
@@ -141,15 +148,15 @@ Material:
     - _SrcBlend: 1
     - _SrcBlendAlpha: 1
     - _Surface: 0
-    - _TemperatureBlend: 0.457
-    - _VapourAbsorption: 8
-    - _VapourAmbientOcclusionProxy: 0.683
-    - _VapourAmbientStrength: 0.315
-    - _VapourBackscatter: 2
-    - _VapourEmissionStrength: 2.28
-    - _VapourFresnelPower: 3
-    - _VapourFresnelStrength: 0.6
-    - _VapourScatterG: 0.079
+    - _TemperatureBlend: 0.504
+    - _VapourAbsorption: 20
+    - _VapourAmbientOcclusionProxy: 0.706
+    - _VapourAmbientStrength: 0.88
+    - _VapourBackscatter: 0.18
+    - _VapourEmissionStrength: 2.14
+    - _VapourFresnelPower: 7.72
+    - _VapourFresnelStrength: 1.6
+    - _VapourScatterG: 0.547
     - _WorkflowMode: 1
     - _XRMotionVectorsPass: 1
     - _ZWrite: 1

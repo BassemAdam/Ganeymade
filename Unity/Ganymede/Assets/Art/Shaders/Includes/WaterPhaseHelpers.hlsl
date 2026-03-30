@@ -182,7 +182,9 @@ WaterPhaseMarchResult RaymarchWaterPhase(
     float sceneLinearDepth,
     float3 boundsMinOS, float3 boundsMaxOS,
     float edgeSoftness,
-    float2 screenUV)
+    float2 screenUV,
+    float2 blueNoiseRG,
+    float blueNoiseStrength)
 {
     WaterPhaseMarchResult result;
     result.vapourScatter = 0.0;
@@ -199,10 +201,18 @@ WaterPhaseMarchResult RaymarchWaterPhase(
     float3 boundsExtents = (boundsMaxOS - boundsMinOS) * 0.5;
 
     float2 pixelCoords = screenUV * _ScreenParams.xy;
-    float jitter = frac(52.9829189 * frac(dot(pixelCoords, float2(0.06711056, 0.00583715))));
+    float ignJitter = frac(52.9829189 * frac(dot(pixelCoords, float2(0.06711056, 0.00583715))));
+    float blueNoiseWeight = saturate(blueNoiseStrength);
+
+    // Blue-noise seed rotates over time to reduce static pattern lock while
+    // keeping deterministic distribution per-pixel within a frame.
+    float blueSeed = frac(blueNoiseRG.x + blueNoiseRG.y * 0.754877666 + time * 0.61803398875);
+    float blueStride = 0.61803398875 + blueNoiseRG.y * 0.14589803;
 
     for (int i = 0; i < marchSteps; i++)
     {
+        float blueJitter = frac(blueSeed + (i + 1.0) * blueStride);
+        float jitter = lerp(ignJitter, blueJitter, blueNoiseWeight);
         float3 samplePos = rayOrigin + rayDir * (stepSize * (i + jitter));
 
         float sampleEyeDepth = -mul(UNITY_MATRIX_V, float4(samplePos, 1.0)).z;
@@ -242,7 +252,13 @@ WaterPhaseMarchResult RaymarchWaterPhase(
             float stepTransmit = exp(-absorption);
             float phase = HenyeyGreenstein(cosTheta, vapourG);
 
-            result.vapourScatter += vapourTransmit * vapourDensity * stepSize * phase * lightColor;
+            half shadowAtten = 1.0;
+#if defined(_MAIN_LIGHT_SHADOWS) || defined(_MAIN_LIGHT_SHADOWS_CASCADE)
+            float4 shadowCoord = TransformWorldToShadowCoord(samplePos);
+            shadowAtten = MainLightRealtimeShadow(shadowCoord);
+#endif
+
+            result.vapourScatter += vapourTransmit * vapourDensity * stepSize * phase * (lightColor * shadowAtten);
             vapourTransmit *= stepTransmit;
         }
 

@@ -14,6 +14,12 @@ Shader "Custom/WaterPhase"
         _DensityPower       ("Density Sharpness", Range(0.1, 5.0)) = 1.5
         _EdgeSoftness       ("Edge Softness", Range(0.0, 0.5)) = 0.2
 
+        [Header(Blue Noise Raymarching)]
+        _BlueNoiseTex       ("Blue Noise Texture", 2D) = "gray" {}
+        _BlueNoiseScale     ("Blue Noise Tiling", Range(0.25, 8.0)) = 1.0
+        _BlueNoiseStrength  ("Blue Noise Jitter Strength", Range(0.0, 1.0)) = 1.0
+        _BlueNoiseTimeSpeed ("Blue Noise Temporal Speed", Range(0.0, 4.0)) = 1.0
+
         [Header(Vapour Rendering)]
         _VapourBaseColor        ("Vapour Base Color", Color) = (1.0, 1.0, 1.0, 1)
         _VapourWarmColor        ("Vapour Warm Tint", Color) = (1.0, 0.92, 0.80, 1)
@@ -75,7 +81,8 @@ Shader "Custom/WaterPhase"
 
             #pragma vertex vert
             #pragma fragment frag
-            #pragma multi_compile _ _MAIN_LIGHT_SHADOWS _MAIN_LIGHT_SHADOWS_CASCADE
+            #pragma multi_compile _ _MAIN_LIGHT_SHADOWS _MAIN_LIGHT_SHADOWS_CASCADE _MAIN_LIGHT_SHADOWS_SCREEN
+            #pragma multi_compile _ _SHADOWS_SOFT
 
             #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Core.hlsl"
             #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Lighting.hlsl"
@@ -97,6 +104,9 @@ Shader "Custom/WaterPhase"
 
             TEXTURE2D_X_FLOAT(_CameraDepthTexture);
             SAMPLER(sampler_CameraDepthTexture);
+            TEXTURE2D(_BlueNoiseTex);
+            SAMPLER(sampler_BlueNoiseTex);
+            float4 _BlueNoiseTex_TexelSize;
 
             CBUFFER_START(UnityPerMaterial)
                 float   _DensityPhaseThreshold;
@@ -108,6 +118,9 @@ Shader "Custom/WaterPhase"
                 int     _NoiseOctaves;
                 float   _DensityPower;
                 float   _EdgeSoftness;
+                float   _BlueNoiseScale;
+                float   _BlueNoiseStrength;
+                float   _BlueNoiseTimeSpeed;
 
                 half4   _VapourBaseColor;
                 half4   _VapourWarmColor;
@@ -187,6 +200,11 @@ Shader "Custom/WaterPhase"
                 float rawDepth = SAMPLE_TEXTURE2D_X(_CameraDepthTexture, sampler_CameraDepthTexture, screenUV).r;
                 float sceneLinearDepth = LinearEyeDepth(rawDepth, _ZBufferParams);
 
+                float2 blueNoiseUV = frac(screenUV * _ScreenParams.xy * _BlueNoiseTex_TexelSize.xy * _BlueNoiseScale);
+                float2 blueNoiseTimeOffset = float2(0.75487766, 0.56984029) * frac(_Time.y * _BlueNoiseTimeSpeed);
+                float2 blueNoiseSampleUV = frac(blueNoiseUV + blueNoiseTimeOffset);
+                float2 blueNoiseRG = SAMPLE_TEXTURE2D(_BlueNoiseTex, sampler_BlueNoiseTex, blueNoiseSampleUV).rg;
+
                 Light mainLight = GetMainLight();
                 float3 lightDir = normalize(mainLight.direction);
                 half3 lightColor = mainLight.color;
@@ -219,7 +237,9 @@ Shader "Custom/WaterPhase"
                     boundsMinOS,
                     boundsMaxOS,
                     _EdgeSoftness,
-                    screenUV
+                    screenUV,
+                    blueNoiseRG,
+                    _BlueNoiseStrength
                 );
 
                 half3 tempTint = lerp((half3)_VapourCoolColor.rgb, (half3)_VapourWarmColor.rgb, _TemperatureBlend);
@@ -237,12 +257,14 @@ Shader "Custom/WaterPhase"
                 float backPhase = HenyeyGreenstein(cosTheta, _VapourScatterG);
                 float hgNorm = HenyeyGreenstein(0.0, _VapourScatterG);
                 float backGlow = saturate(backPhase / (hgNorm * 8.0));
-                vapourCol += backGlow * _VapourBackscatter * lightColor * phaseResult.vapourAlpha;
+                
+                // Multiply "fake" glows by vapourLitness to ensure they are properly occluded by shadows
+                vapourCol += backGlow * _VapourBackscatter * lightColor * phaseResult.vapourAlpha * vapourLitness;
                 vapourCol += (half3)_VapourEmissionColor.rgb * _VapourEmissionStrength * vapourLitness * phaseResult.vapourAlpha;
 
                 float3 viewDirWS = normalize(IN.viewDirWS);
                 float vapourFresnel = FresnelEdge(viewDirWS, -rayDir, _VapourFresnelPower);
-                vapourCol += vapourFresnel * _VapourFresnelStrength * lightColor * phaseResult.vapourAlpha;
+                vapourCol += vapourFresnel * _VapourFresnelStrength * lightColor * phaseResult.vapourAlpha * vapourLitness;
 
                 float3 liquidNormal = -rayDir;
                 float liquidFresnel = FresnelEdge(viewDirWS, liquidNormal, _LiquidFresnelPower);
@@ -250,7 +272,7 @@ Shader "Custom/WaterPhase"
                 float3 halfVec = normalize(lightDir + viewDirWS);
                 float ndh = saturate(dot(liquidNormal, halfVec));
                 float specPower = exp2(_LiquidSmoothness * 10.0 + 1.0);
-                float liquidSpec = pow(ndh, specPower) * _LiquidSpecularStrength;
+                float liquidSpec = pow(ndh, specPower) * _LiquidSpecularStrength * vapourLitness;
 
                 float3 reflectDir = reflect(-viewDirWS, liquidNormal);
                 half perceptualRoughness = 1.0 - _LiquidSmoothness;
