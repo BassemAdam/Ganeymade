@@ -245,7 +245,7 @@ Shader "Custom/WaterPhase"
                 half3 tempTint = lerp((half3)_VapourCoolColor.rgb, (half3)_VapourWarmColor.rgb, _TemperatureBlend);
                 half3 vapourCol = phaseResult.vapourScatter * _VapourBaseColor.rgb * tempTint;
 
-                float vapourLitness = saturate(length(phaseResult.vapourScatter) / max(length(lightColor), 0.001));
+                float vapourLitness = phaseResult.vapourLitness;
                 vapourCol = lerp((half3)_VapourShadowColor.rgb * phaseResult.vapourAlpha, vapourCol, vapourLitness);
 
                 // AO proxy: denser vapour (lower transmittance) receives less ambient fill.

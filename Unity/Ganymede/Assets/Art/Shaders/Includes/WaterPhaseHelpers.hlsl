@@ -165,6 +165,7 @@ struct WaterPhaseMarchResult
     float vapourAlpha;
     float liquidAlpha;
     float liquidDepth;
+    float vapourLitness;
 };
 
 WaterPhaseMarchResult RaymarchWaterPhase(
@@ -191,6 +192,7 @@ WaterPhaseMarchResult RaymarchWaterPhase(
     result.vapourAlpha = 0.0;
     result.liquidAlpha = 0.0;
     result.liquidDepth = 0.0;
+    result.vapourLitness = 0.0;
 
     float stepSize = marchDistance / max((float)marchSteps, 1.0);
     float vapourTransmit = 1.0;
@@ -199,6 +201,9 @@ WaterPhaseMarchResult RaymarchWaterPhase(
 
     float3 boundsCenter = (boundsMinOS + boundsMaxOS) * 0.5;
     float3 boundsExtents = (boundsMaxOS - boundsMinOS) * 0.5;
+
+    float accumulatedLitAlpha = 0.0;
+    float accumulatedTotalAlpha = 0.0;
 
     float2 pixelCoords = screenUV * _ScreenParams.xy;
     float ignJitter = frac(52.9829189 * frac(dot(pixelCoords, float2(0.06711056, 0.00583715))));
@@ -250,6 +255,7 @@ WaterPhaseMarchResult RaymarchWaterPhase(
         {
             float absorption = vapourDensity * vapourAbsorption * stepSize;
             float stepTransmit = exp(-absorption);
+            float stepAlpha = 1.0 - stepTransmit;
             float phase = HenyeyGreenstein(cosTheta, vapourG);
 
             half shadowAtten = 1.0;
@@ -259,6 +265,10 @@ WaterPhaseMarchResult RaymarchWaterPhase(
 #endif
 
             result.vapourScatter += vapourTransmit * vapourDensity * stepSize * phase * (lightColor * shadowAtten);
+            
+            accumulatedLitAlpha += vapourTransmit * stepAlpha * shadowAtten;
+            accumulatedTotalAlpha += vapourTransmit * stepAlpha;
+
             vapourTransmit *= stepTransmit;
         }
 
@@ -274,6 +284,7 @@ WaterPhaseMarchResult RaymarchWaterPhase(
     }
 
     result.vapourAlpha = 1.0 - vapourTransmit;
+    result.vapourLitness = accumulatedTotalAlpha > 0.0001 ? (accumulatedLitAlpha / accumulatedTotalAlpha) : 0.0;
     return result;
 }
 
