@@ -1,18 +1,5 @@
 %YAML 1.1
 %TAG !u! tag:unity3d.com,2011:
---- !u!114 &-1280108866705131905
-MonoBehaviour:
-  m_ObjectHideFlags: 11
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 0}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: d0353a89b1f911e48b9e16bdc9f2e058, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: Unity.RenderPipelines.Universal.Editor::UnityEditor.Rendering.Universal.AssetVersion
-  version: 10
 --- !u!21 &2100000
 Material:
   serializedVersion: 8
@@ -20,7 +7,7 @@ Material:
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
-  m_Name: WaterPhase
+  m_Name: WaterPhase LIQUID2
   m_Shader: {fileID: 4800000, guid: 593e01588eaefad48abf4903d65b7b77, type: 3}
   m_Parent: {fileID: 0}
   m_ModifiedSerializedProperties: 0
@@ -50,7 +37,7 @@ Material:
         m_Scale: {x: 1, y: 1}
         m_Offset: {x: 0, y: 0}
     - _CausticsTex:
-        m_Texture: {fileID: 0}
+        m_Texture: {fileID: 2800000, guid: 49d29107187be4545bb4f6bc7068a57d, type: 3}
         m_Scale: {x: 1, y: 1}
         m_Offset: {x: 0, y: 0}
     - _DetailAlbedoMap:
@@ -112,18 +99,18 @@ Material:
     - _BlueNoiseStrength: 0
     - _BlueNoiseTimeSpeed: 0
     - _BumpScale: 1
-    - _CausticsDepthFade: 2
-    - _CausticsScale: 1.5
-    - _CausticsSpeed: 0.3
-    - _CausticsSplit: 0.02
-    - _CausticsStrength: 1
+    - _CausticsDepthFade: 2.11
+    - _CausticsScale: 1.43
+    - _CausticsSpeed: 0.5
+    - _CausticsSplit: 0
+    - _CausticsStrength: 0.27
     - _ClearCoatMask: 0
     - _ClearCoatSmoothness: 0
     - _Cull: 2
     - _Cutoff: 0.5
     - _Density: 1
     - _DensityPhaseThreshold: 0
-    - _DensityPower: 2.83
+    - _DensityPower: 1.34
     - _DetailAlbedoMapScale: 1
     - _DetailNormalMapScale: 1
     - _DstBlend: 0
@@ -142,9 +129,9 @@ Material:
     - _LiquidSpecularStrength: 0.14
     - _MarchSteps: 32
     - _Metallic: 0
-    - _NoiseDriftSpeed: 0.56
+    - _NoiseDriftSpeed: 0
     - _NoiseOctaves: 8
-    - _NoiseScale: 3.1
+    - _NoiseScale: 17.2
     - _OcclusionStrength: 1
     - _Parallax: 0.005
     - _PhaseTransitionWidth: 0.01

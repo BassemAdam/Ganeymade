@@ -49,6 +49,22 @@ Shader "Custom/WaterPhase"
         _LiquidRefractionStrength ("Liquid Refraction Strength", Range(0.0, 0.3)) = 0.05
         _LiquidFresnelPower       ("Liquid Fresnel Power", Range(1.0, 10.0)) = 5.0
 
+        [Header(Subsurface Scattering)]
+        _SSSColor             ("SSS Color", Color) = (0.15, 0.65, 0.55, 1)
+        _SSSStrength          ("SSS Strength", Range(0.0, 3.0)) = 0.8
+        _SSSPower             ("SSS Power", Range(1.0, 16.0)) = 4.0
+        _SSSDistortion        ("SSS Normal Distortion", Range(0.0, 1.0)) = 0.3
+        _SSSAmbient           ("SSS Ambient", Range(0.0, 0.5)) = 0.1
+        _SSSThicknessScale    ("SSS Thickness Scale", Range(0.1, 5.0)) = 1.0
+
+        [Header(Caustics)]
+        _CausticsTex          ("Caustics Texture", 2D) = "black" {}
+        _CausticsScale        ("Caustics Tiling", Range(0.1, 10.0)) = 1.5
+        _CausticsSpeed        ("Caustics Scroll Speed", Range(0.0, 2.0)) = 0.3
+        _CausticsStrength     ("Caustics Strength", Range(0.0, 5.0)) = 1.0
+        _CausticsDepthFade    ("Caustics Depth Fade", Range(0.1, 10.0)) = 2.0
+        _CausticsSplit        ("Caustics Chromatic Split", Range(0.0, 0.2)) = 0.02
+
         [Header(Raymarch)]
         _MarchSteps          ("March Steps", Range(8, 96)) = 40
 
@@ -107,6 +123,8 @@ Shader "Custom/WaterPhase"
             TEXTURE2D(_BlueNoiseTex);
             SAMPLER(sampler_BlueNoiseTex);
             float4 _BlueNoiseTex_TexelSize;
+            TEXTURE2D(_CausticsTex);
+            SAMPLER(sampler_CausticsTex);
 
             CBUFFER_START(UnityPerMaterial)
                 float   _DensityPhaseThreshold;
@@ -148,6 +166,19 @@ Shader "Custom/WaterPhase"
                 float   _LiquidReflectionStrength;
                 float   _LiquidRefractionStrength;
                 float   _LiquidFresnelPower;
+
+                half4   _SSSColor;
+                float   _SSSStrength;
+                float   _SSSPower;
+                float   _SSSDistortion;
+                float   _SSSAmbient;
+                float   _SSSThicknessScale;
+
+                float   _CausticsScale;
+                float   _CausticsSpeed;
+                float   _CausticsStrength;
+                float   _CausticsDepthFade;
+                float   _CausticsSplit;
 
                 int     _MarchSteps;
                 float   _Density;
@@ -310,6 +341,34 @@ Shader "Custom/WaterPhase"
                 half3 liquidCol = liquidDepthCol * _LiquidTint.rgb;
                 liquidCol += liquidSpec * lightColor;
                 liquidCol += liquidReflection * liquidFresnel;
+
+                // ── Subsurface scattering (liquid only) ──
+                if (isLiquidMode && phaseResult.liquidAlpha > 0.01)
+                {
+                    float sssThickness = saturate(phaseResult.liquidDepth * _SSSThicknessScale);
+                    half3 sss = ComputeSSS(
+                        viewDirWS, lightDir, liquidNormal,
+                        lightColor, _SSSColor.rgb,
+                        _SSSStrength, _SSSPower, _SSSDistortion,
+                        _SSSAmbient, sssThickness
+                    );
+                    liquidCol += sss * phaseResult.liquidAlpha;
+                }
+
+                // ── Caustics (liquid only) ──
+                if (isLiquidMode && phaseResult.liquidAlpha > 0.01)
+                {
+                    half3 caustics = SampleCaustics(
+                        TEXTURE2D_ARGS(_CausticsTex, sampler_CausticsTex),
+                        entryWS, lightDir,
+                        _Time.y, _CausticsScale, _CausticsSpeed,
+                        _CausticsSplit
+                    );
+                    // Fade caustics with depth (Beer-Lambert) and light intensity
+                    float causticsAtten = exp(-phaseResult.liquidDepth * _CausticsDepthFade);
+                    float ndl = saturate(dot(liquidNormal, lightDir));
+                    liquidCol += caustics * _CausticsStrength * causticsAtten * ndl * lightColor * phaseResult.liquidAlpha;
+                }
 
                 float liquidAlpha = saturate(phaseResult.liquidAlpha);
 
