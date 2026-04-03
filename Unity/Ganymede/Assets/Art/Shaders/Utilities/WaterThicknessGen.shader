@@ -7,6 +7,7 @@ Shader "Hidden/WaterThicknessGen"
 
         Pass
         {
+            Name "WaterThicknessGen"
             // THE MAGIC BLEND STATE: Additive Blending
             // This takes whatever the fragment shader outputs and adds it to the texture.
             Blend One One 
@@ -25,6 +26,7 @@ Shader "Hidden/WaterThicknessGen"
             HLSLPROGRAM
             #pragma vertex vert
             #pragma fragment frag
+            #pragma multi_compile _ DOTS_INSTANCING_ON
 
             #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Core.hlsl"
             #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/DeclareDepthTexture.hlsl"

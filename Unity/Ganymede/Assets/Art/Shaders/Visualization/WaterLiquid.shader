@@ -41,6 +41,7 @@ Shader "Custom/WaterLiquid"
             //while still allowing for proper blending with other transparent objects.
             // for blending with opaque object i handle this in refraction 
             ZWrite On 
+            Cull Off
 
             HLSLPROGRAM
 
@@ -108,8 +109,15 @@ Shader "Custom/WaterLiquid"
 
 
             // FRAGMENT SHADER
-            half4 frag(Interpolators IN) : SV_Target
+            half4 frag(Interpolators IN, bool isFrontFace : SV_IsFrontFace) : SV_Target
             {   
+                // Flip the normal for back faces.
+                // With Cull Off, the geometry normal always points outward from the mesh.
+                // On a back face the camera is on the inside, so the outward normal points
+                // away from the camera — refraction offsets go the wrong direction.
+                // Negating it makes the normal always face toward the camera on both sides.
+                IN.normalWS = isFrontFace ? IN.normalWS : -IN.normalWS;
+
                 // Screen UV for sampling screen-space textures
                 float2 screenUV = IN.screenPos.xy / IN.screenPos.w;
 

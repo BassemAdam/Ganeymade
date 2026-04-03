@@ -167,71 +167,286 @@ float SampleDensity(float3 worldPos, float time,
 }
 
 // -----------------------------------------------------------------------------
-//  SECTION 3 — VOLUMETRIC LIGHTING  (implemented in Step 6)
+//  SECTION 3 — VOLUMETRIC LIGHTING
 // -----------------------------------------------------------------------------
 
 // HenyeyGreenstein
-//   Models how a particle scatters light at a given angle.
-//   This is the Mie scattering approximation used for vapor and clouds.
-//   Input  : cosTheta — dot(viewDir, lightDir)  [-1, 1]
-//            g        — anisotropy factor: 0 = isotropic, +1 = full forward scatter
-//                        vapor is typically 0.3 – 0.7
-//   Output : phase weight — higher means more light reaches the viewer
+//   The standard real-time approximation for Mie scattering — the dominant
+//   scattering mode for particles the size of water droplets.
+//
+//   Physics: a particle scatters MORE light toward the direction light came FROM
+//   (forward scatter) and LESS in the opposite direction. The parameter g controls
+//   how strongly forward-biased this is.
+//
+//   Formula (unnormalized, 4π omitted since we tune brightness via other props):
+//     p(cosθ, g) = (1 - g²) / (1 + g² - 2g·cosθ)^(3/2)
+//
+//   Results at g = 0.5:
+//     cosθ =  1  (ray toward light, vapor backlit)  → ~6.0  (bright halo)
+//     cosθ =  0  (perpendicular)                    → ~0.53 (medium)
+//     cosθ = -1  (ray away from light)               → ~0.07 (dark)
+//
+//   Input  : cosTheta — dot(-rayDir, lightDir)  range [-1, 1]
+//            g        — anisotropy: 0 = isotropic, 0.3–0.7 = typical vapor
+//   Output : phase weight (unitless, use to scale scattered light)
 float HenyeyGreenstein(float cosTheta, float g)
 {
-    // TODO: Step 6
-    return 1.0;
+    float g2    = g * g;
+    float denom = 1.0 + g2 - 2.0 * g * cosTheta;
+    // abs() guards against numerical precision issues near denom ≈ 0
+    return (1.0 - g2) / pow(abs(denom), 1.5);
 }
 
 // -----------------------------------------------------------------------------
-//  SECTION 4 — RAYMARCHING  (implemented in Step 5 + 6 combined)
+//  SECTION 3b — SDF EDGE FADE HELPER  (needed by RaymarchVapour below)
 // -----------------------------------------------------------------------------
+
+// sdBox
+//   Signed Distance Field for a box centred at the origin with half-extents b.
+//   Returns a NEGATIVE value inside the box whose magnitude is the distance
+//   to the nearest face, and a POSITIVE value outside.
+//   This is the standard formula used to force density to exactly 0 at bounds.
+float sdBox(float3 p, float3 b)
+{
+    float3 d = abs(p) - b;
+    return min(max(d.x, max(d.y, d.z)), 0.0) + length(max(d, 0.0));
+}
+
+// ComputeEdgeFade
+//   Uses sdBox to compute how far inward from the AABB surface the sample is,
+//   then applies smoothstep to produce a [0,1] density multiplier:
+//     - Exactly 0.0 at (and beyond) every face — density is mathematically
+//       guaranteed to be zero at the bounding box boundary, so no hard edge.
+//     - Rises to 1.0 once the sample is 'softness' world units inward.
+//
+//   Correct formula per the SDF approach:
+//     Density_final = Density_noise * smoothstep(0, fadeDistance, -sdBox(p, extents))
+//
+//   Input  : posOS    — sample position in object space
+//            boundsMin, boundsMax — AABB extents in object space
+//            softness — inward fade band width in object-space units
+//   Output : fade multiplier in [0, 1]
+float ComputeEdgeFade(float3 posOS, float3 boundsMin, float3 boundsMax, float softness)
+{
+    float3 boundsCenter  = (boundsMin + boundsMax) * 0.5;
+    float3 boundsExtents = (boundsMax - boundsMin) * 0.5;
+
+    // sdBox is negative inside (distance to nearest wall, inward).
+    // Negate it so we get a positive "how far from the wall am I" value.
+    float distInward = -sdBox(posOS - boundsCenter, boundsExtents);
+
+    // smoothstep: 0 exactly at the surface, 1 once 'softness' units inward.
+    // This guarantees density = 0 at every face regardless of what the noise produces.
+    return smoothstep(0.0, max(softness, 1e-5), distInward);
+}
+
+// -----------------------------------------------------------------------------
+//  SECTION 4 — RAYMARCHING
+// -----------------------------------------------------------------------------
+
+// IntersectRayAABBOS
+//   Slab intersection in OBJECT space.
+//   Returns entry/exit distances along the ray when a hit exists.
+bool IntersectRayAABBOS(float3 rayOriginOS, float3 rayDirOS, float3 bmin, float3 bmax, out float tEnter, out float tExit)
+{
+    // Epsilon-protected reciprocal avoids division-by-zero on axis-aligned rays.
+    float3 safeDir = sign(rayDirOS) * max(abs(rayDirOS), 1e-6);
+    float3 invDir = 1.0 / safeDir;
+
+    float3 t0 = (bmin - rayOriginOS) * invDir;
+    float3 t1 = (bmax - rayOriginOS) * invDir;
+
+    float3 tMin3 = min(t0, t1);
+    float3 tMax3 = max(t0, t1);
+
+    tEnter = max(max(tMin3.x, tMin3.y), tMin3.z);
+    tExit  = min(min(tMax3.x, tMax3.y), tMax3.z);
+
+    return tExit >= tEnter;
+}
+
+// ComputeVoxelRaySegmentWS
+//   Computes the valid world-space ray segment through the voxel bounds:
+//   entryWS -> exitWS, plus ray direction and segment length.
+//   Works whether camera is outside OR inside the volume.
+//   marchDistance covers the FULL segment — no artificial cap.
+bool ComputeVoxelRaySegmentWS(float3 cameraWS, float3 sampleWS,
+                              float3 boundsMinOS, float3 boundsMaxOS,
+                              out float3 entryWS, out float3 rayDirWS, out float marchDistance)
+{
+    float3 viewRayWS = normalize(sampleWS - cameraWS);
+
+    float3 rayOriginOS = TransformWorldToObject(cameraWS);
+    float3 rayDirOS = normalize(TransformWorldToObjectDir(viewRayWS));
+
+    float tEnter;
+    float tExit;
+    if (!IntersectRayAABBOS(rayOriginOS, rayDirOS, boundsMinOS, boundsMaxOS, tEnter, tExit))
+    {
+        entryWS = 0.0;
+        rayDirWS = 0.0;
+        marchDistance = 0.0;
+        return false;
+    }
+
+    // If camera is inside, tEnter < 0. Start marching from camera.
+    tEnter = max(tEnter, 0.0);
+
+    float3 entryOS = rayOriginOS + rayDirOS * tEnter;
+    float3 exitOS  = rayOriginOS + rayDirOS * tExit;
+
+    entryWS = TransformObjectToWorld(entryOS);
+    float3 exitWS = TransformObjectToWorld(exitOS);
+
+    float segmentDistanceWS = distance(entryWS, exitWS);
+    if (segmentDistanceWS <= 1e-5)
+    {
+        rayDirWS = 0.0;
+        marchDistance = 0.0;
+        return false;
+    }
+
+    rayDirWS = normalize(exitWS - entryWS);
+    // Cover the full segment through the volume — no cap.
+    // Absorption and march steps control the density budget.
+    marchDistance = segmentDistanceWS;
+    return true;
+}
 
 // RaymarchVapour
 //   Steps a ray through the voxel volume accumulating density and scattered light.
-//   Uses Beer-Lambert law for transmittance and Henyey-Greenstein at each step.
-//   Input  : rayOrigin      — world-space start of the ray (fragment position)
-//            rayDir         — normalized direction from fragment toward camera
-//            lightDir       — normalized direction toward the main light
-//            lightColor     — main light color
-//            marchSteps     — number of steps (quality vs perf tradeoff)
-//            marchDistance  — total distance to march (tie to voxel size)
-//            g              — Henyey-Greenstein anisotropy
-//            absorptionCoeff — how strongly the medium absorbs light (Beer-Lambert)
-//            [density field params forwarded to SampleDensity]
-//   Output : float4 where .rgb = accumulated in-scattered light color
-//                          .a   = accumulated opacity  (1 - transmittance)
+//
+//   How it works:
+//     - Ray starts at the fragment (front face of the voxel) and marches INTO the
+//       volume away from the camera, one step at a time.
+//     - At each step we sample the density field.
+//     - Beer-Lambert law: each step attenuates a "transmittance" value, modelling
+//       how much light can still pass through remaining medium.
+//         transmittance *= exp(-density * absorption * stepSize)
+//     - The light scattered toward the viewer at each step is:
+//         scatter += transmittance * density * stepSize
+//       (HenyeyGreenstein weighting added in Step 6)
+//     - Early exit: once transmittance falls below 0.01 the ray contributes
+//       less than 1% more — no point continuing.
+//
+//   Output : .rgb = accumulated scattered light (flat white until Step 6 adds HG)
+//            .a   = accumulated opacity = 1 - final transmittance
 float4 RaymarchVapour(float3 rayOrigin, float3 rayDir,
                       float3 lightDir,  half3 lightColor,
                       int    marchSteps, float marchDistance,
                       float  g, float absorptionCoeff,
-                      // density field params
-                      float time,
+                      float  time,
                       float3 driftDir,   float driftSpeed,
                       float  noiseScale, int octaves,
                       float  densityPower,
-                      float  physicsDensity, float physicsBlend)
+                      float  physicsDensity, float physicsBlend,
+                      float  sceneLinearDepth,
+                      float3 boundsMinOS, float3 boundsMaxOS,
+                      float  edgeSoftness,
+                      float2 screenUV)
 {
-    // TODO: Steps 5 & 6
-    return float4(0, 0, 0, 0);
+    float stepSize    = marchDistance / (float)marchSteps;
+    float transmit    = 1.0;
+    float3 scatter    = 0.0;
+
+    float cosTheta = dot(-rayDir, lightDir);
+
+    // Precompute ellipsoid center and inverse extents for the radial blob mask.
+    float3 boundsCenter  = (boundsMinOS + boundsMaxOS) * 0.5;
+    float3 boundsExtents = (boundsMaxOS - boundsMinOS) * 0.5;
+
+    // Interleaved Gradient Noise (IGN) for dithering the start position
+    // This perfectly breaks the planar alignment of samples that causes the
+    // vapour to look like a solid box when the camera is outside.
+    float2 pixelCoords = screenUV * _ScreenParams.xy;
+    float jitter = frac(52.9829189 * frac(dot(pixelCoords, float2(0.06711056, 0.00583715))));
+
+    for (int i = 0; i < marchSteps; i++)
+    {
+        // Use jitter instead of 0.5 to randomly offset the sample plane per-pixel
+        float3 samplePos = rayOrigin + rayDir * (stepSize * (i + jitter));
+
+        // Depth termination against opaque scene geometry
+        float sampleEyeDepth = -mul(UNITY_MATRIX_V, float4(samplePos, 1.0)).z;
+        if (sampleEyeDepth >= sceneLinearDepth)
+            break;
+
+        // --- Per-step shape masking (Step 7) ---
+        // Transform to object space to measure AABB distance.
+        float3 sampleOS = TransformWorldToObject(samplePos);
+
+        // 1. Axis-aligned edge fade: density tapers to 0 near each face.
+        //    Removes the hard box cutoff at every AABB boundary.
+        float axialFade = ComputeEdgeFade(sampleOS, boundsMinOS, boundsMaxOS, edgeSoftness);
+
+        // 2. Radial ellipsoid mask: density falls off at the corners of the
+        //    ellipsoid that fits the box, breaking the rectangular silhouette
+        //    and producing an organic, amorphous blob shape.
+        float3 normPos    = (sampleOS - boundsCenter) / max(boundsExtents, 1e-6);
+        float  radialDist = length(normPos);
+        float  radialFade = saturate(1.0 - radialDist);
+        radialFade = radialFade * radialFade * (3.0 - 2.0 * radialFade); // smoothstep
+
+        float shapeMask = axialFade * radialFade;
+
+        float density = SampleDensity(
+            samplePos, time,
+            driftDir, driftSpeed,
+            noiseScale, octaves,
+            densityPower,
+            physicsDensity, physicsBlend
+        );
+
+        // Shape mask tapers density to 0 at AABB walls and outside the ellipsoid
+        density *= shapeMask;
+
+        if (density > 0.001)
+        {
+            float absorption   = density * absorptionCoeff * stepSize;
+            float stepTransmit = exp(-absorption);
+
+            float phase = HenyeyGreenstein(cosTheta, g);
+            scatter += transmit * density * stepSize * phase * lightColor;
+
+            transmit *= stepTransmit;
+        }
+
+        if (transmit < 0.01)
+            break;
+    }
+
+    float opacity = 1.0 - transmit;
+    return float4(scatter, opacity);
 }
 
 // -----------------------------------------------------------------------------
-//  SECTION 5 — FRESNEL  (implemented in Step 7)
+//  SECTION 5 — FRESNEL & EDGE SOFTNESS  (Step 7)
 // -----------------------------------------------------------------------------
 
 // FresnelEdge
-//   Approximates Schlick Fresnel using the density gradient as the surface normal.
-//   Returns a value that is HIGH at silhouette edges and LOW face-on.
-//   Used to brighten and soften vapor edges.
-//   Input  : viewDir  — normalized world-space view direction
-//            normal   — surface-like normal (estimated from density gradient)
-//            power    — exponent controlling how tight the edge glow is
-//   Output : Fresnel weight in [0, 1]
+//   Schlick Fresnel approximation — returns a weight that is HIGH at silhouette
+//   edges (grazing angle) and LOW when looking straight at the vapor.
+//
+//   Normal: we approximate the vapor "surface" normal as the view ray direction
+//   itself, since the volume has no real geometric normal. This makes every
+//   fragment respond to how oblique the view angle is relative to incidence.
+//
+//   Physics: at a grazing angle (dot(viewDir, normal) ≈ 0), light exits the
+//   surface boundary more readily — vapor edges appear brighter and denser.
+//
+//   Input  : viewDir — normalized world-space view direction (toward camera)
+//            normal  — surface-like outward normal (use -rayDir from march)
+//            power   — exponent: higher = tighter, sharper edge glow (2–8 typical)
+//   Output : Fresnel weight in [0, 1]; 0 = face-on, 1 = grazing
 float FresnelEdge(float3 viewDir, float3 normal, float power)
 {
-    // TODO: Step 7
-    return 0.0;
+    // cosTheta = dot of view direction and outward normal.
+    // At the silhouette edge this approaches 0, giving Fresnel → 1.
+    float cosTheta = saturate(dot(viewDir, normal));
+    // Schlick: F = (1 - cosTheta)^power
+    return pow(1.0 - cosTheta, power);
 }
+
+// ComputeEdgeFade — defined in Section 3b above (must precede RaymarchVapour)
 
 #endif // WATER_VAPOUR_HELPERS_INCLUDED
