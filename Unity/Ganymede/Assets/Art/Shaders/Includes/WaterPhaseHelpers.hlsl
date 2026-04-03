@@ -288,4 +288,130 @@ WaterPhaseMarchResult RaymarchWaterPhase(
     return result;
 }
 
+// ── Liquid-optimised raymarch: IGN jitter only, no blue noise, no per-step shadows ──
+WaterPhaseMarchResult RaymarchWaterPhaseLiquid(
+    float3 rayOrigin, float3 rayDir,
+    float3 lightDir, half3 lightColor,
+    int marchSteps, float marchDistance,
+    float vapourG, float vapourAbsorption,
+    float liquidOpacityCoeff,
+    float phaseThreshold, float phaseWidth,
+    float time,
+    float3 driftDir, float driftSpeed,
+    float noiseScale, int octaves,
+    float densityPower,
+    float physicsDensity, float physicsBlend,
+    float sceneLinearDepth,
+    float3 boundsMinOS, float3 boundsMaxOS,
+    float edgeSoftness,
+    float2 screenUV)
+{
+    WaterPhaseMarchResult result;
+    result.vapourScatter = 0.0;
+    result.vapourAlpha = 0.0;
+    result.liquidAlpha = 0.0;
+    result.liquidDepth = 0.0;
+    result.vapourLitness = 0.0;
+
+    float stepSize = marchDistance / max((float)marchSteps, 1.0);
+    float vapourTransmit = 1.0;
+
+    float cosTheta = dot(-rayDir, lightDir);
+
+    float3 boundsCenter = (boundsMinOS + boundsMaxOS) * 0.5;
+    float3 boundsExtents = (boundsMaxOS - boundsMinOS) * 0.5;
+
+    float2 pixelCoords = screenUV * _ScreenParams.xy;
+    float jitter = frac(52.9829189 * frac(dot(pixelCoords, float2(0.06711056, 0.00583715))));
+
+    for (int i = 0; i < marchSteps; i++)
+    {
+        float3 samplePos = rayOrigin + rayDir * (stepSize * (i + jitter));
+
+        float sampleEyeDepth = -mul(UNITY_MATRIX_V, float4(samplePos, 1.0)).z;
+        if (sampleEyeDepth >= sceneLinearDepth)
+            break;
+
+        float3 sampleOS = TransformWorldToObject(samplePos);
+
+        float axialFade = ComputeEdgeFade(sampleOS, boundsMinOS, boundsMaxOS, edgeSoftness);
+        float3 normPos = (sampleOS - boundsCenter) / max(boundsExtents, 1e-6);
+        float radialDist = length(normPos);
+        float radialFade = saturate(1.0 - radialDist);
+        radialFade = radialFade * radialFade * (3.0 - 2.0 * radialFade);
+
+        float shapeMask = axialFade * radialFade;
+
+        float density = SampleDensity(
+            samplePos, time,
+            driftDir, driftSpeed,
+            noiseScale, octaves,
+            densityPower,
+            physicsDensity, physicsBlend
+        ) * shapeMask;
+
+        if (density <= 0.001)
+            continue;
+
+        float liquidPhase = smoothstep(phaseThreshold - phaseWidth, phaseThreshold + phaseWidth, density);
+        float vapourPhase = 1.0 - liquidPhase;
+
+        float vapourDensity = density * vapourPhase;
+        float liquidDensity = density * liquidPhase;
+
+        if (vapourDensity > 0.0001)
+        {
+            float absorption = vapourDensity * vapourAbsorption * stepSize;
+            float stepTransmit = exp(-absorption);
+            float phase = HenyeyGreenstein(cosTheta, vapourG);
+
+            result.vapourScatter += vapourTransmit * vapourDensity * stepSize * phase * lightColor;
+            vapourTransmit *= stepTransmit;
+        }
+
+        if (liquidDensity > 0.0001)
+        {
+            float stepAlpha = saturate(liquidDensity * liquidOpacityCoeff * stepSize);
+            result.liquidAlpha += (1.0 - result.liquidAlpha) * stepAlpha;
+            result.liquidDepth += liquidDensity * stepSize;
+        }
+
+        if (vapourTransmit < 0.01 && result.liquidAlpha > 0.99)
+            break;
+    }
+
+    result.vapourAlpha = 1.0 - vapourTransmit;
+    return result;
+}
+
+// 24-parameter overload for backward compatibility
+WaterPhaseMarchResult RaymarchWaterPhase(
+    float3 rayOrigin, float3 rayDir,
+    float3 lightDir, half3 lightColor,
+    int marchSteps, float marchDistance,
+    float vapourG, float vapourAbsorption,
+    float liquidOpacityCoeff,
+    float phaseThreshold, float phaseWidth,
+    float time,
+    float3 driftDir, float driftSpeed,
+    float noiseScale, int octaves,
+    float densityPower,
+    float physicsDensity, float physicsBlend,
+    float sceneLinearDepth,
+    float3 boundsMinOS, float3 boundsMaxOS,
+    float edgeSoftness,
+    float2 screenUV)
+{
+    return RaymarchWaterPhaseLiquid(
+        rayOrigin, rayDir, lightDir, lightColor,
+        marchSteps, marchDistance,
+        vapourG, vapourAbsorption, liquidOpacityCoeff,
+        phaseThreshold, phaseWidth,
+        time, driftDir, driftSpeed,
+        noiseScale, octaves, densityPower,
+        physicsDensity, physicsBlend,
+        sceneLinearDepth, boundsMinOS, boundsMaxOS,
+        edgeSoftness, screenUV);
+}
+
 #endif

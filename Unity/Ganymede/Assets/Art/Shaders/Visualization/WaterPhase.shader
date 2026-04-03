@@ -213,58 +213,71 @@ Shader "Custom/WaterPhase"
                 int noiseOctaves = _NoiseOctaves;
                 float3 driftDir = normalize((float3)_NoiseDriftDir.xyz);
 
-                WaterPhaseMarchResult phaseResult = RaymarchWaterPhase(
-                    entryWS,
-                    rayDir,
-                    lightDir,
-                    lightColor,
-                    marchSteps,
-                    marchDistance,
-                    _VapourScatterG,
-                    _VapourAbsorption,
-                    _LiquidOpacityCoeff,
-                    _DensityPhaseThreshold,
-                    _PhaseTransitionWidth,
-                    _Time.y,
-                    driftDir,
-                    _NoiseDriftSpeed,
-                    _NoiseScale,
-                    noiseOctaves,
-                    _DensityPower,
-                    _Density,
-                    _PhysicsBlend,
-                    sceneLinearDepth,
-                    boundsMinOS,
-                    boundsMaxOS,
-                    _EdgeSoftness,
-                    screenUV,
-                    blueNoiseRG,
-                    _BlueNoiseStrength
-                );
+                WaterPhaseMarchResult phaseResult;
+                bool isLiquidMode = _DensityPhaseThreshold < 0.1;
+
+                if (isLiquidMode)
+                {
+                    phaseResult = RaymarchWaterPhaseLiquid(
+                        entryWS, rayDir, lightDir, lightColor,
+                        marchSteps, marchDistance,
+                        _VapourScatterG, _VapourAbsorption,
+                        _LiquidOpacityCoeff,
+                        _DensityPhaseThreshold, _PhaseTransitionWidth,
+                        _Time.y, driftDir, _NoiseDriftSpeed,
+                        _NoiseScale, noiseOctaves, _DensityPower,
+                        _Density, _PhysicsBlend,
+                        sceneLinearDepth, boundsMinOS, boundsMaxOS,
+                        _EdgeSoftness, screenUV
+                    );
+                }
+                else
+                {
+                    phaseResult = RaymarchWaterPhase(
+                        entryWS, rayDir, lightDir, lightColor,
+                        marchSteps, marchDistance,
+                        _VapourScatterG, _VapourAbsorption,
+                        _LiquidOpacityCoeff,
+                        _DensityPhaseThreshold, _PhaseTransitionWidth,
+                        _Time.y, driftDir, _NoiseDriftSpeed,
+                        _NoiseScale, noiseOctaves, _DensityPower,
+                        _Density, _PhysicsBlend,
+                        sceneLinearDepth, boundsMinOS, boundsMaxOS,
+                        _EdgeSoftness, screenUV,
+                        blueNoiseRG, _BlueNoiseStrength
+                    );
+                }
 
                 half3 tempTint = lerp((half3)_VapourCoolColor.rgb, (half3)_VapourWarmColor.rgb, _TemperatureBlend);
-                half3 vapourCol = phaseResult.vapourScatter * _VapourBaseColor.rgb * tempTint;
-
-                float vapourLitness = phaseResult.vapourLitness;
-                vapourCol = lerp((half3)_VapourShadowColor.rgb * phaseResult.vapourAlpha, vapourCol, vapourLitness);
-
-                // AO proxy: denser vapour (lower transmittance) receives less ambient fill.
-                float vapourTransmittance = saturate(1.0 - phaseResult.vapourAlpha);
-                float ambientOcclusionProxy = lerp(1.0, vapourTransmittance, _VapourAmbientOcclusionProxy);
-                vapourCol += _VapourAmbientColor.rgb * _VapourAmbientStrength * (1.0 - vapourLitness) * phaseResult.vapourAlpha * ambientOcclusionProxy;
-
-                float cosTheta = dot(-rayDir, lightDir);
-                float backPhase = HenyeyGreenstein(cosTheta, _VapourScatterG);
-                float hgNorm = HenyeyGreenstein(0.0, _VapourScatterG);
-                float backGlow = saturate(backPhase / (hgNorm * 8.0));
-                
-                // Multiply "fake" glows by vapourLitness to ensure they are properly occluded by shadows
-                vapourCol += backGlow * _VapourBackscatter * lightColor * phaseResult.vapourAlpha * vapourLitness;
-                vapourCol += (half3)_VapourEmissionColor.rgb * _VapourEmissionStrength * vapourLitness * phaseResult.vapourAlpha;
+                half3 vapourCol = 0.0;
+                float vapourAlpha = 0.0;
 
                 float3 viewDirWS = normalize(IN.viewDirWS);
-                float vapourFresnel = FresnelEdge(viewDirWS, -rayDir, _VapourFresnelPower);
-                vapourCol += vapourFresnel * _VapourFresnelStrength * lightColor * phaseResult.vapourAlpha * vapourLitness;
+
+                if (!isLiquidMode)
+                {
+                    vapourCol = phaseResult.vapourScatter * _VapourBaseColor.rgb * tempTint;
+
+                    float vapourLitness = phaseResult.vapourLitness;
+                    vapourCol = lerp((half3)_VapourShadowColor.rgb * phaseResult.vapourAlpha, vapourCol, vapourLitness);
+
+                    float vapourTransmittance = saturate(1.0 - phaseResult.vapourAlpha);
+                    float ambientOcclusionProxy = lerp(1.0, vapourTransmittance, _VapourAmbientOcclusionProxy);
+                    vapourCol += _VapourAmbientColor.rgb * _VapourAmbientStrength * (1.0 - vapourLitness) * phaseResult.vapourAlpha * ambientOcclusionProxy;
+
+                    float cosTheta = dot(-rayDir, lightDir);
+                    float backPhase = HenyeyGreenstein(cosTheta, _VapourScatterG);
+                    float hgNorm = HenyeyGreenstein(0.0, _VapourScatterG);
+                    float backGlow = saturate(backPhase / (hgNorm * 8.0));
+
+                    vapourCol += backGlow * _VapourBackscatter * lightColor * phaseResult.vapourAlpha * vapourLitness;
+                    vapourCol += (half3)_VapourEmissionColor.rgb * _VapourEmissionStrength * vapourLitness * phaseResult.vapourAlpha;
+
+                    float vapourFresnel = FresnelEdge(viewDirWS, -rayDir, _VapourFresnelPower);
+                    vapourCol += vapourFresnel * _VapourFresnelStrength * lightColor * phaseResult.vapourAlpha * vapourLitness;
+
+                    vapourAlpha = saturate(phaseResult.vapourAlpha * (1.0 + vapourFresnel * _VapourFresnelStrength * 0.35));
+                }
 
                 float3 liquidNormal = -rayDir;
                 float liquidFresnel = FresnelEdge(viewDirWS, liquidNormal, _LiquidFresnelPower);
@@ -272,7 +285,7 @@ Shader "Custom/WaterPhase"
                 float3 halfVec = normalize(lightDir + viewDirWS);
                 float ndh = saturate(dot(liquidNormal, halfVec));
                 float specPower = exp2(_LiquidSmoothness * 10.0 + 1.0);
-                float liquidSpec = pow(ndh, specPower) * _LiquidSpecularStrength * vapourLitness;
+                float liquidSpec = pow(ndh, specPower) * _LiquidSpecularStrength;
 
                 float3 reflectDir = reflect(-viewDirWS, liquidNormal);
                 half perceptualRoughness = 1.0 - _LiquidSmoothness;
@@ -298,7 +311,6 @@ Shader "Custom/WaterPhase"
                 liquidCol += liquidSpec * lightColor;
                 liquidCol += liquidReflection * liquidFresnel;
 
-                float vapourAlpha = saturate(phaseResult.vapourAlpha * (1.0 + vapourFresnel * _VapourFresnelStrength * 0.35));
                 float liquidAlpha = saturate(phaseResult.liquidAlpha);
 
                 half3 finalCol = vapourCol + liquidCol;
