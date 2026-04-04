@@ -187,6 +187,61 @@ half3 ComputeSSS(float3 viewDir, float3 lightDir, float3 normal,
     return sss * sssColor * lightColor;
 }
 
+float ComputeRadialFade(float radialDist)
+{
+    float radialFade = saturate(1.0 - radialDist);
+    // Smoothstep-like shaping for a softer, rounder boundary.
+    return radialFade * radialFade * (3.0 - 2.0 * radialFade);
+}
+
+float ComputeShapeMaskOS(float3 sampleOS,
+                         float3 boundsMinOS, float3 boundsMaxOS,
+                         float3 boundsCenterOS, float3 boundsExtentsOS,
+                         float edgeSoftness)
+{
+    float axialFade = ComputeEdgeFade(sampleOS, boundsMinOS, boundsMaxOS, edgeSoftness);
+    float3 normPos = (sampleOS - boundsCenterOS) / max(boundsExtentsOS, 1e-6);
+    float radialDist = length(normPos);
+    float radialFade = ComputeRadialFade(radialDist);
+    return axialFade * radialFade;
+}
+
+float SampleShapeMaskWS(float3 sampleWS,
+                        float3 boundsMinOS, float3 boundsMaxOS,
+                        float3 boundsCenterOS, float3 boundsExtentsOS,
+                        float edgeSoftness)
+{
+    float3 sampleOS = TransformWorldToObject(sampleWS);
+    return ComputeShapeMaskOS(sampleOS, boundsMinOS, boundsMaxOS, boundsCenterOS, boundsExtentsOS, edgeSoftness);
+}
+
+float3 ComputeShapeNormalWS(float3 sampleWS,
+                            float3 boundsMinOS, float3 boundsMaxOS,
+                            float3 boundsCenterOS, float3 boundsExtentsOS,
+                            float edgeSoftness,
+                            float epsWS)
+{
+    float e = max(epsWS, 1e-4);
+    float3 dx = float3(e, 0.0, 0.0);
+    float3 dy = float3(0.0, e, 0.0);
+    float3 dz = float3(0.0, 0.0, e);
+
+    float mx1 = SampleShapeMaskWS(sampleWS + dx, boundsMinOS, boundsMaxOS, boundsCenterOS, boundsExtentsOS, edgeSoftness);
+    float mx0 = SampleShapeMaskWS(sampleWS - dx, boundsMinOS, boundsMaxOS, boundsCenterOS, boundsExtentsOS, edgeSoftness);
+    float my1 = SampleShapeMaskWS(sampleWS + dy, boundsMinOS, boundsMaxOS, boundsCenterOS, boundsExtentsOS, edgeSoftness);
+    float my0 = SampleShapeMaskWS(sampleWS - dy, boundsMinOS, boundsMaxOS, boundsCenterOS, boundsExtentsOS, edgeSoftness);
+    float mz1 = SampleShapeMaskWS(sampleWS + dz, boundsMinOS, boundsMaxOS, boundsCenterOS, boundsExtentsOS, edgeSoftness);
+    float mz0 = SampleShapeMaskWS(sampleWS - dz, boundsMinOS, boundsMaxOS, boundsCenterOS, boundsExtentsOS, edgeSoftness);
+
+    float3 grad = float3(mx1 - mx0, my1 - my0, mz1 - mz0);
+    float gradLen2 = dot(grad, grad);
+    if (gradLen2 < 1e-10)
+        return float3(0.0, 1.0, 0.0);
+
+    // Shape mask is ~1 inside and ~0 outside, so gradient generally points inward.
+    return normalize(-grad);
+}
+
 // ── Caustics: dual-layer chromatic aberration sampling ──
 // Approximates light refraction patterns on underwater surfaces.
 // Two scrolling layers at different speeds create interference.
@@ -233,6 +288,36 @@ half3 SampleCaustics(TEXTURE2D_PARAM(causticsTex, causticsSampler),
     return caustics;
 }
 
+// ── Surface texture: triplanar mapping for arbitrary shapes ──
+// Samples a texture projected along X/Y/Z and blends by the surface normal.
+// This avoids stretching and works for cubes, spheres, and deformed volumes.
+half3 SampleSurfaceTextureTriplanar(TEXTURE2D_PARAM(surfaceTex, surfaceSampler),
+                                   float3 worldPos, float3 normalWS,
+                                   float time, float scale, float scrollSpeed,
+                                   float blendSharpness)
+{
+    float3 n = normalize(normalWS);
+    float3 w = abs(n);
+
+    float sharp = max(blendSharpness, 1e-3);
+    w = pow(w, sharp);
+    w /= max(w.x + w.y + w.z, 1e-5);
+
+    float invScale = 1.0 / max(scale, 1e-3);
+    float3 p = worldPos * invScale;
+
+    float t = time * scrollSpeed;
+    float2 uvX = p.zy + float2(t, t * 0.77); // project along +X (YZ plane)
+    float2 uvY = p.xz + float2(t * 0.63, t); // project along +Y (XZ plane)
+    float2 uvZ = p.xy + float2(t * 0.91, t * 0.58); // project along +Z (XY plane)
+
+    half3 sx = SAMPLE_TEXTURE2D(surfaceTex, surfaceSampler, uvX).rgb;
+    half3 sy = SAMPLE_TEXTURE2D(surfaceTex, surfaceSampler, uvY).rgb;
+    half3 sz = SAMPLE_TEXTURE2D(surfaceTex, surfaceSampler, uvZ).rgb;
+
+    return sx * w.x + sy * w.y + sz * w.z;
+}
+
 struct WaterPhaseMarchResult
 {
     float3 vapourScatter;
@@ -240,6 +325,11 @@ struct WaterPhaseMarchResult
     float liquidAlpha;
     float liquidDepth;
     float vapourLitness;
+
+    // Liquid surface hit (front-most) for surface texturing / shading.
+    float3 liquidSurfaceWS;
+    float3 liquidSurfaceNormalWS;
+    float  liquidSurfaceFound;
 };
 
 WaterPhaseMarchResult RaymarchWaterPhase(
@@ -268,6 +358,10 @@ WaterPhaseMarchResult RaymarchWaterPhase(
     result.liquidDepth = 0.0;
     result.vapourLitness = 0.0;
 
+    result.liquidSurfaceWS = 0.0;
+    result.liquidSurfaceNormalWS = float3(0.0, 1.0, 0.0);
+    result.liquidSurfaceFound = 0.0;
+
     float stepSize = marchDistance / max((float)marchSteps, 1.0);
     float vapourTransmit = 1.0;
 
@@ -275,6 +369,11 @@ WaterPhaseMarchResult RaymarchWaterPhase(
 
     float3 boundsCenter = (boundsMinOS + boundsMaxOS) * 0.5;
     float3 boundsExtents = (boundsMaxOS - boundsMinOS) * 0.5;
+
+    float3 boundsMinWS = TransformObjectToWorld(boundsMinOS);
+    float3 boundsMaxWS = TransformObjectToWorld(boundsMaxOS);
+    float boundsDiagWS = max(distance(boundsMinWS, boundsMaxWS), 1e-4);
+    float normalEpsWS = clamp(boundsDiagWS * 0.005, 0.001, 0.05);
 
     float accumulatedLitAlpha = 0.0;
     float accumulatedTotalAlpha = 0.0;
@@ -299,14 +398,7 @@ WaterPhaseMarchResult RaymarchWaterPhase(
             break;
 
         float3 sampleOS = TransformWorldToObject(samplePos);
-
-        float axialFade = ComputeEdgeFade(sampleOS, boundsMinOS, boundsMaxOS, edgeSoftness);
-        float3 normPos = (sampleOS - boundsCenter) / max(boundsExtents, 1e-6);
-        float radialDist = length(normPos);
-        float radialFade = saturate(1.0 - radialDist);
-        radialFade = radialFade * radialFade * (3.0 - 2.0 * radialFade);
-
-        float shapeMask = axialFade * radialFade;
+        float shapeMask = ComputeShapeMaskOS(sampleOS, boundsMinOS, boundsMaxOS, boundsCenter, boundsExtents, edgeSoftness);
 
         float density = SampleDensity(
             samplePos, time,
@@ -348,6 +440,19 @@ WaterPhaseMarchResult RaymarchWaterPhase(
 
         if (liquidDensity > 0.0001)
         {
+            if (result.liquidSurfaceFound < 0.5)
+            {
+                result.liquidSurfaceWS = samplePos;
+                result.liquidSurfaceNormalWS = ComputeShapeNormalWS(
+                    samplePos,
+                    boundsMinOS, boundsMaxOS,
+                    boundsCenter, boundsExtents,
+                    edgeSoftness,
+                    normalEpsWS
+                );
+                result.liquidSurfaceFound = 1.0;
+            }
+
             float stepAlpha = saturate(liquidDensity * liquidOpacityCoeff * stepSize);
             result.liquidAlpha += (1.0 - result.liquidAlpha) * stepAlpha;
             result.liquidDepth += liquidDensity * stepSize;
@@ -387,6 +492,10 @@ WaterPhaseMarchResult RaymarchWaterPhaseLiquid(
     result.liquidDepth = 0.0;
     result.vapourLitness = 0.0;
 
+    result.liquidSurfaceWS = 0.0;
+    result.liquidSurfaceNormalWS = float3(0.0, 1.0, 0.0);
+    result.liquidSurfaceFound = 0.0;
+
     float stepSize = marchDistance / max((float)marchSteps, 1.0);
     float vapourTransmit = 1.0;
 
@@ -394,6 +503,11 @@ WaterPhaseMarchResult RaymarchWaterPhaseLiquid(
 
     float3 boundsCenter = (boundsMinOS + boundsMaxOS) * 0.5;
     float3 boundsExtents = (boundsMaxOS - boundsMinOS) * 0.5;
+
+    float3 boundsMinWS = TransformObjectToWorld(boundsMinOS);
+    float3 boundsMaxWS = TransformObjectToWorld(boundsMaxOS);
+    float boundsDiagWS = max(distance(boundsMinWS, boundsMaxWS), 1e-4);
+    float normalEpsWS = clamp(boundsDiagWS * 0.005, 0.001, 0.05);
 
     float2 pixelCoords = screenUV * _ScreenParams.xy;
     float jitter = frac(52.9829189 * frac(dot(pixelCoords, float2(0.06711056, 0.00583715))));
@@ -407,14 +521,7 @@ WaterPhaseMarchResult RaymarchWaterPhaseLiquid(
             break;
 
         float3 sampleOS = TransformWorldToObject(samplePos);
-
-        float axialFade = ComputeEdgeFade(sampleOS, boundsMinOS, boundsMaxOS, edgeSoftness);
-        float3 normPos = (sampleOS - boundsCenter) / max(boundsExtents, 1e-6);
-        float radialDist = length(normPos);
-        float radialFade = saturate(1.0 - radialDist);
-        radialFade = radialFade * radialFade * (3.0 - 2.0 * radialFade);
-
-        float shapeMask = axialFade * radialFade;
+        float shapeMask = ComputeShapeMaskOS(sampleOS, boundsMinOS, boundsMaxOS, boundsCenter, boundsExtents, edgeSoftness);
 
         float density = SampleDensity(
             samplePos, time,
@@ -445,6 +552,19 @@ WaterPhaseMarchResult RaymarchWaterPhaseLiquid(
 
         if (liquidDensity > 0.0001)
         {
+            if (result.liquidSurfaceFound < 0.5)
+            {
+                result.liquidSurfaceWS = samplePos;
+                result.liquidSurfaceNormalWS = ComputeShapeNormalWS(
+                    samplePos,
+                    boundsMinOS, boundsMaxOS,
+                    boundsCenter, boundsExtents,
+                    edgeSoftness,
+                    normalEpsWS
+                );
+                result.liquidSurfaceFound = 1.0;
+            }
+
             float stepAlpha = saturate(liquidDensity * liquidOpacityCoeff * stepSize);
             result.liquidAlpha += (1.0 - result.liquidAlpha) * stepAlpha;
             result.liquidDepth += liquidDensity * stepSize;

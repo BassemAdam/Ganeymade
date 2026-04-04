@@ -57,13 +57,13 @@ Shader "Custom/WaterPhase"
         _SSSAmbient           ("SSS Ambient", Range(0.0, 0.5)) = 0.1
         _SSSThicknessScale    ("SSS Thickness Scale", Range(0.1, 5.0)) = 1.0
 
-        [Header(Caustics)]
-        _CausticsTex          ("Caustics Texture", 2D) = "black" {}
-        _CausticsScale        ("Caustics Tiling", Range(0.1, 10.0)) = 1.5
-        _CausticsSpeed        ("Caustics Scroll Speed", Range(0.0, 2.0)) = 0.3
-        _CausticsStrength     ("Caustics Strength", Range(0.0, 5.0)) = 1.0
-        _CausticsDepthFade    ("Caustics Depth Fade", Range(0.1, 10.0)) = 2.0
-        _CausticsSplit        ("Caustics Chromatic Split", Range(0.0, 0.2)) = 0.02
+        [Header(Surface Texture)]
+        _CausticsTex          ("Surface Texture (Triplanar)", 2D) = "black" {}
+        _CausticsScale        ("Surface Texture Scale", Range(0.1, 10.0)) = 1.5
+        _CausticsSpeed        ("Surface Texture Scroll Speed", Range(0.0, 2.0)) = 0.3
+        _CausticsStrength     ("Surface Texture Strength", Range(0.0, 5.0)) = 1.0
+        _CausticsDepthFade    ("Triplanar Blend Sharpness", Range(0.1, 10.0)) = 2.0
+        _CausticsSplit        ("Surface Refraction Distortion", Range(0.0, 0.2)) = 0.02
 
         [Header(Raymarch)]
         _MarchSteps          ("March Steps", Range(8, 96)) = 40
@@ -310,25 +310,67 @@ Shader "Custom/WaterPhase"
                     vapourAlpha = saturate(phaseResult.vapourAlpha * (1.0 + vapourFresnel * _VapourFresnelStrength * 0.35));
                 }
 
+                float liquidAlpha = saturate(phaseResult.liquidAlpha);
+
+                float3 surfaceWS = entryWS;
+                float3 surfaceNormalWS = -rayDir;
+                if (phaseResult.liquidSurfaceFound > 0.5)
+                {
+                    surfaceWS = phaseResult.liquidSurfaceWS;
+                    surfaceNormalWS = normalize(phaseResult.liquidSurfaceNormalWS);
+                }
+
+                // Use a shape-based normal for more believable droplet/surface wrapping,
+                // but keep the original view-ray normal when not in liquid mode.
                 float3 liquidNormal = -rayDir;
+                if (isLiquidMode)
+                    liquidNormal = surfaceNormalWS;
+
+                float localSmoothness = _LiquidSmoothness;
+                float localSpecularStrength = _LiquidSpecularStrength;
+                float localReflectionStrength = _LiquidReflectionStrength;
+                float2 surfaceRefractDistort = 0.0;
+
+                // ── Surface texture detail (liquid only, triplanar wrap) ──
+                if (isLiquidMode && liquidAlpha > 0.01 && _CausticsStrength > 0.001)
+                {
+                    half3 surfaceTex = SampleSurfaceTextureTriplanar(
+                        TEXTURE2D_ARGS(_CausticsTex, sampler_CausticsTex),
+                        surfaceWS, surfaceNormalWS,
+                        _Time.y, _CausticsScale, _CausticsSpeed, _CausticsDepthFade
+                    );
+
+                    float surfaceLuma = saturate(dot(surfaceTex, half3(0.299, 0.587, 0.114)));
+                    float surfaceCentered = (surfaceLuma - 0.5) * 2.0;
+
+                    // Black textures stay effectively “off”; mid-gray stays neutral.
+                    float surfaceEffect = clamp(surfaceCentered * surfaceLuma * _CausticsStrength, -1.0, 1.0) * liquidAlpha;
+
+                    localSmoothness = saturate(localSmoothness + surfaceEffect * 0.15);
+                    localSpecularStrength = max(0.0, localSpecularStrength * (1.0 + surfaceEffect * 0.6));
+                    localReflectionStrength = saturate(localReflectionStrength * (1.0 + surfaceEffect * 0.2));
+
+                    surfaceRefractDistort = (surfaceTex.rg * 2.0 - 1.0) * surfaceLuma * _CausticsSplit * _CausticsStrength * liquidAlpha;
+                }
+
                 float liquidFresnel = FresnelEdge(viewDirWS, liquidNormal, _LiquidFresnelPower);
 
                 float3 halfVec = normalize(lightDir + viewDirWS);
                 float ndh = saturate(dot(liquidNormal, halfVec));
-                float specPower = exp2(_LiquidSmoothness * 10.0 + 1.0);
-                float liquidSpec = pow(ndh, specPower) * _LiquidSpecularStrength;
+                float specPower = exp2(localSmoothness * 10.0 + 1.0);
+                float liquidSpec = pow(ndh, specPower) * localSpecularStrength;
 
                 float3 reflectDir = reflect(-viewDirWS, liquidNormal);
-                half perceptualRoughness = 1.0 - _LiquidSmoothness;
+                half perceptualRoughness = 1.0 - localSmoothness;
                 half3 liquidReflection = GlossyEnvironmentReflection(
                     reflectDir,
                     IN.positionWS,
                     perceptualRoughness,
                     1.0,
                     screenUV
-                ) * _LiquidReflectionStrength;
+                ) * localReflectionStrength;
 
-                float2 refractOffset = liquidNormal.xy * _LiquidRefractionStrength * phaseResult.liquidAlpha;
+                float2 refractOffset = liquidNormal.xy * _LiquidRefractionStrength * liquidAlpha + surfaceRefractDistort;
                 half3 refractedScene = SampleSceneColor(screenUV + refractOffset);
                 half3 liquidDepthCol = CalculateLiquidDepthColor(
                     refractedScene,
@@ -355,22 +397,7 @@ Shader "Custom/WaterPhase"
                     liquidCol += sss * phaseResult.liquidAlpha;
                 }
 
-                // ── Caustics (liquid only) ──
-                if (isLiquidMode && phaseResult.liquidAlpha > 0.01)
-                {
-                    half3 caustics = SampleCaustics(
-                        TEXTURE2D_ARGS(_CausticsTex, sampler_CausticsTex),
-                        entryWS, lightDir,
-                        _Time.y, _CausticsScale, _CausticsSpeed,
-                        _CausticsSplit
-                    );
-                    // Fade caustics with depth (Beer-Lambert) and light intensity
-                    float causticsAtten = exp(-phaseResult.liquidDepth * _CausticsDepthFade);
-                    float ndl = saturate(dot(liquidNormal, lightDir));
-                    liquidCol += caustics * _CausticsStrength * causticsAtten * ndl * lightColor * phaseResult.liquidAlpha;
-                }
-
-                float liquidAlpha = saturate(phaseResult.liquidAlpha);
+                // (Old caustics block removed: replaced by triplanar surface texture detail above.)
 
                 half3 finalCol = vapourCol + liquidCol;
                 float finalAlpha = saturate(1.0 - (1.0 - vapourAlpha) * (1.0 - liquidAlpha));
