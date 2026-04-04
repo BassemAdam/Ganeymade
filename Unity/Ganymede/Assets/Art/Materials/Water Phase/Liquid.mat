@@ -121,6 +121,7 @@ Material:
     - _Glossiness: 0
     - _GlossyReflections: 0
     - _LiquidAbsorptionRate: 0.37
+    - _LiquidBodyLightStrength: 2.21
     - _LiquidFresnelPower: 8.73
     - _LiquidOpacityCoeff: 30
     - _LiquidReflectionStrength: 0.913
