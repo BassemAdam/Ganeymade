@@ -42,6 +42,7 @@ Shader "Custom/WaterPhase"
         _LiquidShallowColor       ("Liquid Shallow Color", Color) = (0.30, 0.80, 0.80, 1)
         _LiquidDeepColor          ("Liquid Deep Color", Color) = (0.02, 0.05, 0.15, 1)
         _LiquidAbsorptionRate     ("Liquid Absorption Rate", Range(0.1, 5.0)) = 1.2
+        _LiquidBodyLightStrength  ("Liquid Body Light Strength", Range(0.0, 3.0)) = 0.35
         _LiquidOpacityCoeff       ("Liquid Opacity Coeff", Range(0.1, 30.0)) = 8.0
         _LiquidSmoothness         ("Liquid Smoothness", Range(0.0, 1.0)) = 0.9
         _LiquidSpecularStrength   ("Liquid Specular Strength", Range(0.0, 5.0)) = 1.2
@@ -98,6 +99,9 @@ Shader "Custom/WaterPhase"
             #pragma vertex vert
             #pragma fragment frag
             #pragma multi_compile _ _MAIN_LIGHT_SHADOWS _MAIN_LIGHT_SHADOWS_CASCADE _MAIN_LIGHT_SHADOWS_SCREEN
+            #pragma multi_compile _ _ADDITIONAL_LIGHTS_VERTEX _ADDITIONAL_LIGHTS
+            #pragma multi_compile_fragment _ _ADDITIONAL_LIGHT_SHADOWS
+            #pragma multi_compile _ _CLUSTER_LIGHT_LOOP
             #pragma multi_compile _ _SHADOWS_SOFT
 
             #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Core.hlsl"
@@ -160,6 +164,7 @@ Shader "Custom/WaterPhase"
                 half4   _LiquidShallowColor;
                 half4   _LiquidDeepColor;
                 float   _LiquidAbsorptionRate;
+                float   _LiquidBodyLightStrength;
                 float   _LiquidOpacityCoeff;
                 float   _LiquidSmoothness;
                 float   _LiquidSpecularStrength;
@@ -287,10 +292,12 @@ Shader "Custom/WaterPhase"
 
                 if (!isLiquidMode)
                 {
-                    vapourCol = phaseResult.vapourScatter * _VapourBaseColor.rgb * tempTint;
+                    half3 vapourColMain = phaseResult.vapourScatter * _VapourBaseColor.rgb * tempTint;
+                    half3 vapourColAdd = phaseResult.vapourScatterAdditional * _VapourBaseColor.rgb * tempTint;
 
                     float vapourLitness = phaseResult.vapourLitness;
-                    vapourCol = lerp((half3)_VapourShadowColor.rgb * phaseResult.vapourAlpha, vapourCol, vapourLitness);
+                    vapourColMain = lerp((half3)_VapourShadowColor.rgb * phaseResult.vapourAlpha, vapourColMain, vapourLitness);
+                    vapourCol = vapourColMain;
 
                     float vapourTransmittance = saturate(1.0 - phaseResult.vapourAlpha);
                     float ambientOcclusionProxy = lerp(1.0, vapourTransmittance, _VapourAmbientOcclusionProxy);
@@ -308,6 +315,9 @@ Shader "Custom/WaterPhase"
                     vapourCol += vapourFresnel * _VapourFresnelStrength * lightColor * phaseResult.vapourAlpha * vapourLitness;
 
                     vapourAlpha = saturate(phaseResult.vapourAlpha * (1.0 + vapourFresnel * _VapourFresnelStrength * 0.35));
+
+                    // Add flashlight/point-light scattering after the main-light shadow tinting.
+                    vapourCol += vapourColAdd;
                 }
 
                 float liquidAlpha = saturate(phaseResult.liquidAlpha);
@@ -381,7 +391,42 @@ Shader "Custom/WaterPhase"
                 );
 
                 half3 liquidCol = liquidDepthCol * _LiquidTint.rgb;
+
+                // ── Liquid body lighting (single-scatter approximation) ──
+                // Makes point/spot lights brighten the water body, not only specular.
+                // Uses Beer-Lambert transmittance to increase scatter with depth.
+                float liquidTransmittance = exp(-phaseResult.liquidDepth * _LiquidAbsorptionRate);
+                float liquidScatter = saturate(1.0 - liquidTransmittance);
+                float bodyMask = liquidScatter * liquidAlpha * (1.0 - liquidFresnel);
+                float ndlMain = saturate(dot(liquidNormal, lightDir));
+                liquidCol += (half3)_SSSColor.rgb * lightColor * ndlMain * bodyMask * _LiquidBodyLightStrength;
+
                 liquidCol += liquidSpec * lightColor;
+
+#if defined(_ADDITIONAL_LIGHTS)
+                // Additional point/spot lights (including spot "flashlight") for liquid specular.
+                // Uses LIGHT_LOOP_* so it works in both Forward and Forward+ (clustered).
+                {
+                    InputData inputData = (InputData)0;
+                    inputData.normalizedScreenSpaceUV = screenUV;
+                    inputData.positionWS = IN.positionWS;
+
+                    uint additionalLightsCount = (uint)GetAdditionalLightsCount();
+                    LIGHT_LOOP_BEGIN(additionalLightsCount)
+                        Light additionalLight = GetAdditionalLight(lightIndex, IN.positionWS);
+                        half3 radiance = additionalLight.color * (additionalLight.distanceAttenuation * additionalLight.shadowAttenuation);
+
+                        float3 addDir = normalize((float3)additionalLight.direction);
+                        float3 addHalfVec = normalize(addDir + viewDirWS);
+                        float addNdh = saturate(dot(liquidNormal, addHalfVec));
+                        float addSpec = pow(addNdh, specPower) * localSpecularStrength;
+                        liquidCol += addSpec * radiance;
+
+                        float addNdl = saturate(dot(liquidNormal, addDir));
+                        liquidCol += (half3)_SSSColor.rgb * radiance * addNdl * bodyMask * _LiquidBodyLightStrength;
+                    LIGHT_LOOP_END
+                }
+#endif
                 liquidCol += liquidReflection * liquidFresnel;
 
                 // ── Subsurface scattering (liquid only) ──
