@@ -422,6 +422,9 @@
             float3 sampleOS = TransformWorldToObject(samplePos);
             float shapeMask = ComputeShapeMaskOS(sampleOS, boundsMinOS, boundsMaxOS, boundsCenter, boundsExtents, edgeSoftness);
 
+            if (shapeMask <= 0.001)
+            continue;
+
             float density = SampleDensity(
             samplePos, time,
             driftDir, driftSpeed,
@@ -521,8 +524,7 @@
     // ── Liquid-optimised raymarch: IGN jitter only, no blue noise, no per-step shadows ──
     WaterPhaseMarchResult RaymarchWaterPhaseLiquid(
     float3 rayOrigin, float3 rayDir,
-    int marchSteps, float marchDistance,
-    float liquidOpacityCoeff,
+    int marchSteps, float marchDistance, float liquidOpacityCoeff,
     float phaseThreshold, float phaseWidth,
     float time,
     float3 driftDir, float driftSpeed,
@@ -541,7 +543,6 @@
         result.liquidAlpha = 0.0;
         result.liquidDepth = 0.0;
         result.vapourLitness = 0.0;
-
         result.liquidSurfaceWS = 0.0;
         result.liquidSurfaceNormalWS = float3(0.0, 1.0, 0.0);
         result.liquidSurfaceFound = 0.0;
@@ -569,6 +570,9 @@
 
             float3 sampleOS = TransformWorldToObject(samplePos);
             float shapeMask = ComputeShapeMaskOS(sampleOS, boundsMinOS, boundsMaxOS, boundsCenter, boundsExtents, edgeSoftness);
+
+            if (shapeMask <= 0.001)
+            continue;
 
             float density = SampleDensity(
             samplePos, time,
