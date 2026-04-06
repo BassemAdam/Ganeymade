@@ -1,5 +1,12 @@
 using UnityEngine;
 
+// This script supports both the legacy Input Manager and the newer Input System.
+// When "Active Input Handling" is set to "Input System Package (New)" only,
+// calling UnityEngine.Input APIs throws InvalidOperationException.
+#if ENABLE_INPUT_SYSTEM && !ENABLE_LEGACY_INPUT_MANAGER
+using UnityEngine.InputSystem;
+#endif
+
 /// <summary>
 /// First-person camera controller with WASD movement, mouse look,
 /// and particle interaction (left-click attract, right-click repulse).
@@ -74,14 +81,14 @@ public class FirstPersonCamera : MonoBehaviour
         HandleMovement();
         HandleInteraction();
 
-        if (Input.GetKeyDown(KeyCode.Escape))
+        if (GetKeyDown(KeyCode.Escape))
         {
             Cursor.lockState = CursorLockMode.None;
             Cursor.visible = true;
         }
 
         // Right-click to re-lock cursor (left-click is reserved for attract)
-        if (Cursor.lockState == CursorLockMode.None && Input.GetKeyDown(KeyCode.L))
+        if (Cursor.lockState == CursorLockMode.None && GetKeyDown(KeyCode.L))
         {
             Cursor.lockState = CursorLockMode.Locked;
             Cursor.visible = false;
@@ -92,8 +99,8 @@ public class FirstPersonCamera : MonoBehaviour
     {
         if (Cursor.lockState != CursorLockMode.Locked) return;
 
-        float mx = Input.GetAxis("Mouse X") * mouseSensitivity;
-        float my = Input.GetAxis("Mouse Y") * mouseSensitivity;
+        float mx = GetMouseAxisX() * mouseSensitivity;
+        float my = GetMouseAxisY() * mouseSensitivity;
 
         yaw += mx;
         pitch -= my;
@@ -105,16 +112,16 @@ public class FirstPersonCamera : MonoBehaviour
     void HandleMovement()
     {
         float speed = moveSpeed;
-        if (Input.GetKey(KeyCode.LeftShift) || Input.GetKey(KeyCode.RightShift))
+        if (GetKey(KeyCode.LeftShift) || GetKey(KeyCode.RightShift))
             speed *= sprintMultiplier;
 
         Vector3 input = Vector3.zero;
-        if (Input.GetKey(KeyCode.W)) input += transform.forward;
-        if (Input.GetKey(KeyCode.S)) input -= transform.forward;
-        if (Input.GetKey(KeyCode.D)) input += transform.right;
-        if (Input.GetKey(KeyCode.A)) input -= transform.right;
-        if (Input.GetKey(KeyCode.E) || Input.GetKey(KeyCode.Space)) input += Vector3.up;
-        if (Input.GetKey(KeyCode.Q)) input -= Vector3.up;
+        if (GetKey(KeyCode.W)) input += transform.forward;
+        if (GetKey(KeyCode.S)) input -= transform.forward;
+        if (GetKey(KeyCode.D)) input += transform.right;
+        if (GetKey(KeyCode.A)) input -= transform.right;
+        if (GetKey(KeyCode.E) || GetKey(KeyCode.Space)) input += Vector3.up;
+        if (GetKey(KeyCode.Q)) input -= Vector3.up;
 
         if (input.sqrMagnitude > 0.001f)
             transform.position += input.normalized * speed * Time.deltaTime;
@@ -125,8 +132,8 @@ public class FirstPersonCamera : MonoBehaviour
         if (computePlugin == null) return;
 
         Vector3 hitPoint = transform.position + transform.forward * interactionDistance;
-        bool leftHeld = Input.GetMouseButton(0);
-        bool rightHeld = Input.GetMouseButton(1);
+        bool leftHeld = GetMouseButton(0);
+        bool rightHeld = GetMouseButton(1);
 
         if (leftHeld)
         {
@@ -149,13 +156,106 @@ public class FirstPersonCamera : MonoBehaviour
     void OnDrawGizmos()
     {
         if (!Application.isPlaying) return;
-        bool active = Input.GetMouseButton(0) || Input.GetMouseButton(1);
+        bool active = GetMouseButton(0) || GetMouseButton(1);
         if (!active) return;
 
         Vector3 pt = transform.position + transform.forward * interactionDistance;
-        Gizmos.color = Input.GetMouseButton(0)
+        Gizmos.color = GetMouseButton(0)
             ? new Color(0f, 1f, 0.5f, 0.3f)
             : new Color(1f, 0.2f, 0f, 0.3f);
         Gizmos.DrawWireSphere(pt, interactionRadius);
     }
+
+    // ------------------------------------------------------------------
+    // Input wrappers (legacy Input Manager OR new Input System)
+
+    private static bool GetKey(KeyCode key)
+    {
+#if ENABLE_INPUT_SYSTEM && !ENABLE_LEGACY_INPUT_MANAGER
+        var kb = Keyboard.current;
+        if (kb == null) return false;
+        return KeyCodeToKeyPressed(kb, key);
+#else
+        return Input.GetKey(key);
+#endif
+    }
+
+    private static bool GetKeyDown(KeyCode key)
+    {
+#if ENABLE_INPUT_SYSTEM && !ENABLE_LEGACY_INPUT_MANAGER
+        var kb = Keyboard.current;
+        if (kb == null) return false;
+        return KeyCodeToKeyDown(kb, key);
+#else
+        return Input.GetKeyDown(key);
+#endif
+    }
+
+    private static bool GetMouseButton(int button)
+    {
+#if ENABLE_INPUT_SYSTEM && !ENABLE_LEGACY_INPUT_MANAGER
+        var m = Mouse.current;
+        if (m == null) return false;
+        return button switch
+        {
+            0 => m.leftButton.isPressed,
+            1 => m.rightButton.isPressed,
+            2 => m.middleButton.isPressed,
+            _ => false
+        };
+#else
+        return Input.GetMouseButton(button);
+#endif
+    }
+
+    private static float GetMouseAxisX()
+    {
+#if ENABLE_INPUT_SYSTEM && !ENABLE_LEGACY_INPUT_MANAGER
+        // New Input System returns mouse delta in pixels. Scale down to feel similar
+        // to legacy Input.GetAxis("Mouse X"). Adjust mouseSensitivity if needed.
+        var m = Mouse.current;
+        return (m != null ? m.delta.ReadValue().x : 0f) * 0.1f;
+#else
+        return Input.GetAxis("Mouse X");
+#endif
+    }
+
+    private static float GetMouseAxisY()
+    {
+#if ENABLE_INPUT_SYSTEM && !ENABLE_LEGACY_INPUT_MANAGER
+        var m = Mouse.current;
+        return (m != null ? m.delta.ReadValue().y : 0f) * 0.1f;
+#else
+        return Input.GetAxis("Mouse Y");
+#endif
+    }
+
+#if ENABLE_INPUT_SYSTEM && !ENABLE_LEGACY_INPUT_MANAGER
+    private static bool KeyCodeToKeyPressed(Keyboard kb, KeyCode keyCode)
+    {
+        return keyCode switch
+        {
+            KeyCode.W => kb.wKey.isPressed,
+            KeyCode.A => kb.aKey.isPressed,
+            KeyCode.S => kb.sKey.isPressed,
+            KeyCode.D => kb.dKey.isPressed,
+            KeyCode.Q => kb.qKey.isPressed,
+            KeyCode.E => kb.eKey.isPressed,
+            KeyCode.Space => kb.spaceKey.isPressed,
+            KeyCode.LeftShift => kb.leftShiftKey.isPressed,
+            KeyCode.RightShift => kb.rightShiftKey.isPressed,
+            _ => false
+        };
+    }
+
+    private static bool KeyCodeToKeyDown(Keyboard kb, KeyCode keyCode)
+    {
+        return keyCode switch
+        {
+            KeyCode.Escape => kb.escapeKey.wasPressedThisFrame,
+            KeyCode.L => kb.lKey.wasPressedThisFrame,
+            _ => false
+        };
+    }
+#endif
 }
