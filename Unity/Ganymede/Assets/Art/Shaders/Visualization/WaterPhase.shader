@@ -208,13 +208,13 @@ Shader "Custom/WaterPhase"
                 float marchDistance = 0.0;
 
                 if (!ComputeVoxelRaySegmentWS(
-                    cameraWS,
-                    IN.positionWS,
-                    boundsMinOS,
-                    boundsMaxOS,
-                    entryWS,
-                    rayDir,
-                    marchDistance
+                cameraWS,
+                IN.positionWS,
+                boundsMinOS,
+                boundsMaxOS,
+                entryWS,
+                rayDir,
+                marchDistance
                 ))
                 {
                     return half4(0, 0, 0, 0);
@@ -223,52 +223,53 @@ Shader "Custom/WaterPhase"
                 float2 screenUV = IN.screenPos.xy / IN.screenPos.w;
                 float rawDepth = SAMPLE_TEXTURE2D_X(_CameraDepthTexture, sampler_CameraDepthTexture, screenUV).r;
                 float sceneLinearDepth = LinearEyeDepth(rawDepth, _ZBufferParams);
-
-                float2 blueNoiseUV = frac(screenUV * _ScreenParams.xy * _BlueNoiseTex_TexelSize.xy * _BlueNoiseScale);
-                float2 blueNoiseTimeOffset = float2(0.75487766, 0.56984029) * frac(_Time.y * _BlueNoiseTimeSpeed);
-                float2 blueNoiseSampleUV = frac(blueNoiseUV + blueNoiseTimeOffset);
-                float2 blueNoiseRG = SAMPLE_TEXTURE2D(_BlueNoiseTex, sampler_BlueNoiseTex, blueNoiseSampleUV).rg;
-
+                
                 Light mainLight = GetMainLight();
                 float3 lightDir = normalize(mainLight.direction);
                 half3 lightColor = mainLight.color;
-
+                
                 int marchSteps = _MarchSteps;
                 int noiseOctaves = _NoiseOctaves;
                 float3 driftDir = normalize((float3)_NoiseDriftDir.xyz);
-
+                
                 WaterPhaseMarchResult phaseResult;
                 bool isLiquidMode = _DensityPhaseThreshold < 0.1;
-
+                
                 if (isLiquidMode)
                 {
                     phaseResult = RaymarchWaterPhaseLiquid(
-                        entryWS, rayDir, lightDir, lightColor,
-                        marchSteps, marchDistance,
-                        _VapourScatterG, _VapourAbsorption,
-                        _LiquidOpacityCoeff,
-                        _DensityPhaseThreshold, _PhaseTransitionWidth,
-                        _Time.y, driftDir, _NoiseDriftSpeed,
-                        _NoiseScale, noiseOctaves, _DensityPower,
-                        _Density, _PhysicsBlend,
-                        sceneLinearDepth, boundsMinOS, boundsMaxOS,
-                        _EdgeSoftness, screenUV
+                    entryWS, rayDir, lightDir, lightColor,
+                    marchSteps, marchDistance,
+                    _VapourScatterG, _VapourAbsorption,
+                    _LiquidOpacityCoeff,
+                    _DensityPhaseThreshold, _PhaseTransitionWidth,
+                    _Time.y, driftDir, _NoiseDriftSpeed,
+                    _NoiseScale, noiseOctaves, _DensityPower,
+                    _Density, _PhysicsBlend,
+                    sceneLinearDepth, boundsMinOS, boundsMaxOS,
+                    _EdgeSoftness, screenUV
                     );
                 }
                 else
                 {
+                    // Blue Noise Texture
+                    float2 blueNoiseUV = frac(screenUV * _ScreenParams.xy * _BlueNoiseTex_TexelSize.xy * _BlueNoiseScale);
+                    float2 blueNoiseTimeOffset = float2(0.75487766, 0.56984029) * frac(_Time.y * _BlueNoiseTimeSpeed);
+                    float2 blueNoiseSampleUV = frac(blueNoiseUV + blueNoiseTimeOffset);
+                    float2 blueNoiseRG = SAMPLE_TEXTURE2D(_BlueNoiseTex, sampler_BlueNoiseTex, blueNoiseSampleUV).rg;
+
                     phaseResult = RaymarchWaterPhase(
-                        entryWS, rayDir, lightDir, lightColor,
-                        marchSteps, marchDistance,
-                        _VapourScatterG, _VapourAbsorption,
-                        _LiquidOpacityCoeff,
-                        _DensityPhaseThreshold, _PhaseTransitionWidth,
-                        _Time.y, driftDir, _NoiseDriftSpeed,
-                        _NoiseScale, noiseOctaves, _DensityPower,
-                        _Density, _PhysicsBlend,
-                        sceneLinearDepth, boundsMinOS, boundsMaxOS,
-                        _EdgeSoftness, screenUV,
-                        blueNoiseRG, _BlueNoiseStrength
+                    entryWS, rayDir, lightDir, lightColor,
+                    marchSteps, marchDistance,
+                    _VapourScatterG, _VapourAbsorption,
+                    _LiquidOpacityCoeff,
+                    _DensityPhaseThreshold, _PhaseTransitionWidth,
+                    _Time.y, driftDir, _NoiseDriftSpeed,
+                    _NoiseScale, noiseOctaves, _DensityPower,
+                    _Density, _PhysicsBlend,
+                    sceneLinearDepth, boundsMinOS, boundsMaxOS,
+                    _EdgeSoftness, screenUV,
+                    blueNoiseRG, _BlueNoiseStrength
                     );
                 }
 
@@ -322,7 +323,7 @@ Shader "Custom/WaterPhase"
                 // but keep the original view-ray normal when not in liquid mode.
                 float3 liquidNormal = -rayDir;
                 if (isLiquidMode)
-                    liquidNormal = surfaceNormalWS;
+                liquidNormal = surfaceNormalWS;
 
                 float localSmoothness = _LiquidSmoothness;
                 float localSpecularStrength = _LiquidSpecularStrength;
@@ -333,9 +334,9 @@ Shader "Custom/WaterPhase"
                 if (isLiquidMode && liquidAlpha > 0.01 && _CausticsStrength > 0.001)
                 {
                     half3 surfaceTex = SampleSurfaceTextureTriplanar(
-                        TEXTURE2D_ARGS(_CausticsTex, sampler_CausticsTex),
-                        surfaceWS, surfaceNormalWS,
-                        _Time.y, _CausticsScale, _CausticsSpeed, _CausticsDepthFade
+                    TEXTURE2D_ARGS(_CausticsTex, sampler_CausticsTex),
+                    surfaceWS, surfaceNormalWS,
+                    _Time.y, _CausticsScale, _CausticsSpeed, _CausticsDepthFade
                     );
 
                     float surfaceLuma = saturate(dot(surfaceTex, half3(0.299, 0.587, 0.114)));
@@ -361,21 +362,21 @@ Shader "Custom/WaterPhase"
                 float3 reflectDir = reflect(-viewDirWS, liquidNormal);
                 half perceptualRoughness = 1.0 - localSmoothness;
                 half3 liquidReflection = GlossyEnvironmentReflection(
-                    reflectDir,
-                    IN.positionWS,
-                    perceptualRoughness,
-                    1.0,
-                    screenUV
+                reflectDir,
+                IN.positionWS,
+                perceptualRoughness,
+                1.0,
+                screenUV
                 ) * localReflectionStrength;
 
                 float2 refractOffset = liquidNormal.xy * _LiquidRefractionStrength * liquidAlpha + surfaceRefractDistort;
                 half3 refractedScene = SampleSceneColor(screenUV + refractOffset);
                 half3 liquidDepthCol = CalculateLiquidDepthColor(
-                    refractedScene,
-                    _LiquidShallowColor.rgb,
-                    _LiquidDeepColor.rgb,
-                    phaseResult.liquidDepth,
-                    _LiquidAbsorptionRate
+                refractedScene,
+                _LiquidShallowColor.rgb,
+                _LiquidDeepColor.rgb,
+                phaseResult.liquidDepth,
+                _LiquidAbsorptionRate
                 );
 
                 half3 liquidCol = liquidDepthCol * _LiquidTint.rgb;
@@ -392,15 +393,15 @@ Shader "Custom/WaterPhase"
                 liquidCol += liquidSpec * lightColor;
 
                 #if defined(_ADDITIONAL_LIGHTS)
-                // Additional point/spot lights (including spot "flashlight") for liquid specular.
-                // Uses LIGHT_LOOP_* so it works in both Forward and Forward+ (clustered).
-                {
-                    InputData inputData = (InputData)0;
-                    inputData.normalizedScreenSpaceUV = screenUV;
-                    inputData.positionWS = IN.positionWS;
+                    // Additional point/spot lights (including spot "flashlight") for liquid specular.
+                    // Uses LIGHT_LOOP_* so it works in both Forward and Forward+ (clustered).
+                    {
+                        InputData inputData = (InputData)0;
+                        inputData.normalizedScreenSpaceUV = screenUV;
+                        inputData.positionWS = IN.positionWS;
 
-                    uint additionalLightsCount = (uint)GetAdditionalLightsCount();
-                    LIGHT_LOOP_BEGIN(additionalLightsCount)
+                        uint additionalLightsCount = (uint)GetAdditionalLightsCount();
+                        LIGHT_LOOP_BEGIN(additionalLightsCount)
                         Light additionalLight = GetAdditionalLight(lightIndex, IN.positionWS);
                         half3 radiance = additionalLight.color * (additionalLight.distanceAttenuation * additionalLight.shadowAttenuation);
 
@@ -412,8 +413,8 @@ Shader "Custom/WaterPhase"
 
                         float addNdl = saturate(dot(liquidNormal, addDir));
                         liquidCol += (half3)_SSSColor.rgb * radiance * addNdl * bodyMask * _LiquidBodyLightStrength;
-                    LIGHT_LOOP_END
-                }
+                        LIGHT_LOOP_END
+                    }
                 #endif
                 liquidCol += liquidReflection * liquidFresnel;
 
@@ -422,10 +423,10 @@ Shader "Custom/WaterPhase"
                 {
                     float sssThickness = saturate(phaseResult.liquidDepth * _SSSThicknessScale);
                     half3 sss = ComputeSSS(
-                        viewDirWS, lightDir, liquidNormal,
-                        lightColor, _SSSColor.rgb,
-                        _SSSStrength, _SSSPower, _SSSDistortion,
-                        _SSSAmbient, sssThickness
+                    viewDirWS, lightDir, liquidNormal,
+                    lightColor, _SSSColor.rgb,
+                    _SSSStrength, _SSSPower, _SSSDistortion,
+                    _SSSAmbient, sssThickness
                     );
                     liquidCol += sss * phaseResult.liquidAlpha;
                 }
