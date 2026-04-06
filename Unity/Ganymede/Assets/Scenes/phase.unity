@@ -1148,8 +1148,8 @@ Transform:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 781581037}
   serializedVersion: 2
-  m_LocalRotation: {x: -0.10432674, y: -0.486912, z: 0.05871032, w: -0.8652085}
-  m_LocalPosition: {x: -25.700172, y: -66.10286, z: -63.101986}
+  m_LocalRotation: {x: -0.17115635, y: -0.8257098, z: 0.3384468, w: -0.41756746}
+  m_LocalPosition: {x: -17.810453, y: -50.196846, z: -11.216837}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
@@ -1982,13 +1982,17 @@ PrefabInstance:
     serializedVersion: 3
     m_TransformParent: {fileID: 0}
     m_Modifications:
+    - target: {fileID: 920208063865847605, guid: 18cf1fa5220a198409fde72db8b3e2a5, type: 3}
+      propertyPath: particleMaterial
+      value: 
+      objectReference: {fileID: 2100000, guid: 29460bc96fb682d43ab118d72455dafa, type: 2}
     - target: {fileID: 1340585115186609873, guid: 18cf1fa5220a198409fde72db8b3e2a5, type: 3}
       propertyPath: m_Name
       value: Physics
       objectReference: {fileID: 0}
     - target: {fileID: 5891988049623486879, guid: 18cf1fa5220a198409fde72db8b3e2a5, type: 3}
       propertyPath: m_LocalPosition.x
-      value: 1.555
+      value: -4.05
       objectReference: {fileID: 0}
     - target: {fileID: 5891988049623486879, guid: 18cf1fa5220a198409fde72db8b3e2a5, type: 3}
       propertyPath: m_LocalPosition.y
@@ -1996,7 +2000,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 5891988049623486879, guid: 18cf1fa5220a198409fde72db8b3e2a5, type: 3}
       propertyPath: m_LocalPosition.z
-      value: -28.49
+      value: -26.79
       objectReference: {fileID: 0}
     - target: {fileID: 5891988049623486879, guid: 18cf1fa5220a198409fde72db8b3e2a5, type: 3}
       propertyPath: m_LocalRotation.w

@@ -27,7 +27,7 @@ Material:
   m_ValidKeywords: []
   m_InvalidKeywords: []
   m_LightmapFlags: 4
-  m_EnableInstancingVariants: 0
+  m_EnableInstancingVariants: 1
   m_DoubleSidedGI: 1
   m_CustomRenderQueue: -1
   stringTagMap: {}
@@ -134,6 +134,7 @@ Material:
     - _Glossiness: 0
     - _GlossyReflections: 0
     - _LiquidAbsorptionRate: 0.55
+    - _LiquidBodyLightStrength: 0.35
     - _LiquidFresnelPower: 5.99
     - _LiquidOpacityCoeff: 29.6
     - _LiquidReflectionStrength: 0.837
