@@ -102,7 +102,7 @@ Shader "Custom/WaterPhase"
             #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Core.hlsl"
             #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Lighting.hlsl"
             #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/DeclareOpaqueTexture.hlsl"
-            #include "../Includes/WaterPhaseHelpers.hlsl"
+            #include "../Includes/WaterPhase/WaterPhaseHelpers.hlsl"
 
             struct MeshInput
             {
@@ -238,9 +238,8 @@ Shader "Custom/WaterPhase"
                 if (isLiquidMode)
                 {
                     phaseResult = RaymarchWaterPhaseLiquid(
-                    entryWS, rayDir, lightDir, lightColor,
+                    entryWS, rayDir, 
                     marchSteps, marchDistance,
-                    _VapourScatterG, _VapourAbsorption,
                     _LiquidOpacityCoeff,
                     _DensityPhaseThreshold, _PhaseTransitionWidth,
                     _Time.y, driftDir, _NoiseDriftSpeed,
@@ -436,7 +435,6 @@ Shader "Custom/WaterPhase"
                         liquidCol += sss * phaseResult.liquidAlpha;
                     }
                 }
-                // (Old caustics block removed: replaced by triplanar surface texture detail above.)
 
                 half3 finalCol = vapourCol + liquidCol;
                 float finalAlpha = saturate(1.0 - (1.0 - vapourAlpha) * (1.0 - liquidAlpha));
