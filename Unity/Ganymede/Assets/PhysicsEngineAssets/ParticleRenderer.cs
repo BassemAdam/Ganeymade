@@ -41,11 +41,18 @@ public class ParticleRenderer : MonoBehaviour
     private uint[] args = new uint[5];
     private UseComputePlugin computePlugin;
     private Bounds renderBounds;
+    private MaterialPropertyBlock mpb;
 
     void Start()
     {
         computePlugin = GetComponent<UseComputePlugin>();
         int count = computePlugin.particleCount;
+
+        mpb = new MaterialPropertyBlock();
+
+        // DrawMeshInstancedIndirect requires instancing enabled on the material.
+        if (particleMaterial != null)
+            particleMaterial.enableInstancing = true;
 
         // Set up default gradient if none was configured in the Inspector
         if (velocityGradient == null || velocityGradient.colorKeys.Length < 2)
@@ -111,12 +118,15 @@ public class ParticleRenderer : MonoBehaviour
         GetComputeResult(readbackData, readbackData.Length);
         particleBuffer.SetData(readbackData);
 
-        particleMaterial.SetBuffer("_ParticleBuffer", particleBuffer);
-        particleMaterial.SetFloat("_Size", particleSize);
-        particleMaterial.SetFloat("_MaxSpeed", maxSpeed);
-        particleMaterial.SetTexture("_GradientTex", gradientTexture);
+        // Bind resources per-draw to avoid Vulkan "missing binding" warnings.
+        // (Also prevents modifying the shared material asset at runtime.)
+        mpb.Clear();
+        mpb.SetBuffer("_ParticleBuffer", particleBuffer);
+        mpb.SetFloat("_Size", particleSize);
+        mpb.SetFloat("_MaxSpeed", maxSpeed);
+        mpb.SetTexture("_GradientTex", gradientTexture);
 
-        Graphics.DrawMeshInstancedIndirect(particleMesh, 0, particleMaterial, renderBounds, argsBuffer);
+        Graphics.DrawMeshInstancedIndirect(particleMesh, 0, particleMaterial, renderBounds, argsBuffer, 0, mpb);
     }
 
     void OnDestroy()
