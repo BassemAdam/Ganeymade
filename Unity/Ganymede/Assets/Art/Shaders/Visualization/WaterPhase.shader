@@ -80,12 +80,7 @@ Shader "Custom/WaterPhase"
 
     SubShader
     {
-        Tags
-        {
-            "RenderType" = "Transparent"
-            "Queue" = "Transparent+100"
-            "RenderPipeline" = "UniversalPipeline"
-        }
+        Tags { "RenderType" = "Transparent" "Queue" = "Transparent+100" "RenderPipeline" = "UniversalPipeline" }
 
         ZWrite Off
         Cull Front
@@ -200,13 +195,6 @@ Shader "Custom/WaterPhase"
                 OUT.viewDirWS = GetWorldSpaceViewDir(OUT.positionWS);
                 OUT.screenPos = ComputeScreenPos(OUT.positionHCS);
                 return OUT;
-            }
-
-            half3 CalculateLiquidDepthColor(half3 sceneColor, half3 shallowColor, half3 deepColor, float depth, float absorptionRate)
-            {
-                float absorption = exp(-depth * absorptionRate);
-                half3 tintedScene = lerp(shallowColor, sceneColor, absorption);
-                return lerp(deepColor, tintedScene, absorption);
             }
 
             half4 frag(Interpolators IN) : SV_Target
@@ -403,7 +391,7 @@ Shader "Custom/WaterPhase"
 
                 liquidCol += liquidSpec * lightColor;
 
-#if defined(_ADDITIONAL_LIGHTS)
+                #if defined(_ADDITIONAL_LIGHTS)
                 // Additional point/spot lights (including spot "flashlight") for liquid specular.
                 // Uses LIGHT_LOOP_* so it works in both Forward and Forward+ (clustered).
                 {
@@ -426,7 +414,7 @@ Shader "Custom/WaterPhase"
                         liquidCol += (half3)_SSSColor.rgb * radiance * addNdl * bodyMask * _LiquidBodyLightStrength;
                     LIGHT_LOOP_END
                 }
-#endif
+                #endif
                 liquidCol += liquidReflection * liquidFresnel;
 
                 // ── Subsurface scattering (liquid only) ──

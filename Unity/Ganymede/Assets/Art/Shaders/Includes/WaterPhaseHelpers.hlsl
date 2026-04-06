@@ -159,6 +159,16 @@ float FresnelEdge(float3 viewDir, float3 normal, float power)
     return pow(1.0 - cosTheta, power);
 }
 
+// ── Depth-based liquid absorption tint (Beer-Lambert) ──
+// Shallow: mostly refracted scene tinted toward shallowColor.
+// Deep: scene is absorbed, trends toward deepColor.
+half3 CalculateLiquidDepthColor(half3 sceneColor, half3 shallowColor, half3 deepColor, float depth, float absorptionRate)
+{
+    float absorption = exp(-depth * absorptionRate);
+    half3 tintedScene = lerp(shallowColor, sceneColor, absorption);
+    return lerp(deepColor, tintedScene, absorption);
+}
+
 // ── Subsurface scattering: physically-motivated translucency approximation ──
 // Based on GDC 2011 "Fast Subsurface Scattering" (Jimenez et al.)
 // Models light transmitting through thin liquid edges with
