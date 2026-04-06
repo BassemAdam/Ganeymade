@@ -118,9 +118,9 @@
       <Command>SETLOCAL
 
 if "$(PlatformShortName)" == "x86" (
-  set TARGET_PLUGIN_PATH=$(SolutionDir)..\..\..\Unity\Assets\Plugins\x86
+  set TARGET_PLUGIN_PATH=$(SolutionDir)..\..\..\Unity\Ganymede\Assets\Plugins\x86
 ) else (
-  set TARGET_PLUGIN_PATH=$(SolutionDir)..\..\..\Unity\Assets\Plugins\x86_64
+  set TARGET_PLUGIN_PATH=$(SolutionDir)..\..\..\Unity\Ganymede\Assets\Plugins\x86_64
 )
 echo Target Plugin Path is %TARGET_PLUGIN_PATH%
 if not exist "%TARGET_PLUGIN_PATH%" mkdir "%TARGET_PLUGIN_PATH%"
@@ -149,9 +149,9 @@ ENDLOCAL
       <Command>SETLOCAL
 
 if "$(PlatformShortName)" == "x86" (
-  set TARGET_PLUGIN_PATH=$(SolutionDir)..\..\..\Unity\Assets\Plugins\x86
+  set TARGET_PLUGIN_PATH=$(SolutionDir)..\..\..\Unity\Ganymede\Assets\Plugins\x86
 ) else (
-  set TARGET_PLUGIN_PATH=$(SolutionDir)..\..\..\Unity\Assets\Plugins\x86_64
+  set TARGET_PLUGIN_PATH=$(SolutionDir)..\..\..\Unity\Ganymede\Assets\Plugins\x86_64
 )
 echo Target Plugin Path is %TARGET_PLUGIN_PATH%
 if not exist "%TARGET_PLUGIN_PATH%" mkdir "%TARGET_PLUGIN_PATH%"
@@ -179,9 +179,9 @@ ENDLOCAL
       <Command>SETLOCAL
 
 if "$(PlatformShortName)" == "x86" (
-  set TARGET_PLUGIN_PATH=$(SolutionDir)..\..\..\Unity\Assets\Plugins\x86
+  set TARGET_PLUGIN_PATH=$(SolutionDir)..\..\..\Unity\Ganymede\Assets\Plugins\x86
 ) else (
-  set TARGET_PLUGIN_PATH=$(SolutionDir)..\..\..\Unity\Assets\Plugins\x86_64
+  set TARGET_PLUGIN_PATH=$(SolutionDir)..\..\..\Unity\Ganymede\Assets\Plugins\x86_64
 )
 echo Target Plugin Path is %TARGET_PLUGIN_PATH%
 if not exist "%TARGET_PLUGIN_PATH%" mkdir "%TARGET_PLUGIN_PATH%"
@@ -210,9 +210,9 @@ ENDLOCAL
       <Command>SETLOCAL
 
 if "$(PlatformShortName)" == "x86" (
-  set TARGET_PLUGIN_PATH=$(SolutionDir)..\..\..\Unity\Assets\Plugins\x86
+  set TARGET_PLUGIN_PATH=$(SolutionDir)..\..\..\Unity\Ganymede\Assets\Plugins\x86
 ) else (
-  set TARGET_PLUGIN_PATH=$(SolutionDir)..\..\..\Unity\Assets\Plugins\x86_64
+  set TARGET_PLUGIN_PATH=$(SolutionDir)..\..\..\Unity\Ganymede\Assets\Plugins\x86_64
 )
 echo Target Plugin Path is %TARGET_PLUGIN_PATH%
 if not exist "%TARGET_PLUGIN_PATH%" mkdir "%TARGET_PLUGIN_PATH%"
