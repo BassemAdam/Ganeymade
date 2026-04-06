@@ -1,0 +1,15 @@
+; Visual Studio .def for 32-bit export name demangling
+
+LIBRARY
+
+EXPORTS
+   UnityPluginLoad
+   UnityPluginUnload
+   GetRenderEventFunc
+   SetComputeData
+   GetComputeResult
+   IsComputeDone
+   SetSimParams
+   SetPerfTestMode
+   SetSubStepCount
+   GetComputeOutputBuffer
