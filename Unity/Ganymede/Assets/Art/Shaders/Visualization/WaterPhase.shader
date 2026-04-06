@@ -310,127 +310,132 @@ Shader "Custom/WaterPhase"
                 }
 
                 float liquidAlpha = saturate(phaseResult.liquidAlpha);
+                half3 liquidCol = 0.0;
 
-                float3 surfaceWS = entryWS;
-                float3 surfaceNormalWS = -rayDir;
-                if (phaseResult.liquidSurfaceFound > 0.5)
+                if (liquidAlpha > 0.001)
                 {
-                    surfaceWS = phaseResult.liquidSurfaceWS;
-                    surfaceNormalWS = normalize(phaseResult.liquidSurfaceNormalWS);
-                }
 
-                // Use a shape-based normal for more believable droplet/surface wrapping,
-                // but keep the original view-ray normal when not in liquid mode.
-                float3 liquidNormal = -rayDir;
-                if (isLiquidMode)
-                liquidNormal = surfaceNormalWS;
 
-                float localSmoothness = _LiquidSmoothness;
-                float localSpecularStrength = _LiquidSpecularStrength;
-                float localReflectionStrength = _LiquidReflectionStrength;
-                float2 surfaceRefractDistort = 0.0;
-
-                // ── Surface texture detail (liquid only, triplanar wrap) ──
-                if (isLiquidMode && liquidAlpha > 0.01 && _CausticsStrength > 0.001)
-                {
-                    half3 surfaceTex = SampleSurfaceTextureTriplanar(
-                    TEXTURE2D_ARGS(_CausticsTex, sampler_CausticsTex),
-                    surfaceWS, surfaceNormalWS,
-                    _Time.y, _CausticsScale, _CausticsSpeed, _CausticsDepthFade
-                    );
-
-                    float surfaceLuma = saturate(dot(surfaceTex, half3(0.299, 0.587, 0.114)));
-                    float surfaceCentered = (surfaceLuma - 0.5) * 2.0;
-
-                    // Black textures stay effectively “off”; mid-gray stays neutral.
-                    float surfaceEffect = clamp(surfaceCentered * surfaceLuma * _CausticsStrength, -1.0, 1.0) * liquidAlpha;
-
-                    localSmoothness = saturate(localSmoothness + surfaceEffect * 0.15);
-                    localSpecularStrength = max(0.0, localSpecularStrength * (1.0 + surfaceEffect * 0.6));
-                    localReflectionStrength = saturate(localReflectionStrength * (1.0 + surfaceEffect * 0.2));
-
-                    surfaceRefractDistort = (surfaceTex.rg * 2.0 - 1.0) * surfaceLuma * _CausticsSplit * _CausticsStrength * liquidAlpha;
-                }
-
-                float liquidFresnel = FresnelEdge(viewDirWS, liquidNormal, _LiquidFresnelPower);
-
-                float3 halfVec = normalize(lightDir + viewDirWS);
-                float ndh = saturate(dot(liquidNormal, halfVec));
-                float specPower = exp2(localSmoothness * 10.0 + 1.0);
-                float liquidSpec = pow(ndh, specPower) * localSpecularStrength;
-
-                float3 reflectDir = reflect(-viewDirWS, liquidNormal);
-                half perceptualRoughness = 1.0 - localSmoothness;
-                half3 liquidReflection = GlossyEnvironmentReflection(
-                reflectDir,
-                IN.positionWS,
-                perceptualRoughness,
-                1.0,
-                screenUV
-                ) * localReflectionStrength;
-
-                float2 refractOffset = liquidNormal.xy * _LiquidRefractionStrength * liquidAlpha + surfaceRefractDistort;
-                half3 refractedScene = SampleSceneColor(screenUV + refractOffset);
-                half3 liquidDepthCol = CalculateLiquidDepthColor(
-                refractedScene,
-                _LiquidShallowColor.rgb,
-                _LiquidDeepColor.rgb,
-                phaseResult.liquidDepth,
-                _LiquidAbsorptionRate
-                );
-
-                half3 liquidCol = liquidDepthCol * _LiquidTint.rgb;
-
-                // ── Liquid body lighting (single-scatter approximation) ──
-                // Makes point/spot lights brighten the water body, not only specular.
-                // Uses Beer-Lambert transmittance to increase scatter with depth.
-                float liquidTransmittance = exp(-phaseResult.liquidDepth * _LiquidAbsorptionRate);
-                float liquidScatter = saturate(1.0 - liquidTransmittance);
-                float bodyMask = liquidScatter * liquidAlpha * (1.0 - liquidFresnel);
-                float ndlMain = saturate(dot(liquidNormal, lightDir));
-                liquidCol += (half3)_SSSColor.rgb * lightColor * ndlMain * bodyMask * _LiquidBodyLightStrength;
-
-                liquidCol += liquidSpec * lightColor;
-
-                #if defined(_ADDITIONAL_LIGHTS)
-                    // Additional point/spot lights (including spot "flashlight") for liquid specular.
-                    // Uses LIGHT_LOOP_* so it works in both Forward and Forward+ (clustered).
+                    float3 surfaceWS = entryWS;
+                    float3 surfaceNormalWS = -rayDir;
+                    if (phaseResult.liquidSurfaceFound > 0.5)
                     {
-                        InputData inputData = (InputData)0;
-                        inputData.normalizedScreenSpaceUV = screenUV;
-                        inputData.positionWS = IN.positionWS;
-
-                        uint additionalLightsCount = (uint)GetAdditionalLightsCount();
-                        LIGHT_LOOP_BEGIN(additionalLightsCount)
-                        Light additionalLight = GetAdditionalLight(lightIndex, IN.positionWS);
-                        half3 radiance = additionalLight.color * (additionalLight.distanceAttenuation * additionalLight.shadowAttenuation);
-
-                        float3 addDir = normalize((float3)additionalLight.direction);
-                        float3 addHalfVec = normalize(addDir + viewDirWS);
-                        float addNdh = saturate(dot(liquidNormal, addHalfVec));
-                        float addSpec = pow(addNdh, specPower) * localSpecularStrength;
-                        liquidCol += addSpec * radiance;
-
-                        float addNdl = saturate(dot(liquidNormal, addDir));
-                        liquidCol += (half3)_SSSColor.rgb * radiance * addNdl * bodyMask * _LiquidBodyLightStrength;
-                        LIGHT_LOOP_END
+                        surfaceWS = phaseResult.liquidSurfaceWS;
+                        surfaceNormalWS = normalize(phaseResult.liquidSurfaceNormalWS);
                     }
-                #endif
-                liquidCol += liquidReflection * liquidFresnel;
 
-                // ── Subsurface scattering (liquid only) ──
-                if (isLiquidMode && phaseResult.liquidAlpha > 0.01)
-                {
-                    float sssThickness = saturate(phaseResult.liquidDepth * _SSSThicknessScale);
-                    half3 sss = ComputeSSS(
-                    viewDirWS, lightDir, liquidNormal,
-                    lightColor, _SSSColor.rgb,
-                    _SSSStrength, _SSSPower, _SSSDistortion,
-                    _SSSAmbient, sssThickness
+                    // Use a shape-based normal for more believable droplet/surface wrapping,
+                    // but keep the original view-ray normal when not in liquid mode.
+                    float3 liquidNormal = -rayDir;
+                    if (isLiquidMode)
+                    liquidNormal = surfaceNormalWS;
+
+                    float localSmoothness = _LiquidSmoothness;
+                    float localSpecularStrength = _LiquidSpecularStrength;
+                    float localReflectionStrength = _LiquidReflectionStrength;
+                    float2 surfaceRefractDistort = 0.0;
+
+                    // ── Surface texture detail (liquid only, triplanar wrap) ──
+                    if (isLiquidMode && liquidAlpha > 0.01 && _CausticsStrength > 0.001)
+                    {
+                        half3 surfaceTex = SampleSurfaceTextureTriplanar(
+                        TEXTURE2D_ARGS(_CausticsTex, sampler_CausticsTex),
+                        surfaceWS, surfaceNormalWS,
+                        _Time.y, _CausticsScale, _CausticsSpeed, _CausticsDepthFade
+                        );
+
+                        float surfaceLuma = saturate(dot(surfaceTex, half3(0.299, 0.587, 0.114)));
+                        float surfaceCentered = (surfaceLuma - 0.5) * 2.0;
+
+                        // Black textures stay effectively “off”; mid-gray stays neutral.
+                        float surfaceEffect = clamp(surfaceCentered * surfaceLuma * _CausticsStrength, -1.0, 1.0) * liquidAlpha;
+
+                        localSmoothness = saturate(localSmoothness + surfaceEffect * 0.15);
+                        localSpecularStrength = max(0.0, localSpecularStrength * (1.0 + surfaceEffect * 0.6));
+                        localReflectionStrength = saturate(localReflectionStrength * (1.0 + surfaceEffect * 0.2));
+
+                        surfaceRefractDistort = (surfaceTex.rg * 2.0 - 1.0) * surfaceLuma * _CausticsSplit * _CausticsStrength * liquidAlpha;
+                    }
+
+                    float liquidFresnel = FresnelEdge(viewDirWS, liquidNormal, _LiquidFresnelPower);
+
+                    float3 halfVec = normalize(lightDir + viewDirWS);
+                    float ndh = saturate(dot(liquidNormal, halfVec));
+                    float specPower = exp2(localSmoothness * 10.0 + 1.0);
+                    float liquidSpec = pow(ndh, specPower) * localSpecularStrength;
+
+                    float3 reflectDir = reflect(-viewDirWS, liquidNormal);
+                    half perceptualRoughness = 1.0 - localSmoothness;
+                    half3 liquidReflection = GlossyEnvironmentReflection(
+                    reflectDir,
+                    IN.positionWS,
+                    perceptualRoughness,
+                    1.0,
+                    screenUV
+                    ) * localReflectionStrength;
+
+                    float2 refractOffset = liquidNormal.xy * _LiquidRefractionStrength * liquidAlpha + surfaceRefractDistort;
+                    half3 refractedScene = SampleSceneColor(screenUV + refractOffset);
+                    half3 liquidDepthCol = CalculateLiquidDepthColor(
+                    refractedScene,
+                    _LiquidShallowColor.rgb,
+                    _LiquidDeepColor.rgb,
+                    phaseResult.liquidDepth,
+                    _LiquidAbsorptionRate
                     );
-                    liquidCol += sss * phaseResult.liquidAlpha;
-                }
 
+                    liquidCol = liquidDepthCol * _LiquidTint.rgb;
+
+                    // ── Liquid body lighting (single-scatter approximation) ──
+                    // Makes point/spot lights brighten the water body, not only specular.
+                    // Uses Beer-Lambert transmittance to increase scatter with depth.
+                    float liquidTransmittance = exp(-phaseResult.liquidDepth * _LiquidAbsorptionRate);
+                    float liquidScatter = saturate(1.0 - liquidTransmittance);
+                    float bodyMask = liquidScatter * liquidAlpha * (1.0 - liquidFresnel);
+                    float ndlMain = saturate(dot(liquidNormal, lightDir));
+                    liquidCol += (half3)_SSSColor.rgb * lightColor * ndlMain * bodyMask * _LiquidBodyLightStrength;
+
+                    liquidCol += liquidSpec * lightColor;
+
+                    #if defined(_ADDITIONAL_LIGHTS)
+                        // Additional point/spot lights (including spot "flashlight") for liquid specular.
+                        // Uses LIGHT_LOOP_* so it works in both Forward and Forward+ (clustered).
+                        {
+                            InputData inputData = (InputData)0;
+                            inputData.normalizedScreenSpaceUV = screenUV;
+                            inputData.positionWS = IN.positionWS;
+
+                            uint additionalLightsCount = (uint)GetAdditionalLightsCount();
+                            LIGHT_LOOP_BEGIN(additionalLightsCount)
+                            Light additionalLight = GetAdditionalLight(lightIndex, IN.positionWS);
+                            half3 radiance = additionalLight.color * (additionalLight.distanceAttenuation * additionalLight.shadowAttenuation);
+
+                            float3 addDir = normalize((float3)additionalLight.direction);
+                            float3 addHalfVec = normalize(addDir + viewDirWS);
+                            float addNdh = saturate(dot(liquidNormal, addHalfVec));
+                            float addSpec = pow(addNdh, specPower) * localSpecularStrength;
+                            liquidCol += addSpec * radiance;
+
+                            float addNdl = saturate(dot(liquidNormal, addDir));
+                            liquidCol += (half3)_SSSColor.rgb * radiance * addNdl * bodyMask * _LiquidBodyLightStrength;
+                            LIGHT_LOOP_END
+                        }
+                    #endif
+                    liquidCol += liquidReflection * liquidFresnel;
+
+                    // ── Subsurface scattering (liquid only) ──
+                    if (isLiquidMode && phaseResult.liquidAlpha > 0.01)
+                    {
+                        float sssThickness = saturate(phaseResult.liquidDepth * _SSSThicknessScale);
+                        half3 sss = ComputeSSS(
+                        viewDirWS, lightDir, liquidNormal,
+                        lightColor, _SSSColor.rgb,
+                        _SSSStrength, _SSSPower, _SSSDistortion,
+                        _SSSAmbient, sssThickness
+                        );
+                        liquidCol += sss * phaseResult.liquidAlpha;
+                    }
+                }
                 // (Old caustics block removed: replaced by triplanar surface texture detail above.)
 
                 half3 finalCol = vapourCol + liquidCol;
