@@ -1,0 +1,140 @@
+// Converts SPH particle positions (StructuredBuffer<Particle>) into a 3D density grid (RWStructuredBuffer<uint>)
+// for volumetric rendering in Custom/WaterPhase.
+//
+// Notes:
+// - Uses fixed-point uint accumulation with atomics (InterlockedAdd) for stability.
+// - The density grid is later sampled in the fragment shader with manual trilinear filtering.
+//
+// Author: Ganymede project
+
+#pragma kernel ClearGrid
+#pragma kernel SplatParticles
+
+struct Particle
+{
+    float3 position;
+    float  density;
+
+    float3 velocity;
+    float  pressure;
+
+    float3 acceleration;
+    float  mass;
+
+    float  temperature;
+    int    phase;
+
+    float  _pad0;
+    float  _pad1;
+};
+
+StructuredBuffer<Particle> _ParticleBuffer;
+RWStructuredBuffer<uint>   _DensityGrid;
+
+int3   _VolumeDims;          // xyz
+uint   _ParticleCount;
+float4 _BoundsMinWS;         // xyz
+float4 _BoundsMaxWS;         // xyz
+float  _ParticleContribution; // unitless, per particle
+float  _FixedPointScale;     // e.g. 1024
+float  _SmoothingRadiusWS;   // world units, controls splat kernel falloff
+int    _KernelRadiusVoxels;  // 0 = nearest voxel only, 1 = 27-voxel neighborhood, etc.
+
+uint GridIndex(int3 v)
+{
+    return (uint)(v.x + _VolumeDims.x * (v.y + _VolumeDims.y * v.z));
+}
+
+[numthreads(8, 8, 8)]
+void ClearGrid(uint3 id : SV_DispatchThreadID)
+{
+    if (id.x >= (uint)_VolumeDims.x || id.y >= (uint)_VolumeDims.y || id.z >= (uint)_VolumeDims.z)
+        return;
+
+    uint idx = (uint)(id.x + (uint)_VolumeDims.x * (id.y + (uint)_VolumeDims.y * id.z));
+    _DensityGrid[idx] = 0;
+}
+
+void AtomicAddDensity(int3 v, uint amount)
+{
+    if (any(v < 0) || v.x >= _VolumeDims.x || v.y >= _VolumeDims.y || v.z >= _VolumeDims.z)
+        return;
+
+    uint idx = GridIndex(v);
+    uint original;
+    InterlockedAdd(_DensityGrid[idx], amount, original);
+}
+
+[numthreads(256, 1, 1)]
+void SplatParticles(uint id : SV_DispatchThreadID)
+{
+    if (id >= _ParticleCount)
+        return;
+
+    Particle p = _ParticleBuffer[id];
+
+    float3 minWS = _BoundsMinWS.xyz;
+    float3 maxWS = _BoundsMaxWS.xyz;
+    float3 sizeWS = maxWS - minWS;
+
+    // Map particle position to normalized [0..1] volume coordinates.
+    float3 uvw = (p.position - minWS) / max(sizeWS, 1e-5);
+    if (uvw.x < 0.0 || uvw.y < 0.0 || uvw.z < 0.0 || uvw.x > 1.0 || uvw.y > 1.0 || uvw.z > 1.0)
+        return;
+
+    float3 gridPos = uvw * (float3)(_VolumeDims - 1);
+    int3 base = (int3)floor(gridPos);
+
+    // Fixed-point scalar to accumulate.
+    float baseAmount = max(0.0, _ParticleContribution) * max(_FixedPointScale, 1.0);
+
+    // If kernel radius is 0 (fast path), just write into the nearest voxel.
+    if (_KernelRadiusVoxels <= 0 || _SmoothingRadiusWS <= 1e-5)
+    {
+        uint amt = (uint)round(baseAmount);
+        AtomicAddDensity(base, amt);
+        return;
+    }
+
+    float h = _SmoothingRadiusWS;
+    float invH2 = 1.0 / max(h * h, 1e-6);
+
+    // Voxel size in world units.
+    float3 voxelSizeWS = sizeWS / max((float3)_VolumeDims, 1.0);
+
+    // Splat into a small voxel neighborhood using a cheap poly6-ish falloff:
+    // w = (1 - (r/h)^2)^3 for r<=h.
+    int r = _KernelRadiusVoxels;
+
+    [loop]
+    for (int dz = -r; dz <= r; dz++)
+    {
+        [loop]
+        for (int dy = -r; dy <= r; dy++)
+        {
+            [loop]
+            for (int dx = -r; dx <= r; dx++)
+            {
+                int3 v = base + int3(dx, dy, dz);
+                if (any(v < 0) || v.x >= _VolumeDims.x || v.y >= _VolumeDims.y || v.z >= _VolumeDims.z)
+                    continue;
+
+                // World-space center of voxel.
+                float3 voxelCenterUVW = ((float3)v + 0.5) / (float3)_VolumeDims;
+                float3 voxelCenterWS = minWS + voxelCenterUVW * sizeWS;
+
+                float3 d = voxelCenterWS - p.position;
+                float dist2 = dot(d, d);
+
+                float t = saturate(1.0 - dist2 * invH2);
+                float w = t * t * t;
+
+                uint amt = (uint)round(baseAmount * w);
+                if (amt == 0)
+                    continue;
+
+                AtomicAddDensity(v, amt);
+            }
+        }
+    }
+}

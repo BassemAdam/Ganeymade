@@ -20,6 +20,7 @@ UserSettings/
 *.csproj
 *.unityproj
 *.sln
+!PluginSource/projects/**/*.sln
 *.suo
 *.tmp
 *.user
@@ -42,6 +43,17 @@ UserSettings/
 .idea/
 *.DotSettings.user
 
+# Native plugin (Visual Studio) build outputs
+PluginSource/projects/**/x64/
+PluginSource/projects/**/Win32/
+PluginSource/projects/**/ARM64/
+PluginSource/projects/**/Debug/
+PluginSource/projects/**/Release/
+PluginSource/projects/**/ipch/
+
+# Repo-local scratch (not meant for version control)
+/.github/tmp/
+
 # OS files (not needed by team)
 .DS_Store
 Thumbs.db
@@ -54,4 +66,4 @@ Unity/Ganymede/Assets/Art/Shaders/Includes/req2.md
 Unity/Ganymede/Assets/Art/Shaders/Includes/req2.md.meta
 Unity/Ganymede/Assets/Fantasy Skybox FREE
 Ignore
-*.meta
+Assets of the original creator that made water works correct
