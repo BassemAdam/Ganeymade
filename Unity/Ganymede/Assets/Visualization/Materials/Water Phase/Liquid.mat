@@ -99,10 +99,10 @@ Material:
     - _BlueNoiseStrength: 0
     - _BlueNoiseTimeSpeed: 0
     - _BumpScale: 1
-    - _CausticsDepthFade: 5.41
+    - _CausticsDepthFade: 8.44
     - _CausticsScale: 9.57
-    - _CausticsSpeed: 0.05
-    - _CausticsSplit: 0.104
+    - _CausticsSpeed: 0.04
+    - _CausticsSplit: 0.1598
     - _CausticsStrength: 4.68
     - _ClearCoatMask: 0
     - _ClearCoatSmoothness: 0
@@ -120,17 +120,17 @@ Material:
     - _GlossMapScale: 0
     - _Glossiness: 0
     - _GlossyReflections: 0
-    - _LiquidAbsorptionRate: 2.9
+    - _LiquidAbsorptionRate: 0.71
     - _LiquidBodyLightStrength: 2.21
-    - _LiquidFresnelPower: 8.73
+    - _LiquidFresnelPower: 1.77
     - _LiquidOpacityCoeff: 30
-    - _LiquidReflectionStrength: 0.913
-    - _LiquidRefractionStrength: 0.27
-    - _LiquidSmoothness: 0.92
+    - _LiquidReflectionStrength: 0.842
+    - _LiquidRefractionStrength: 0.268
+    - _LiquidSmoothness: 1
     - _LiquidSpecularStrength: 4.08
     - _MarchSteps: 32
     - _Metallic: 0
-    - _NoiseDriftSpeed: 0.13
+    - _NoiseDriftSpeed: 0
     - _NoiseOctaves: 8
     - _NoiseScale: 20
     - _OcclusionStrength: 1
@@ -139,11 +139,11 @@ Material:
     - _PhysicsBlend: 1
     - _QueueOffset: 0
     - _ReceiveShadows: 1
-    - _SSSAmbient: 0.131
-    - _SSSDistortion: 0.416
-    - _SSSPower: 3.4
-    - _SSSStrength: 1.03
-    - _SSSThicknessScale: 1.67
+    - _SSSAmbient: 0.048
+    - _SSSDistortion: 0.401
+    - _SSSPower: 3.2
+    - _SSSStrength: 0.16
+    - _SSSThicknessScale: 0.73
     - _Smoothness: 0.5
     - _SmoothnessTextureChannel: 0
     - _SpecularHighlights: 1
@@ -178,7 +178,7 @@ Material:
     - _VapourEmissionColor: {r: 1, g: 0.95, b: 0.85, a: 1}
     - _VapourShadowColor: {r: 0.04, g: 0.06999998, b: 0.17999998, a: 1}
     - _VapourWarmColor: {r: 1, g: 0.92, b: 0.8, a: 1}
-    - _VoxelBoundsMax: {r: 0.5, g: 0.5, b: 0.5, a: 0}
-    - _VoxelBoundsMin: {r: -0.5, g: -0.5, b: -0.5, a: 0}
+    - _VoxelBoundsMax: {r: 1, g: 1, b: 1, a: 0}
+    - _VoxelBoundsMin: {r: -1, g: -1, b: -1, a: 0}
   m_BuildTextureStacks: []
   m_AllowLocking: 1

@@ -815,7 +815,7 @@ Transform:
   m_GameObject: {fileID: 477815921}
   serializedVersion: 2
   m_LocalRotation: {x: -0, y: -0, z: -0, w: 1}
-  m_LocalPosition: {x: -5.8349195, y: 8.699997, z: -26.86126}
+  m_LocalPosition: {x: -5.8349195, y: 9.241, z: -26.86126}
   m_LocalScale: {x: 3.3819697, y: 1.3551, z: 2.986818}
   m_ConstrainProportionsScale: 0
   m_Children: []
@@ -1327,7 +1327,7 @@ Transform:
   m_GameObject: {fileID: 934501999}
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: 22.65, y: -71.45, z: -30.16}
+  m_LocalPosition: {x: -0.4, y: -71.45, z: -30.16}
   m_LocalScale: {x: 37.797157, y: 16.669672, z: 32.810886}
   m_ConstrainProportionsScale: 0
   m_Children: []
@@ -1457,7 +1457,7 @@ MonoBehaviour:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 1188592644}
-  m_Enabled: 0
+  m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: e9eb36d79300fe7428f1000517630b74, type: 3}
   m_Name: 
@@ -1470,9 +1470,9 @@ MonoBehaviour:
   maxParticlesPerVoxel: 12
   smoothingRadiusWS: -1
   kernelRadiusVoxels: 1
-  forcePerfTestMode: 0
-  disableParticleRenderer: 0
-  autoFitWaterVolumeTransform: 0
+  forcePerfTestMode: 1
+  disableParticleRenderer: 1
+  autoFitWaterVolumeTransform: 1
   forcePhysicsBlend: 1
 --- !u!1 &1280677357
 GameObject:
@@ -2166,7 +2166,7 @@ PrefabInstance:
     m_Modifications:
     - target: {fileID: 920208063865847605, guid: 18cf1fa5220a198409fde72db8b3e2a5, type: 3}
       propertyPath: m_Enabled
-      value: 1
+      value: 0
       objectReference: {fileID: 0}
     - target: {fileID: 920208063865847605, guid: 18cf1fa5220a198409fde72db8b3e2a5, type: 3}
       propertyPath: particleMaterial
@@ -2178,7 +2178,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 4161998456328252244, guid: 18cf1fa5220a198409fde72db8b3e2a5, type: 3}
       propertyPath: perfTestMode
-      value: 0
+      value: 1
       objectReference: {fileID: 0}
     - target: {fileID: 5891988049623486879, guid: 18cf1fa5220a198409fde72db8b3e2a5, type: 3}
       propertyPath: m_LocalPosition.x

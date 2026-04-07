@@ -55,8 +55,9 @@ public class FirstPersonCamera : MonoBehaviour
 
     void Start()
     {
-        // Auto-find UseComputePlugin if not assigned
-        if (computePlugin == null)
+        // Auto-find UseComputePlugin if not assigned OR if assigned to a prefab asset
+        // (scene YAML may store a prefab-asset reference by guid/fileID, which is not the live instance).
+        if (computePlugin == null || !IsSceneObject(computePlugin.gameObject))
         {
             #if UNITY_2023_1_OR_NEWER
             computePlugin = FindAnyObjectByType<UseComputePlugin>();
@@ -77,6 +78,11 @@ public class FirstPersonCamera : MonoBehaviour
         yaw = euler.y;
         pitch = euler.x;
         if (pitch > 180f) pitch -= 360f;
+    }
+
+    private static bool IsSceneObject(GameObject go)
+    {
+        return go != null && go.scene.IsValid();
     }
 
     void Update()
