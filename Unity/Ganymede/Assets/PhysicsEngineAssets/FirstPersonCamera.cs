@@ -36,16 +36,16 @@ public class FirstPersonCamera : MonoBehaviour
 
     [Header("Interaction")]
     [Tooltip("How far in front of the camera the interaction point is placed")]
-    public float interactionDistance = 5f;
+    public float interactionDistance = 8f;
 
     [Tooltip("Radius of the interaction sphere")]
-    public float interactionRadius = 4f;
+    public float interactionRadius = 3f;
 
     [Tooltip("Strength of the attract force (left click)")]
-    public float attractStrength = 200f;
+    public float attractStrength = 900f;
 
     [Tooltip("Strength of the repulse force (right click)")]
-    public float repulseStrength = 200f;
+    public float repulseStrength = 900f;
 
     [Tooltip("If enabled, snaps the interaction point to the simulation bounds along the camera ray when possible. Useful when the camera is far from the fluid volume.")]
     public bool snapInteractionToSimBounds = true;
