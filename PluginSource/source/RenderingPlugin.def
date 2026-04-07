@@ -13,3 +13,4 @@ EXPORTS
    SetPerfTestMode
    SetSubStepCount
    GetComputeOutputBuffer
+   SetUnityParticleOutputBuffer

@@ -1468,6 +1468,10 @@ static bool g_StagingReady = false; // true when staging buffer has valid output
 static bool g_PerfTestMode = false; // skip GPU→CPU staging copies for perf testing
 static int  g_SubStepCount = 1;    // sub-steps batched into a single dispatch call
 
+// Optional Unity-side GPU buffer to receive latest particle output (GPU→GPU copy).
+// This avoids the inefficient GPU→CPU readback + CPU→GPU upload path used by ParticleRenderer.
+static void* g_UnityParticleOutputBuffer = nullptr;
+
 static SimParams g_SimParams = {0.016f, 1, 0.0f, 0, 0.0f, 0.0f, 0.0f, 0.0f, {0.0f, -9.81f, 0.0f}, 0.0f, {-5,-5,-5}, 0, {5,5,5}, 0};
 
 // ─── Exported C functions (called from Unity C#) ────────────────────────────
@@ -1505,6 +1509,14 @@ extern "C" void UNITY_INTERFACE_EXPORT UNITY_INTERFACE_API
 SetSubStepCount(int count)
 {
     g_SubStepCount = (count < 1) ? 1 : count;
+}
+
+// Provide a Unity ComputeBuffer/GraphicsBuffer native pointer (ComputeBuffer.GetNativeBufferPtr).
+// The plugin will copy the latest particle output into this buffer every dispatch (if non-null).
+extern "C" void UNITY_INTERFACE_EXPORT UNITY_INTERFACE_API
+SetUnityParticleOutputBuffer(void* nativeBuffer)
+{
+    g_UnityParticleOutputBuffer = nativeBuffer;
 }
 
 // Set per-frame simulation parameters (pushed to GPU via push constants — no buffer copy)
@@ -2025,6 +2037,51 @@ void VulkanComputePlugin::DispatchCompute()
         g_StagingReady = true;
     }
 
+    // ── Optional: GPU→GPU copy of output into a Unity-owned buffer ───────
+    // This enables Unity-side compute/visualization without any CPU readback.
+    if (g_UnityParticleOutputBuffer != nullptr)
+    {
+        UnityVulkanBuffer unityOutBuf = {};
+
+        // Mark the Unity buffer for transfer-write and get its VkBuffer handle.
+        if (m_UnityVulkan->AccessBuffer(
+                g_UnityParticleOutputBuffer,
+                VK_PIPELINE_STAGE_TRANSFER_BIT,
+                VK_ACCESS_TRANSFER_WRITE_BIT,
+                kUnityVulkanResourceAccess_PipelineBarrier,
+                &unityOutBuf))
+        {
+            VkDeviceSize copySize = (VkDeviceSize)g_ElementCount * (VkDeviceSize)sizeof(Particle);
+            if (unityOutBuf.buffer != VK_NULL_HANDLE && unityOutBuf.sizeInBytes >= (size_t)copySize)
+            {
+                VkBufferCopy copyRegion = {};
+                copyRegion.size = copySize;
+                vkCmdCopyBuffer(cmd, m_GpuBuffers[outputIdx].buffer, unityOutBuf.buffer, 1, &copyRegion);
+
+                // Barrier: transfer write → shader read (Unity compute/graphics can safely read next).
+                VkBufferMemoryBarrier postCopyBarrier = {};
+                postCopyBarrier.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
+                postCopyBarrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+                postCopyBarrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+                postCopyBarrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+                postCopyBarrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+                postCopyBarrier.buffer = unityOutBuf.buffer;
+                postCopyBarrier.offset = 0;
+                postCopyBarrier.size = copySize;
+
+                vkCmdPipelineBarrier(cmd,
+                                     VK_PIPELINE_STAGE_TRANSFER_BIT,
+                                     VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT |
+                                         VK_PIPELINE_STAGE_VERTEX_SHADER_BIT |
+                                         VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+                                     0,
+                                     0, nullptr,
+                                     1, &postCopyBarrier,
+                                     0, nullptr);
+            }
+        }
+    }
+
     // With 2 passes, output is back in buffer[m_CurrentInput] — no swap needed
     g_ComputeDone = true;
 }
@@ -2214,6 +2271,9 @@ void VulkanCompute_Shutdown()
     g_ComputePlugin.Shutdown();
     delete[] g_InputData;  g_InputData  = nullptr;
     delete[] g_OutputData; g_OutputData = nullptr;
+
+    // Safety: Unity-side resources may already be destroyed during shutdown.
+    g_UnityParticleOutputBuffer = nullptr;
 }
 
 void VulkanCompute_Dispatch()
