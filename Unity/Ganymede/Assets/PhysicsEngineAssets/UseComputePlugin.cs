@@ -51,14 +51,14 @@ public class UseComputePlugin : MonoBehaviour
     [Header("Simulation")]
     public Vector3 gravity = new Vector3(0f, -9.81f, 0f);
 
-    [Tooltip("Target rest density (water ≈ 1000)")]
-    public float restDensity = 1000f;
+    [Tooltip("Target rest density in normalized solver units (typical range: 20..80)")]
+    public float restDensity = 30f;
 
-    [Tooltip("Gas stiffness (pressure constant)")]
-    public float gasStiffness = 200f;
+    [Tooltip("Gas stiffness (pressure constant). Higher = less compressible")]
+    public float gasStiffness = 10f;
 
-    [Tooltip("Viscosity coefficient")]
-    public float viscosity = 0.1f;
+    [Tooltip("Viscosity coefficient. Higher = thicker fluid")]
+    public float viscosity = 10f;
 
     [Tooltip("Smoothing radius (kernel radius h)")]
     [Min(0.001f)]
@@ -92,7 +92,7 @@ public class UseComputePlugin : MonoBehaviour
 
     [Header("Time Stepping")]
     [Tooltip("Use fixed simulation timestep with accumulator (more stable and responsive under variable FPS)")]
-    public bool useFixedTimeStep = false;
+    public bool useFixedTimeStep = true;
 
     [Tooltip("Fixed simulation dt when fixed stepping is enabled")]
     [Range(0.0005f, 0.02f)]
@@ -100,12 +100,12 @@ public class UseComputePlugin : MonoBehaviour
 
     [Tooltip("Maximum fixed sub-steps to run per frame")]
     [Range(1, 32)]
-    public int maxSubSteps = 8;
+    public int maxSubSteps = 10;
 
     [Header("Interaction (written by FirstPersonCamera)")]
     public float interactionStrength;
     public Vector3 interactionPos;
-    public float interactionRadius = 4f;
+    public float interactionRadius = 3f;
 
     [Header("Init")]
     [Tooltip("Upload particles automatically on Start")]

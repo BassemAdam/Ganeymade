@@ -214,8 +214,7 @@ public class PhysicsWaterPhaseBridge : MonoBehaviour
         // Handle live edits of particleCount / volumeDims.
         EnsureBuffers();
 
-        Vector3 boundsMin = computePlugin.boundsMin;
-        Vector3 boundsMax = computePlugin.boundsMax;
+        computePlugin.GetBoundsWS(out Vector3 boundsMin, out Vector3 boundsMax);
 
         if (autoFitWaterVolumeTransform && waterRenderer != null)
         {

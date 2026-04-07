@@ -47,22 +47,23 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::UseComputePlugin
   particleCount: 32768
   gravity: {x: 0, y: -9.81, z: 0}
-  restDensity: 1000
-  gasStiffness: 200
-  viscosity: 0.1
+  restDensity: 30
+  gasStiffness: 10
+  viscosity: 10
   smoothingRadius: 0.2
   particleMass: 1
   damping: 0.998
+  boundsAreLocalToTransform: 1
   boundsMin: {x: -5, y: -5, z: -5}
   boundsMax: {x: 5, y: 5, z: 5}
   perfTestMode: 1
   subStepCount: 1
-  useFixedTimeStep: 0
+  useFixedTimeStep: 1
   fixedTimeStep: 0.002
-  maxSubSteps: 8
+  maxSubSteps: 10
   interactionStrength: 0
   interactionPos: {x: 0, y: 0, z: 0}
-  interactionRadius: 4
+  interactionRadius: 3
   autoInitialize: 1
   verbose: 1
 --- !u!114 &920208063865847605
