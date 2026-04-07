@@ -57,6 +57,9 @@ MonoBehaviour:
   boundsMax: {x: 5, y: 5, z: 5}
   perfTestMode: 1
   subStepCount: 1
+  useFixedTimeStep: 0
+  fixedTimeStep: 0.002
+  maxSubSteps: 8
   interactionStrength: 0
   interactionPos: {x: 0, y: 0, z: 0}
   interactionRadius: 4

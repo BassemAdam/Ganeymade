@@ -12,6 +12,7 @@ using UnityEngine.InputSystem;
 /// and particle interaction (left-click attract, right-click repulse).
 /// Attach to the Main Camera. Automatically finds UseComputePlugin if not assigned.
 /// </summary>
+[DefaultExecutionOrder(-100)]
 public class FirstPersonCamera : MonoBehaviour
 {
     [Header("References")]
@@ -45,6 +46,9 @@ public class FirstPersonCamera : MonoBehaviour
 
     [Tooltip("Strength of the repulse force (right click)")]
     public float repulseStrength = 200f;
+
+    [Tooltip("If enabled, snaps the interaction point to the simulation bounds along the camera ray when possible. Useful when the camera is far from the fluid volume.")]
+    public bool snapInteractionToSimBounds = true;
 
     private float pitch;
     private float yaw;
@@ -131,7 +135,7 @@ public class FirstPersonCamera : MonoBehaviour
     {
         if (computePlugin == null) return;
 
-        Vector3 hitPoint = transform.position + transform.forward * interactionDistance;
+        Vector3 hitPoint = ComputeInteractionPoint();
         bool leftHeld = GetMouseButton(0);
         bool rightHeld = GetMouseButton(1);
 
@@ -159,11 +163,80 @@ public class FirstPersonCamera : MonoBehaviour
         bool active = GetMouseButton(0) || GetMouseButton(1);
         if (!active) return;
 
-        Vector3 pt = transform.position + transform.forward * interactionDistance;
+        Vector3 pt = ComputeInteractionPoint();
         Gizmos.color = GetMouseButton(0)
             ? new Color(0f, 1f, 0.5f, 0.3f)
             : new Color(1f, 0.2f, 0f, 0.3f);
         Gizmos.DrawWireSphere(pt, interactionRadius);
+    }
+
+    private Vector3 ComputeInteractionPoint()
+    {
+        Vector3 origin = transform.position;
+        Vector3 dir = transform.forward; // unit-length
+
+        // Default: fixed distance in front of the camera.
+        Vector3 hitPoint = origin + dir * interactionDistance;
+
+        if (!snapInteractionToSimBounds || computePlugin == null)
+            return hitPoint;
+
+        computePlugin.GetBoundsWS(out Vector3 bmin, out Vector3 bmax);
+
+        if (TryRayAabb(origin, dir, bmin, bmax, out float tEnter, out float tExit))
+        {
+            // If we're outside the bounds, use the entry point.
+            if (tEnter > 0.001f)
+                return origin + dir * tEnter;
+
+            // If we're inside the bounds, keep the fixed-distance behavior (more intuitive).
+            // (tEnter is <= 0 in that case.)
+        }
+
+        return hitPoint;
+    }
+
+    private static bool TryRayAabb(Vector3 rayOrigin, Vector3 rayDir, Vector3 bmin, Vector3 bmax, out float tEnter, out float tExit)
+    {
+        float tmin = float.NegativeInfinity;
+        float tmax = float.PositiveInfinity;
+
+        if (!Slab(rayOrigin.x, rayDir.x, bmin.x, bmax.x, ref tmin, ref tmax) ||
+            !Slab(rayOrigin.y, rayDir.y, bmin.y, bmax.y, ref tmin, ref tmax) ||
+            !Slab(rayOrigin.z, rayDir.z, bmin.z, bmax.z, ref tmin, ref tmax))
+        {
+            tEnter = 0f;
+            tExit = 0f;
+            return false;
+        }
+
+        tEnter = tmin;
+        tExit = tmax;
+        return tmax >= Mathf.Max(tmin, 0f);
+    }
+
+    private static bool Slab(float o, float d, float min, float max, ref float tmin, ref float tmax)
+    {
+        const float eps = 1e-8f;
+        if (Mathf.Abs(d) < eps)
+        {
+            // Ray parallel to slab: accept only if origin is within the slab.
+            return o >= min && o <= max;
+        }
+
+        float invD = 1f / d;
+        float t1 = (min - o) * invD;
+        float t2 = (max - o) * invD;
+        if (t1 > t2)
+        {
+            float tmp = t1;
+            t1 = t2;
+            t2 = tmp;
+        }
+
+        tmin = Mathf.Max(tmin, t1);
+        tmax = Mathf.Min(tmax, t2);
+        return tmax >= tmin;
     }
 
     // ------------------------------------------------------------------
