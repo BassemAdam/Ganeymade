@@ -22,6 +22,9 @@
        float  interactionStrength; // >0 attract, <0 repulse, 0 off
        float3 interactionPos;     // world-space interaction point
        float  interactionRadius;  // radius of effect
+       float  thermalDiffusivity;
+       float  ambientTemperature;
+       float  coolingRate;
    };
 
    struct Particle
@@ -37,6 +40,16 @@
        float  _pad0;
        float  _pad1;
    };
+
+   struct HeatSource
+    {
+        float position[3];   // world-space center
+        float radius;        // influence radius 
+        float temperature;   // fixed temperature for particles inside
+        uint active;     // 1 = active, 0 = inactive (pad to 24 bytes)
+        uint _pad0;
+        uint _pad1;
+    };
 
    // Spatial hash: large primes, unsigned XOR, mod tableSize
    uint hashCell(int3 cell, uint tableSize)

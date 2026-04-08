@@ -3,7 +3,8 @@ Shader "Custom/ParticleInstanced"
     Properties
     {
         _Size ("Particle Size", Float) = 0.05
-        _MaxSpeed ("Max Speed (for gradient)", Float) = 10.0
+        _MinTemperature ("Min Temperature (for gradient)", Float) = 20.0
+        _MaxTemperature ("Max Temperature (for gradient)", Float) = 100.0
         _GradientTex ("Gradient Texture", 2D) = "white" {}
     }
     SubShader
@@ -33,14 +34,15 @@ Shader "Custom/ParticleInstanced"
 
             StructuredBuffer<Particle> _ParticleBuffer;
             float _Size;
-            float _MaxSpeed;
+            float _MinTemperature;
+            float _MaxTemperature;
             sampler2D _GradientTex;
 
             struct v2f
             {
                 float4 pos : SV_POSITION;
                 float3 normal : TEXCOORD0;
-                float speed : TEXCOORD1;
+                float temperature : TEXCOORD1;
             };
 
             v2f vert(appdata_base v, uint instanceID : SV_InstanceID)
@@ -51,7 +53,7 @@ Shader "Custom/ParticleInstanced"
                 v2f o;
                 o.pos = mul(UNITY_MATRIX_VP, float4(worldPos, 1.0));
                 o.normal = v.normal;
-                o.speed = length(p.velocity);
+                o.temperature = p.temperature;
                 return o;
             }
 
@@ -60,8 +62,32 @@ Shader "Custom/ParticleInstanced"
                 float3 lightDir = normalize(float3(0.5, 1.0, 0.3));
                 float ndl = saturate(dot(i.normal, lightDir)) * 0.6 + 0.4;
 
-                float t = saturate(i.speed / _MaxSpeed);
-                float3 col = tex2D(_GradientTex, float2(t, 0.5)).rgb;
+                // Map temperature to gradient: 0 = minTemp, 1 = maxTemp
+                float t = saturate((i.temperature - _MinTemperature) / (_MaxTemperature - _MinTemperature));
+                
+                // Direct color mapping (BLUE → RED) without texture
+                float3 col;
+                if (t < 0.25f)
+                {
+                    // Blue to Cyan
+                    col = lerp(float3(0, 0, 1), float3(0, 1, 1), t / 0.25f);
+                }
+                else if (t < 0.5f)
+                {
+                    // Cyan to Yellow
+                    col = lerp(float3(0, 1, 1), float3(1, 1, 0), (t - 0.25f) / 0.25f);
+                }
+                else if (t < 0.75f)
+                {
+                    // Yellow to Orange
+                    col = lerp(float3(1, 1, 0), float3(1, 0.5, 0), (t - 0.5f) / 0.25f);
+                }
+                else
+                {
+                    // Orange to Red
+                    col = lerp(float3(1, 0.5, 0), float3(1, 0, 0), (t - 0.75f) / 0.25f);
+                }
+                
                 return float4(col * ndl, 1.0);
             }
             ENDCG

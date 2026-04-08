@@ -26,13 +26,17 @@ public class ParticleRenderer : MonoBehaviour
     [Tooltip("Particle render size")]
     public float particleSize = 0.05f;
 
-    [Header("Velocity Gradient")]
-    [Tooltip("Color gradient mapped to particle speed (left = still, right = max speed)")]
-    public Gradient velocityGradient;
+    [Header("Temperature Gradient")]
+    [Tooltip("Color gradient mapped to particle temperature (left = cold, right = hot)")]
+    public Gradient temperatureGradient;
 
-    [Tooltip("Speed that maps to the rightmost gradient color")]
-    [Range(0.1f, 50f)]
-    public float maxSpeed = 10f;
+    [Tooltip("Minimum temperature in the gradient (mapped to left edge)")]
+    [Range(0f, 100f)]
+    public float minTemp = 20f;
+
+    [Tooltip("Maximum temperature in the gradient (mapped to right edge)")]
+    [Range(20f, 500f)]
+    public float maxTemp = 150f;
 
     private Texture2D gradientTexture;
     private ComputeBuffer particleBuffer;
@@ -55,16 +59,18 @@ public class ParticleRenderer : MonoBehaviour
             particleMaterial.enableInstancing = true;
 
         // Set up default gradient if none was configured in the Inspector
-        if (velocityGradient == null || velocityGradient.colorKeys.Length < 2)
+        // Temperature gradient: Blue (cold) → Red (hot)
+        if (temperatureGradient == null || temperatureGradient.colorKeys.Length < 2)
         {
-            velocityGradient = new Gradient();
-            velocityGradient.SetKeys(
+            temperatureGradient = new Gradient();
+            temperatureGradient.SetKeys(
                 new GradientColorKey[]
                 {
-                    new GradientColorKey(new Color(0f, 51f / 255f, 1f), 0f),
-                    new GradientColorKey(new Color(91f / 255f, 1f, 0f), 0.45f),
-                    new GradientColorKey(new Color(1f, 194f / 255f, 0f), 0.75f),
-                    new GradientColorKey(new Color(1f, 0f, 0f), 1f)
+                    new GradientColorKey(new Color(0f, 0f, 1f), 0f),        // Blue (cold)
+                    new GradientColorKey(new Color(0f, 1f, 1f), 0.25f),     // Cyan
+                    new GradientColorKey(new Color(1f, 1f, 0f), 0.5f),      // Yellow
+                    new GradientColorKey(new Color(1f, 0.5f, 0f), 0.75f),   // Orange
+                    new GradientColorKey(new Color(1f, 0f, 0f), 1f)         // Red (hot)
                 },
                 new GradientAlphaKey[]
                 {
@@ -116,6 +122,21 @@ public class ParticleRenderer : MonoBehaviour
 
         // Read from plugin (non-blocking, 1-frame latency)
         GetComputeResult(readbackData, readbackData.Length);
+        
+        // Debug: Check particle temperatures
+        if (readbackData.Length > 0 && readbackData[0].temperature > 0)
+        {
+            float minTempSeen = readbackData[0].temperature;
+            float maxTempSeen = readbackData[0].temperature;
+            for (int i = 1; i < readbackData.Length; i++)
+            {
+                minTempSeen = Mathf.Min(minTempSeen, readbackData[i].temperature);
+                maxTempSeen = Mathf.Max(maxTempSeen, readbackData[i].temperature);
+            }
+            if (Time.frameCount % 120 == 0) // Log every 2 seconds at 60fps
+                Debug.Log($"[ParticleRenderer] Particle temp range: {minTempSeen:F1}°-{maxTempSeen:F1}° (mapped {minTemp}-{maxTemp})");
+        }
+        
         particleBuffer.SetData(readbackData);
 
         // Bind resources per-draw to avoid Vulkan "missing binding" warnings.
@@ -123,7 +144,8 @@ public class ParticleRenderer : MonoBehaviour
         mpb.Clear();
         mpb.SetBuffer("_ParticleBuffer", particleBuffer);
         mpb.SetFloat("_Size", particleSize);
-        mpb.SetFloat("_MaxSpeed", maxSpeed);
+        mpb.SetFloat("_MinTemperature", minTemp);
+        mpb.SetFloat("_MaxTemperature", maxTemp);
         mpb.SetTexture("_GradientTex", gradientTexture);
 
         Graphics.DrawMeshInstancedIndirect(particleMesh, 0, particleMaterial, renderBounds, argsBuffer, 0, mpb);
@@ -139,7 +161,7 @@ public class ParticleRenderer : MonoBehaviour
     private void BakeGradientTexture()
     {
         for (int i = 0; i < 256; i++)
-            gradientTexture.SetPixel(i, 0, velocityGradient.Evaluate(i / 255f));
+            gradientTexture.SetPixel(i, 0, temperatureGradient.Evaluate(i / 255f));
         gradientTexture.Apply();
     }
 }

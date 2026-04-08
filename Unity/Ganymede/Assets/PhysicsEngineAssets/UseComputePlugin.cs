@@ -40,6 +40,12 @@ public class UseComputePlugin : MonoBehaviour
     [DllImport(PluginName)]
     private static extern IntPtr GetRenderEventFunc();
 
+    [DllImport(PluginName)]
+    private static extern void SetFluidHeatSources(HeatSource[] sources, int count);
+
+    [DllImport(PluginName)]
+    private static extern void GetComputeResult([Out] Particle[] data, int count);
+
     // --------------------------------------------------------------------
     // Public controls (read by other scripts)
 
@@ -107,6 +113,19 @@ public class UseComputePlugin : MonoBehaviour
     public Vector3 interactionPos;
     public float interactionRadius = 3f;
 
+    [Header("Thermal properties")]
+    [Tooltip("How fast heat spreads between particles")]
+    [Range(0.001f, 1)]
+    public float thermalDiffusivity = 0.1f;
+
+    [Tooltip("Temperature the fluid cools toward")]
+    [Range(0f, 500f)]
+    public float ambientTemperature = 20f;
+
+    [Tooltip("how fast particles lose heat to the environment")]
+    [Range(0f, 0.1f)]
+    public float coolingRate = 0.01f;
+
     [Header("Init")]
     [Tooltip("Upload particles automatically on Start")]
     public bool autoInitialize = true;
@@ -114,11 +133,20 @@ public class UseComputePlugin : MonoBehaviour
     [Tooltip("Print debug logs")]
     public bool verbose = true;
 
+    [Header("Heat Sources")]
+    [Tooltip("Maximum number of heat sources supported")]
+    private const int MAX_HEAT_SOURCES = 16;
+    private HeatSource[] _heatSources = new HeatSource[MAX_HEAT_SOURCES];
+
+
     // --------------------------------------------------------------------
 
     private bool initialized;
     private IntPtr renderEventFunc;
     private float timeAccumulator;
+
+    private Particle[] readbackData;  // for debug readback (keep reference to avoid GC)
+    private int frameCount = 0;
 
     private void Start()
     {
@@ -140,14 +168,15 @@ public class UseComputePlugin : MonoBehaviour
         int simParamsStride = Marshal.SizeOf<SimParams>();
         if (particleStride != 64)
             Debug.LogError($"[UseComputePlugin] Particle stride mismatch. Expected 64, got {particleStride}. Check struct layout.");
-        if (simParamsStride != 144)
-            Debug.LogError($"[UseComputePlugin] SimParams stride mismatch. Expected 144, got {simParamsStride}. Check struct layout.");
+        if (simParamsStride != 156)
+            Debug.LogError($"[UseComputePlugin] SimParams stride mismatch. Expected 156, got {simParamsStride}. Check struct layout.");
 
         // Cache function pointer once
         renderEventFunc = GetRenderEventFunc();
 
         // Create initial particle distribution (simple lattice in bounds)
         Particle[] particles = CreateInitialParticles(particleCount);
+        readbackData = new Particle[particleCount];
 
         // Upload to native plugin once
         SetComputeData(particles, particles.Length);
@@ -207,11 +236,55 @@ public class UseComputePlugin : MonoBehaviour
 
         SetSubStepCount(stepsToRun);
         PushParams(dtForStep);
+        UpdateHeatSources();
 
         // Trigger native compute dispatch on the render thread.
         // With execution order attributes, this runs after camera interaction writes.
         if (renderEventFunc != IntPtr.Zero)
             GL.IssuePluginEvent(renderEventFunc, 3);
+        frameCount++;
+
+        if (verbose && frameCount % 60 == 0)
+        {
+            GetComputeResult(readbackData, particleCount);
+            // After N iterations of multiply-by-2: values = initial * 2^N
+            Debug.Log($"[ComputePlugin] Frame {frameCount} GPU state: {FormatParticles(readbackData, 4)}");
+
+            // Find the first active heat source position
+            HeatSourceObj[] sources = FindObjectsByType<HeatSourceObj>(FindObjectsSortMode.None);
+            if (sources.Length > 0)
+            {
+                Vector3 sourcePos = sources[0].transform.position;
+                float sourceRadius = sources[0].GetComponent<Collider>()?.bounds.extents.magnitude
+                                    ?? sources[0].transform.lossyScale.magnitude * 0.5f;
+                float maxTemp = 0f;
+                float avgTemp = 0f;
+                int nearCount = 0;
+                int hotCount = 0;   // particles actually receiving heat
+                for (int i = 0; i < particleCount; i++)
+                {
+                    avgTemp += readbackData[i].temperature;
+                    if (readbackData[i].temperature > ambientTemperature + 1f)
+                        hotCount++;
+                    float dist = Vector3.Distance(readbackData[i].position, sourcePos);
+                    if (dist < sourceRadius * 2f)  // check twice the radius for spreading
+                    {
+                        nearCount++;
+                        maxTemp = Mathf.Max(maxTemp, readbackData[i].temperature);
+                    }
+                }
+                avgTemp /= particleCount;
+                Debug.Log($"[Frame {frameCount}] " +
+                        $"Particles near source: {nearCount} | " +
+                        $"Max temp near source: {maxTemp:F1}° | " +
+                        $"Global avg temp: {avgTemp:F2}° | " +
+                        $"Hot particles (>{ambientTemperature+1f:F0}°): {hotCount}");
+            }
+            else
+            {
+                Debug.Log($"[Frame {frameCount}] GPU state: {FormatParticles(readbackData, 4)}");
+            }
+        }
     }
 
     /// <summary>
@@ -268,7 +341,6 @@ public class UseComputePlugin : MonoBehaviour
         p.poly6Const = poly6Const;
         p.boundsMax = boundsMaxWS;
         p.spikyGradConst = spikyGradConst;
-
         // Unused by the current shaders (hash uses particleCount as table size),
         // but kept for binary compatibility with the native SimParams struct.
         p.gridDims = new UInt3(0, 0, 0);
@@ -283,6 +355,10 @@ public class UseComputePlugin : MonoBehaviour
         p.interactionStrength = interactionStrength;
         p.interactionPos = interactionPos;
         p.interactionRadius = interactionRadius;
+
+        p.thermalDiffusivity = thermalDiffusivity;   
+        p.ambientTemperature = ambientTemperature;
+        p.coolingRate = coolingRate;
 
         SetSimParams(p);
     }
@@ -433,6 +509,51 @@ public class UseComputePlugin : MonoBehaviour
         }
     }
 
+    void UpdateHeatSources()
+    {
+        HeatSourceObj[] sources = FindObjectsByType<HeatSourceObj>(FindObjectsSortMode.None);
+
+        // Clear all slots first
+        for (int i = 0; i < MAX_HEAT_SOURCES; i++)
+            _heatSources[i] = default;
+
+        int count = Mathf.Min(sources.Length, MAX_HEAT_SOURCES);
+        for (int i = 0; i < count; i++)
+        {
+            Vector3 pos = sources[i].transform.position;
+            Collider col = sources[i].GetComponent<Collider>();
+            float radius = col != null? col.bounds.extents.magnitude : sources[i].transform.lossyScale.magnitude * 0.5f;
+            _heatSources[i].posX = pos.x;
+            _heatSources[i].posY = pos.y;
+            _heatSources[i].posZ = pos.z;
+            _heatSources[i].radius = radius;
+            _heatSources[i].temperature = sources[i].GetTemperature();
+            _heatSources[i].active= 1u;
+
+            if (frameCount % 60 == 0)
+                Debug.Log($"[HeatSource {i}] pos=({pos.x:F2},{pos.y:F2},{pos.z:F2}) " + $"radius={radius:F2} temp={sources[i].GetTemperature():F1}");
+        }
+        if (count == 0 && frameCount % 60 == 0)
+            Debug.LogWarning("[HeatSources] No HeatSource components found in scene.");
+
+        SetFluidHeatSources(_heatSources, MAX_HEAT_SOURCES);
+    }
+
+    private static string FormatParticles(Particle[] arr, int maxShow)
+    {
+        int show = Mathf.Min(arr.Length, maxShow);
+        string result = "[";
+        for (int i = 0; i < show; i++)
+        {
+            if (i > 0) result += ", ";
+            result += $"pos={arr[i].position} temp={arr[i].temperature:F2}";
+        }
+        if (arr.Length > maxShow)
+            result += $", ... ({arr.Length - maxShow} more)";
+        result += "]";
+        return result;
+    }
+
     // --------------------------------------------------------------------
     // Native structs (must match the plugin exactly)
 
@@ -478,5 +599,20 @@ public class UseComputePlugin : MonoBehaviour
         public float interactionStrength;
         public Vector3 interactionPos;
         public float interactionRadius;
+        public float  thermalDiffusivity;
+        public float  ambientTemperature;
+        public float  coolingRate;
+    }
+
+    
+    [StructLayout(LayoutKind.Sequential)]
+    public struct HeatSource
+    {
+        public float posX, posY, posZ;  // world-space position
+        public float radius;            // radius of influence
+        public float temperature;       // target temperature
+        public uint  active;            // 1 = active, 0 = inactive slot
+        public uint  _pad0;
+        public uint  _pad1;
     }
 }
