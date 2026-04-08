@@ -1,9 +1,11 @@
 using UnityEngine;
+using UnityEngine.Rendering;
+using UnityEngine.Rendering.Universal;
 
 /// <summary>
-/// Draws normal lines on filled surface voxels using GL immediate-mode rendering.
+/// Builds normal-line geometry on filled surface voxels.
 /// Attach to the same Camera that has VoxelTracerCamera.
-/// Uses OnRenderImage to draw lines AFTER the voxel composite.
+/// Rendering is handled by <see cref="VoxelNormalGizmosFeature"/>.
 /// </summary>
 [RequireComponent(typeof(Camera))]
 [DefaultExecutionOrder(100)] // run after VoxelTracerCamera
@@ -29,9 +31,8 @@ public class VoxelNormalGizmos : MonoBehaviour
     [Tooltip("How often to refresh the voxel data (seconds). 0 = every frame.")]
     [Min(0)] public float refreshInterval = 0.2f;
 
-    Material _glMat;
-    Vector3[] _lineStarts;
-    Vector3[] _lineEnds;
+    Material _lineMat;
+    Mesh _lineMesh;
     int _lineCount;
     float _lastRefresh = -999f;
 
@@ -39,26 +40,53 @@ public class VoxelNormalGizmos : MonoBehaviour
     float[] _fillData;
     int _cachedNx, _cachedNy, _cachedNz;
 
+    // Temp buffers for building mesh
+    Vector3[] _lineStarts;
+    Vector3[] _lineEnds;
+
+    // ================================================================
+    // Public API for VoxelNormalGizmosFeature
+    // ================================================================
+
+    public bool HasLines => enabled && _lineMesh != null && _lineCount > 0 && _lineMat != null;
+
+    /// <summary>
+    /// Draw the normal lines into the given CommandBuffer.
+    /// Called by VoxelNormalGizmosFeature inside a render graph raster pass.
+    /// </summary>
+    public void DrawLines(RasterCommandBuffer cmd, Matrix4x4 view, Matrix4x4 proj)
+    {
+        if (!HasLines) return;
+        cmd.SetViewProjectionMatrices(view, proj);
+        _lineMat.SetColor("_Color", normalColor);
+        cmd.DrawMesh(_lineMesh, Matrix4x4.identity, _lineMat, 0, 0);
+    }
+
+    // ================================================================
+    // Lifecycle
+    // ================================================================
+
     void OnEnable()
     {
-        // Unlit colored line material
         var shader = Shader.Find("Hidden/Internal-Colored");
         if (shader == null) return;
-        _glMat = new Material(shader);
-        _glMat.hideFlags = HideFlags.HideAndDontSave;
-        _glMat.SetInt("_SrcBlend", (int)UnityEngine.Rendering.BlendMode.SrcAlpha);
-        _glMat.SetInt("_DstBlend", (int)UnityEngine.Rendering.BlendMode.OneMinusSrcAlpha);
-        _glMat.SetInt("_Cull", (int)UnityEngine.Rendering.CullMode.Off);
-        _glMat.SetInt("_ZWrite", 0);
-        _glMat.SetInt("_ZTest", (int)UnityEngine.Rendering.CompareFunction.Always);
+        _lineMat = new Material(shader);
+        _lineMat.hideFlags = HideFlags.HideAndDontSave;
+        _lineMat.SetInt("_SrcBlend", (int)BlendMode.SrcAlpha);
+        _lineMat.SetInt("_DstBlend", (int)BlendMode.OneMinusSrcAlpha);
+        _lineMat.SetInt("_Cull", (int)CullMode.Off);
+        _lineMat.SetInt("_ZWrite", 0);
+        _lineMat.SetInt("_ZTest", (int)CompareFunction.Always);
     }
 
     void OnDisable()
     {
-        if (_glMat != null) { DestroyImmediate(_glMat); _glMat = null; }
+        if (_lineMat != null) { DestroyImmediate(_lineMat); _lineMat = null; }
+        if (_lineMesh != null) { DestroyImmediate(_lineMesh); _lineMesh = null; }
         _lineStarts = null;
         _lineEnds = null;
         _fillData = null;
+        _lineCount = 0;
     }
 
     void Update()
@@ -173,44 +201,49 @@ public class VoxelNormalGizmos : MonoBehaviour
                     _lineEnds[_lineCount] = center + normal * normalLength;
                     _lineCount++;
                 }
+
+        // Build mesh from line data
+        BuildLineMesh();
+    }
+
+    void BuildLineMesh()
+    {
+        if (_lineCount == 0)
+        {
+            if (_lineMesh != null) _lineMesh.Clear();
+            return;
+        }
+
+        if (_lineMesh == null)
+        {
+            _lineMesh = new Mesh();
+            _lineMesh.hideFlags = HideFlags.HideAndDontSave;
+        }
+
+        int vertCount = _lineCount * 2;
+        var verts = new Vector3[vertCount];
+        var colors = new Color[vertCount];
+        var indices = new int[vertCount];
+
+        for (int i = 0; i < _lineCount; i++)
+        {
+            verts[i * 2] = _lineStarts[i];
+            verts[i * 2 + 1] = _lineEnds[i];
+            colors[i * 2] = normalColor;
+            colors[i * 2 + 1] = normalColor;
+            indices[i * 2] = i * 2;
+            indices[i * 2 + 1] = i * 2 + 1;
+        }
+
+        _lineMesh.Clear();
+        _lineMesh.vertices = verts;
+        _lineMesh.colors = colors;
+        _lineMesh.SetIndices(indices, MeshTopology.Lines, 0);
     }
 
     float GetFill(int x, int y, int z, int nx, int ny, int nz)
     {
         if (x < 0 || x >= nx || y < 0 || y >= ny || z < 0 || z >= nz) return 0;
         return _fillData[z * (nx * ny) + y * nx + x];
-    }
-
-    void OnRenderImage(RenderTexture src, RenderTexture dest)
-    {
-        // Pass-through blit first so we don't lose the composited scene + voxels
-        Graphics.Blit(src, dest);
-
-        if (_glMat == null || _lineCount == 0) return;
-
-        // Explicitly set render target and viewport after the blit
-        bool toTexture = (dest != null);
-        Graphics.SetRenderTarget(dest);
-        int vpW = toTexture ? dest.width : Screen.width;
-        int vpH = toTexture ? dest.height : Screen.height;
-        GL.Viewport(new Rect(0, 0, vpW, vpH));
-
-        var cam = GetComponent<Camera>();
-        GL.PushMatrix();
-        GL.LoadProjectionMatrix(GL.GetGPUProjectionMatrix(cam.projectionMatrix, toTexture));
-        GL.modelview = cam.worldToCameraMatrix;
-
-        _glMat.SetPass(0);
-        GL.Begin(GL.LINES);
-        GL.Color(normalColor);
-
-        for (int i = 0; i < _lineCount; i++)
-        {
-            GL.Vertex(_lineStarts[i]);
-            GL.Vertex(_lineEnds[i]);
-        }
-
-        GL.End();
-        GL.PopMatrix();
     }
 }

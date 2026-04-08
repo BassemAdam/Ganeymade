@@ -794,7 +794,7 @@ MonoBehaviour:
   boundsMode: 1
   gridMin: {x: -10, y: -10, z: -10}
   gridMax: {x: 10, y: 10, z: 10}
-  voxelSize: 0.07
+  voxelSize: 0.12
   autoFitPadding: 1
   fillVolume: 1
   fillSweepRounds: 2
