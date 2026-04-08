@@ -120,7 +120,7 @@ Material:
     - _GlossMapScale: 0
     - _Glossiness: 0
     - _GlossyReflections: 0
-    - _LiquidAbsorptionRate: 0.71
+    - _LiquidAbsorptionRate: 5
     - _LiquidBodyLightStrength: 2.21
     - _LiquidFresnelPower: 1.77
     - _LiquidOpacityCoeff: 30
