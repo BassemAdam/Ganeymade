@@ -1,0 +1,436 @@
+// ============================================================================
+// VoxelTracerCore.compute
+// GPU voxelization: SAT surface voxelization (atomic),
+// axis-sweep flood fill (6 directions × N rounds),
+// buffer-to-texture conversion, gradient normals.
+// Static/dynamic split: static voxels cached, dynamic voxels per-frame.
+//
+// Packed buffer layout: bit 0 = surface, bit 1 = confirmed outside (flood).
+// ============================================================================
+#pragma kernel Clear
+#pragma kernel Surface
+#pragma kernel SweepFill
+#pragma kernel BuildTexture
+#pragma kernel ComputeNormals
+#pragma kernel BlurFill
+#pragma kernel CopyAndClearFlood
+#pragma kernel CopyAndClearFloodLinear
+#pragma kernel RestoreStaticFull
+#pragma kernel RestoreStaticFullLinear
+#pragma kernel ClearVoxelBuffer
+#pragma kernel CopyWorkingToStatic
+#pragma kernel WriteMaterialProperties
+
+// ---- Grid ----
+int _Width, _Height, _Depth;
+float3 _Start;
+float  _Unit, _HalfUnit;
+
+// ---- Triangle input ----
+struct Tri { float3 a, b, c; };
+StructuredBuffer<Tri> _Tris;
+int _TriCount;
+
+// ---- Voxel buffers ----
+// Packed: bit 0 = surface, bit 1 = confirmed outside (flood)
+RWStructuredBuffer<uint> _VoxelBuffer;  // working buffer
+StructuredBuffer<uint>   _StaticVoxelBuffer; // cached static (read-only)
+int _FillVolume; // 1 = use flood fill, 0 = surface only
+int _TotalVoxels; // Width * Height * Depth (for linear dispatches)
+
+// ---- Sweep parameters ----
+int _SweepAxis; // 0=X, 1=Y, 2=Z
+
+// ---- Region offset (dirty-region dispatch) ----
+// When dispatching over a sub-region, id=(0,0,0) maps to _RegionMin.
+// For full-grid dispatches, set to (0,0,0).
+int _RegionMinX, _RegionMinY, _RegionMinZ;
+
+// ---- Output 3D textures ----
+RWTexture3D<float>  _FillTex;
+RWTexture3D<float>  _BlurredFillTex;
+RWTexture3D<float4> _NormalTex;
+
+// ========================= Helpers =========================
+
+int VoxelIndex(int x, int y, int z)
+{
+    return z * (_Width * _Height) + y * _Width + x;
+}
+
+float3 VoxelCenter(int x, int y, int z)
+{
+    return float3(
+        _Start.x + _Unit * x + _HalfUnit,
+        _Start.y + _Unit * y + _HalfUnit,
+        _Start.z + _Unit * z + _HalfUnit
+    );
+}
+
+// SAT projection overlap test on one separating axis
+bool AxisOverlap(float3 v0, float3 v1, float3 v2, float3 ext, float3 axis)
+{
+    float p0 = dot(v0, axis);
+    float p1 = dot(v1, axis);
+    float p2 = dot(v2, axis);
+    float r  = ext.x * abs(axis.x) + ext.y * abs(axis.y) + ext.z * abs(axis.z);
+    return !((max(p0, max(p1, p2)) < -r) || (r < min(p0, min(p1, p2))));
+}
+
+// Full SAT triangle-AABB intersection (Tomas Akenine-Moller)
+bool TriAABBIntersect(float3 va, float3 vb, float3 vc, float3 center, float3 ext)
+{
+    float3 v0 = va - center;
+    float3 v1 = vb - center;
+    float3 v2 = vc - center;
+
+    float3 f0 = v1 - v0;
+    float3 f1 = v2 - v1;
+    float3 f2 = v0 - v2;
+
+    if (!AxisOverlap(v0, v1, v2, ext, float3(0, -f0.z, f0.y))) return false;
+    if (!AxisOverlap(v0, v1, v2, ext, float3(0, -f1.z, f1.y))) return false;
+    if (!AxisOverlap(v0, v1, v2, ext, float3(0, -f2.z, f2.y))) return false;
+    if (!AxisOverlap(v0, v1, v2, ext, float3(f0.z, 0, -f0.x))) return false;
+    if (!AxisOverlap(v0, v1, v2, ext, float3(f1.z, 0, -f1.x))) return false;
+    if (!AxisOverlap(v0, v1, v2, ext, float3(f2.z, 0, -f2.x))) return false;
+    if (!AxisOverlap(v0, v1, v2, ext, float3(-f0.y, f0.x, 0))) return false;
+    if (!AxisOverlap(v0, v1, v2, ext, float3(-f1.y, f1.x, 0))) return false;
+    if (!AxisOverlap(v0, v1, v2, ext, float3(-f2.y, f2.x, 0))) return false;
+
+    if (max(v0.x, max(v1.x, v2.x)) < -ext.x || min(v0.x, min(v1.x, v2.x)) > ext.x) return false;
+    if (max(v0.y, max(v1.y, v2.y)) < -ext.y || min(v0.y, min(v1.y, v2.y)) > ext.y) return false;
+    if (max(v0.z, max(v1.z, v2.z)) < -ext.z || min(v0.z, min(v1.z, v2.z)) > ext.z) return false;
+
+    float3 n = cross(f0, f1);
+    float len2 = dot(n, n);
+    if (len2 < 1e-12) return false;
+    n *= rsqrt(len2);
+    float d = dot(n, va);
+    float r = ext.x * abs(n.x) + ext.y * abs(n.y) + ext.z * abs(n.z);
+    float s = dot(n, center) - d;
+    return abs(s) <= r;
+}
+
+// ========================= Kernels =========================
+
+// 0: Clear voxel buffer + fill texture
+[numthreads(8, 8, 8)]
+void Clear(uint3 id : SV_DispatchThreadID)
+{
+    int3 p = int3(_RegionMinX, _RegionMinY, _RegionMinZ) + (int3)id;
+    if (p.x >= _Width || p.y >= _Height || p.z >= _Depth) return;
+    int idx = VoxelIndex(p.x, p.y, p.z);
+    _VoxelBuffer[idx] = 0u;
+    _FillTex[p] = 0.0;
+}
+
+// 1: Surface voxelization — all triangles, atomic write
+[numthreads(64, 1, 1)]
+void Surface(uint3 id : SV_DispatchThreadID)
+{
+    if (id.x >= (uint)_TriCount) return;
+
+    Tri tri = _Tris[id.x];
+
+    float3 triMin = min(tri.a, min(tri.b, tri.c));
+    float3 triMax = max(tri.a, max(tri.b, tri.c));
+
+    int3 gmin = int3(floor((triMin - _Start) / _Unit)) - 1;
+    int3 gmax = int3(floor((triMax - _Start) / _Unit)) + 1;
+    gmin = clamp(gmin, 0, int3(_Width - 1, _Height - 1, _Depth - 1));
+    gmax = clamp(gmax, 0, int3(_Width - 1, _Height - 1, _Depth - 1));
+
+    float3 ext = float3(_HalfUnit, _HalfUnit, _HalfUnit);
+
+    for (int z = gmin.z; z <= gmax.z; z++)
+    for (int y = gmin.y; y <= gmax.y; y++)
+    for (int x = gmin.x; x <= gmax.x; x++)
+    {
+        float3 center = VoxelCenter(x, y, z);
+        if (TriAABBIntersect(tri.a, tri.b, tri.c, center, ext))
+        {
+            uint dummy;
+            InterlockedOr(_VoxelBuffer[VoxelIndex(x, y, z)], 1u, dummy);
+        }
+    }
+}
+
+// 2: Axis-sweep flood fill (both directions per axis in one dispatch)
+// Dispatched over a 2D plane perpendicular to _SweepAxis.
+// Each thread sweeps one line forward then backward,
+// propagating "outside" from both boundary faces, stopping at surfaces.
+// Packed buffer: bit 0 = surface, bit 1 = confirmed outside.
+[numthreads(8, 8, 1)]
+void SweepFill(uint3 id : SV_DispatchThreadID)
+{
+    // Region-offset cross-section coords: dispatch covers the dirty sub-plane,
+    // but each thread still sweeps the full axis length for correctness.
+    int a, b;
+    if (_SweepAxis == 0)      { a = _RegionMinY + (int)id.x; b = _RegionMinZ + (int)id.y; }
+    else if (_SweepAxis == 1) { a = _RegionMinX + (int)id.x; b = _RegionMinZ + (int)id.y; }
+    else                      { a = _RegionMinX + (int)id.x; b = _RegionMinY + (int)id.y; }
+
+    int dimA, dimB, dimSweep;
+    if (_SweepAxis == 0)      { dimA = _Height; dimB = _Depth;  dimSweep = _Width;  }
+    else if (_SweepAxis == 1) { dimA = _Width;  dimB = _Depth;  dimSweep = _Height; }
+    else                      { dimA = _Width;  dimB = _Height; dimSweep = _Depth;  }
+
+    if (a >= dimA || b >= dimB) return;
+
+    // Forward sweep (+ direction)
+    bool propagating = true;
+    for (int s = 0; s < dimSweep; s++)
+    {
+        int x, y, z;
+        if (_SweepAxis == 0)      { x = s; y = a; z = b; }
+        else if (_SweepAxis == 1) { x = a; y = s; z = b; }
+        else                      { x = a; y = b; z = s; }
+
+        int idx = VoxelIndex(x, y, z);
+        uint packed = _VoxelBuffer[idx];
+
+        if ((packed & 1u) != 0u)
+        {
+            propagating = false;
+            continue;
+        }
+
+        if (propagating || (packed & 2u) != 0u)
+        {
+            _VoxelBuffer[idx] = packed | 2u;
+            propagating = true;
+        }
+        else
+        {
+            propagating = false;
+        }
+    }
+
+    // Backward sweep (- direction)
+    propagating = true;
+    for (int s = dimSweep - 1; s >= 0; s--)
+    {
+        int x, y, z;
+        if (_SweepAxis == 0)      { x = s; y = a; z = b; }
+        else if (_SweepAxis == 1) { x = a; y = s; z = b; }
+        else                      { x = a; y = b; z = s; }
+
+        int idx = VoxelIndex(x, y, z);
+        uint packed = _VoxelBuffer[idx];
+
+        if ((packed & 1u) != 0u)
+        {
+            propagating = false;
+            continue;
+        }
+
+        if (propagating || (packed & 2u) != 0u)
+        {
+            _VoxelBuffer[idx] = packed | 2u;
+            propagating = true;
+        }
+        else
+        {
+            propagating = false;
+        }
+    }
+}
+
+// 3: Build fill texture from packed buffer
+// filled = surface OR (not-outside when fill enabled)
+[numthreads(8, 8, 8)]
+void BuildTexture(uint3 id : SV_DispatchThreadID)
+{
+    int3 p = int3(_RegionMinX, _RegionMinY, _RegionMinZ) + (int3)id;
+    if (p.x >= _Width || p.y >= _Height || p.z >= _Depth) return;
+    int idx = VoxelIndex(p.x, p.y, p.z);
+    uint packed = _VoxelBuffer[idx];
+    bool isSurface = (packed & 1u) != 0u;
+
+    if (_FillVolume == 0)
+    {
+        _FillTex[p] = isSurface ? 1.0 : 0.0;
+    }
+    else
+    {
+        bool isOutside = (packed & 2u) != 0u;
+        _FillTex[p] = (!isOutside || isSurface) ? 1.0 : 0.0;
+    }
+}
+
+// 4: Compute gradient-based normals from blurred fill texture
+[numthreads(8, 8, 8)]
+void ComputeNormals(uint3 id : SV_DispatchThreadID)
+{
+    int3 p = int3(_RegionMinX, _RegionMinY, _RegionMinZ) + (int3)id;
+    if (p.x >= _Width || p.y >= _Height || p.z >= _Depth) return;
+
+    float here = _FillTex[p];
+    if (here < 0.5)
+    {
+        _NormalTex[p] = float4(0, 0, 0, 0);
+        return;
+    }
+
+    float gx = _BlurredFillTex[int3(min(p.x + 1, _Width  - 1), p.y, p.z)]
+             - _BlurredFillTex[int3(max(p.x - 1, 0),            p.y, p.z)];
+    float gy = _BlurredFillTex[int3(p.x, min(p.y + 1, _Height - 1), p.z)]
+             - _BlurredFillTex[int3(p.x, max(p.y - 1, 0),            p.z)];
+    float gz = _BlurredFillTex[int3(p.x, p.y, min(p.z + 1, _Depth - 1))]
+             - _BlurredFillTex[int3(p.x, p.y, max(p.z - 1, 0))];
+
+    float3 grad = float3(gx, gy, gz);
+    float len2 = dot(grad, grad);
+
+    if (len2 < 1e-10)
+    {
+        _NormalTex[p] = float4(0, 0, 0, 1);
+        return;
+    }
+
+    float3 n = -grad * rsqrt(len2);
+    _NormalTex[p] = float4(n, 1);
+}
+
+// 4b: 3x3x3 box blur on _FillTex → _BlurredFillTex (for smooth normals)
+[numthreads(8, 8, 8)]
+void BlurFill(uint3 id : SV_DispatchThreadID)
+{
+    int3 p = int3(_RegionMinX, _RegionMinY, _RegionMinZ) + (int3)id;
+    if (p.x >= _Width || p.y >= _Height || p.z >= _Depth) return;
+
+    float sum = 0.0;
+    for (int dz = -1; dz <= 1; dz++)
+    for (int dy = -1; dy <= 1; dy++)
+    for (int dx = -1; dx <= 1; dx++)
+    {
+        int3 q = clamp(p + int3(dx, dy, dz), 0, int3(_Width - 1, _Height - 1, _Depth - 1));
+        sum += _FillTex[q];
+    }
+
+    _BlurredFillTex[p] = sum / 27.0;
+}
+
+// 5: Copy static surface → working, clear flood bit (3D, dirty-region dispatch)
+// packed = staticPacked & 1u (keep surface bit 0, clear flood bit 1)
+[numthreads(8, 8, 8)]
+void CopyAndClearFlood(uint3 id : SV_DispatchThreadID)
+{
+    int3 p = int3(_RegionMinX, _RegionMinY, _RegionMinZ) + (int3)id;
+    if (p.x >= _Width || p.y >= _Height || p.z >= _Depth) return;
+    int idx = VoxelIndex(p.x, p.y, p.z);
+    _VoxelBuffer[idx] = _StaticVoxelBuffer[idx] & 1u;
+}
+
+// 6: Linear version — perfect memory coalescing for full-grid
+[numthreads(256, 1, 1)]
+void CopyAndClearFloodLinear(uint3 id : SV_DispatchThreadID)
+{
+    int idx = (int)id.x;
+    if (idx >= _TotalVoxels) return;
+    _VoxelBuffer[idx] = _StaticVoxelBuffer[idx] & 1u;
+}
+
+// 7: Restore FULL static state (surface + flood) — for non-dynamic restoration frames
+[numthreads(8, 8, 8)]
+void RestoreStaticFull(uint3 id : SV_DispatchThreadID)
+{
+    int3 p = int3(_RegionMinX, _RegionMinY, _RegionMinZ) + (int3)id;
+    if (p.x >= _Width || p.y >= _Height || p.z >= _Depth) return;
+    int idx = VoxelIndex(p.x, p.y, p.z);
+    _VoxelBuffer[idx] = _StaticVoxelBuffer[idx];
+}
+
+// 8: Linear version of RestoreStaticFull
+[numthreads(256, 1, 1)]
+void RestoreStaticFullLinear(uint3 id : SV_DispatchThreadID)
+{
+    int idx = (int)id.x;
+    if (idx >= _TotalVoxels) return;
+    _VoxelBuffer[idx] = _StaticVoxelBuffer[idx];
+}
+
+// 9: Clear a voxel buffer to zero (generic, used for static cache clear)
+[numthreads(8, 8, 8)]
+void ClearVoxelBuffer(uint3 id : SV_DispatchThreadID)
+{
+    int3 p = int3(_RegionMinX, _RegionMinY, _RegionMinZ) + (int3)id;
+    if (p.x >= _Width || p.y >= _Height || p.z >= _Depth) return;
+    int idx = VoxelIndex(p.x, p.y, p.z);
+    _VoxelBuffer[idx] = 0u;
+}
+
+// 10: Copy working buffer → static cache (GPU-side, avoids CPU readback stall)
+RWStructuredBuffer<uint> _DstBuffer;
+[numthreads(8, 8, 8)]
+void CopyWorkingToStatic(uint3 id : SV_DispatchThreadID)
+{
+    int3 p = int3(_RegionMinX, _RegionMinY, _RegionMinZ) + (int3)id;
+    if (p.x >= _Width || p.y >= _Height || p.z >= _Depth) return;
+    int idx = VoxelIndex(p.x, p.y, p.z);
+    _DstBuffer[idx] = _VoxelBuffer[idx];
+}
+
+// ========================= Material Properties =========================
+
+// GPU struct matching C# MaterialSource (StructLayout.Sequential)
+struct MaterialSource
+{
+    float3 position;  // world-space center
+    float3 extents;   // half-size for AABB, or (radius, radius, radius) for sphere
+    float  temperature;
+    float  phase;     // 0 = solid, 1 = fluid
+    uint   shape;     // 0 = AABB, 1 = sphere
+};
+
+StructuredBuffer<MaterialSource> _MaterialSources;
+int _MaterialSourceCount;
+float _DefaultSolidTemperature;
+
+RWTexture3D<float> _TemperatureTex;
+RWTexture3D<float> _PhaseTex;
+
+// 11: Write material properties (temperature, phase) into 3D textures.
+// Reads the fill texture to know which voxels are solid.
+// Then stamps heat sources, water bodies, and fluid sources on top.
+[numthreads(8, 8, 8)]
+void WriteMaterialProperties(uint3 id : SV_DispatchThreadID)
+{
+    int3 p = int3(_RegionMinX, _RegionMinY, _RegionMinZ) + (int3)id;
+    if (p.x >= _Width || p.y >= _Height || p.z >= _Depth) return;
+
+    float fill = _FillTex[p];
+    float3 worldPos = VoxelCenter(p.x, p.y, p.z);
+
+    // Default: empty voxels get 0, filled solids get default temperature
+    float temp  = fill > 0.5 ? _DefaultSolidTemperature : 0.0;
+    float phase = 0.0; // 0 = solid (or empty)
+
+    // Stamp sources — later sources override earlier ones
+    for (int i = 0; i < _MaterialSourceCount; i++)
+    {
+        MaterialSource src = _MaterialSources[i];
+        bool inside = false;
+
+        if (src.shape == 0u) // AABB
+        {
+            float3 d = abs(worldPos - src.position);
+            inside = (d.x <= src.extents.x) && (d.y <= src.extents.y) && (d.z <= src.extents.z);
+        }
+        else // sphere
+        {
+            float3 d = worldPos - src.position;
+            inside = dot(d, d) <= (src.extents.x * src.extents.x);
+        }
+
+        if (inside)
+        {
+            temp  = src.temperature;
+            phase = src.phase;
+        }
+    }
+
+    _TemperatureTex[p] = temp;
+    _PhaseTex[p]       = phase;
+}
