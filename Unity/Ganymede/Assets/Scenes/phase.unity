@@ -2300,6 +2300,10 @@ PrefabInstance:
       propertyPath: boundsAreLocalToTransform
       value: 1
       objectReference: {fileID: 0}
+    - target: {fileID: 4161998456328252244, guid: 18cf1fa5220a198409fde72db8b3e2a5, type: 3}
+      propertyPath: particleCount
+      value: 65536
+      objectReference: {fileID: 0}
     - target: {fileID: 5891988049623486879, guid: 18cf1fa5220a198409fde72db8b3e2a5, type: 3}
       propertyPath: m_LocalPosition.x
       value: -4.05

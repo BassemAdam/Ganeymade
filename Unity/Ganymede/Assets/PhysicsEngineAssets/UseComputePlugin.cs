@@ -50,7 +50,7 @@ public class UseComputePlugin : MonoBehaviour
     // Public controls (read by other scripts)
 
     [Header("Particle Count")]
-    [Tooltip("Number of particles simulated by the native plugin. Must be power-of-two for bitonic sort stability (auto-corrected on init).")]
+    [Tooltip("Number of particles simulated by the native plugin. Value is used as entered.")]
     [Min(1)]
     public int particleCount = 32768;
 
@@ -156,13 +156,14 @@ public class UseComputePlugin : MonoBehaviour
 
     public void Initialize()
     {
-        int requestedCount = Mathf.Clamp(particleCount, 1, 262144);
-        int sanitizedCount = NormalizeParticleCount(requestedCount);
-        if (sanitizedCount != requestedCount && verbose)
+        int requestedCount = particleCount;
+        if (requestedCount < 1)
         {
-            Debug.LogWarning($"[UseComputePlugin] particleCount={requestedCount} is not power-of-two. Auto-adjusted to {sanitizedCount} for stable bitonic sort.");
+            requestedCount = 1;
+            if (verbose)
+                Debug.LogWarning("[UseComputePlugin] particleCount must be >= 1. Auto-adjusted to 1.");
         }
-        particleCount = sanitizedCount;
+        particleCount = requestedCount;
 
         int particleStride = Marshal.SizeOf<Particle>();
         int simParamsStride = Marshal.SizeOf<SimParams>();
@@ -418,15 +419,6 @@ public class UseComputePlugin : MonoBehaviour
         return particles;
     }
 
-    private static int NormalizeParticleCount(int requested)
-    {
-        int clamped = Mathf.Clamp(requested, 1, 262144);
-
-        // Bitonic sort requires power-of-two length for fully correct ordering.
-        int pow2 = Mathf.ClosestPowerOfTwo(clamped);
-        return Mathf.Clamp(pow2, 1, 262144);
-    }
-
     private static void FindBestFactorGrid(int count, Vector3 boundsSize, out int nx, out int ny, out int nz)
     {
         nx = 1;
@@ -495,7 +487,7 @@ public class UseComputePlugin : MonoBehaviour
 
     private void OnValidate()
     {
-        particleCount = NormalizeParticleCount(particleCount);
+        particleCount = Mathf.Max(1, particleCount);
         maxSubSteps = Mathf.Max(1, maxSubSteps);
         fixedTimeStep = Mathf.Max(0.0001f, fixedTimeStep);
     }
