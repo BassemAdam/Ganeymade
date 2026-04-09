@@ -1,0 +1,102 @@
+import particle;
+
+[[vk::push_constant]]
+ConstantBuffer<SimParams> params;
+
+[[vk::binding(0, 0)]]
+StructuredBuffer<Particle> particlesIn;
+[[vk::binding(1, 0)]]
+RWStructuredBuffer<Particle> particlesOut;
+[[vk::binding(2, 0)]]
+StructuredBuffer<uint> hashKeys;
+[[vk::binding(3, 0)]]
+StructuredBuffer<uint> indices;
+[[vk::binding(4, 0)]]
+StructuredBuffer<uint> startIndices;
+[[vk::binding(5, 0)]]
+StructuredBuffer<HeatSource> heatSources;
+
+// SPH kernel for heat conduction, same Poly6 weight used for density
+float heatKernel(float r2, float h2)
+{
+    float w = h2 - r2;
+    return w * w * w;
+}
+
+[shader("compute")]
+[numthreads(256, 1, 1)]
+void computeMain(uint3 threadId: SV_DispatchThreadID)
+{
+    uint i = threadId.x;
+    if (i >= params.particleCount)
+        return;
+
+    Particle p = particlesIn[i];
+    float h  = params.smoothingRadius;
+    float h2 = h * h;
+    uint  n  = params.particleCount;
+
+    int3 myCell = getCellCoord(p.position, params.gridOrigin, h);
+
+    // Accumulate heat exchange with all neighbors
+    float dT = 0.0;
+    float weightSum = 0.0;
+
+    // Check if this particle is inside any heat source
+    for (int s = 0; s < 16; s++)
+    {
+        if (heatSources[s].active == 0u) continue;
+        float3 diff = p.position - heatSources[s].position;
+        if (dot(diff, diff) <= heatSources[s].radius * heatSources[s].radius)
+        {
+            // Particle is inside this source — fix its temperature and skip diffusion
+            p.temperature = heatSources[s].temperature;
+            particlesOut[i] = p;
+            return;
+        }
+    }
+
+    for (int dz = -1; dz <= 1; dz++)
+    for (int dy = -1; dy <= 1; dy++)
+    for (int dx = -1; dx <= 1; dx++)
+    {
+        uint key = hashCell(myCell + int3(dx, dy, dz), n);
+        uint idx = startIndices[key];
+        if (idx == 0xFFFFFFFF) continue;
+
+        while (idx < n && hashKeys[idx] == key)
+        {
+            uint j = indices[idx];
+            if (j != i)
+            {
+                Particle pj = particlesIn[j];
+                float3 diff = p.position - pj.position;
+                float r2 = dot(diff, diff);
+
+                if (r2 < h2 && r2 > 1e-12)
+                {
+                    // Weight by kernel: closer neighbors exchange more heat
+                    float w = heatKernel(r2, h2);
+
+                    // Heat flows from hot to cold proportional to temperature difference
+                    dT += w * (pj.temperature - p.temperature) / pj.density;
+                    weightSum += w;
+                }
+            }
+            idx++;
+        }
+    }
+
+    // Apply conduction
+    float conduction = params.thermalDiffusivity* params.particleMass * params.poly6Const* dT* params.dt;
+
+    // Apply ambient cooling (Newton's law of cooling)
+    float cooling = params.coolingRate* (p.temperature - params.ambientTemperature)* params.dt;
+
+    p.temperature += conduction - cooling;
+
+    // Clamp to physical bounds
+    p.temperature = max(p.temperature, params.ambientTemperature);
+
+    particlesOut[i] = p;
+}

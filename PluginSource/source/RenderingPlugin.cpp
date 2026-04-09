@@ -7,6 +7,7 @@
 extern void VulkanCompute_Initialize(IUnityInterfaces* interfaces);
 extern void VulkanCompute_Shutdown();
 extern void VulkanCompute_Dispatch();
+extern void VulkanSolidCompute_Dispatch();
 #endif
 
 // --------------------------------------------------------------------------
@@ -65,6 +66,13 @@ static void UNITY_INTERFACE_API OnRenderEvent(int eventID)
 	{
 #if SUPPORT_VULKAN
 		VulkanCompute_Dispatch();
+#endif
+	}
+
+	if (eventID == 4)
+	{
+#if SUPPORT_VULKAN
+		VulkanSolidCompute_Dispatch();
 #endif
 	}
 }
