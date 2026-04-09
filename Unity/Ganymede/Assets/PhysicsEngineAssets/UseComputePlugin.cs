@@ -181,6 +181,16 @@ public class UseComputePlugin : MonoBehaviour
         // Upload to native plugin once
         SetComputeData(particles, particles.Length);
 
+        // TEMP DEBUG
+        GetBoundsWS(out Vector3 dbgMin, out Vector3 dbgMax);
+        Debug.Log($"[DEBUG Init] transform.position={transform.position}, boundsMin={boundsMin}, boundsMax={boundsMax}");
+        Debug.Log($"[DEBUG Init] GetBoundsWS → min={dbgMin}, max={dbgMax}");
+        Debug.Log($"[DEBUG Init] First 4 particles: " +
+            $"p[0]={particles[0].position} " +
+            $"p[1]={particles[1].position} " +
+            $"p[2]={particles[2].position} " +
+            $"p[3]={particles[3].position}");
+
         // Configure plugin
         SetPerfTestMode(perfTestMode);
         SetSubStepCount(subStepCount);
@@ -211,7 +221,7 @@ public class UseComputePlugin : MonoBehaviour
             return;
 
         // Keep native-side toggles in sync (cheap calls)
-        SetPerfTestMode(perfTestMode);
+        //SetPerfTestMode(perfTestMode);
 
         int stepsToRun = Mathf.Max(1, subStepCount);
         float dtForStep = Mathf.Max(Time.deltaTime, 0.0001f);
