@@ -1,19 +1,19 @@
-struct SimParams {
+struct SolidSimParams {
     float dt;
     float alpha;         // temperature diffusivity factor
-    uint  elementCount;
     uint  gridWidth;
     uint  gridHeight;
     uint  gridDepth;
     uint  _pad0;         // to conform to the 16-byte of vulkan
     uint  _pad1;
+    uint  _pad2;
 };
 
-[[vk::push_constant]] ConstantBuffer<SimParams> params;
+[[vk::push_constant]] ConstantBuffer<SolidSimParams> params;
 
-StructuredBuffer<float>   inputData;   // binding=0
-RWStructuredBuffer<float> outputData;  // binding=1
-StructuredBuffer<uint>     maskData;   // binding= 2, where 0 = normal cell and 1 = source cell (temperature doesn't change)
+[[vk::binding(0)]] StructuredBuffer<float>   inputData;   // binding=0
+[[vk::binding(1)]] RWStructuredBuffer<float> outputData;  // binding=1
+[[vk::binding(2)]] StructuredBuffer<uint>     maskData;   // binding=2, where 0 = normal cell and 1 = source cell (temperature doesn't change)
 
 [shader("compute")]
 [numthreads(4, 4, 4)]  // 4×4×4 = 64 threads per group

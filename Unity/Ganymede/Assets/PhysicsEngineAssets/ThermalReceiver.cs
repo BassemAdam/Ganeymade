@@ -9,53 +9,21 @@ public class ThermalReceiver : MonoBehaviour
 {
     // ─── Native plugin imports ──────────────────────────────────────────
 
-#if (PLATFORM_IOS || PLATFORM_TVOS || PLATFORM_BRATWURST || PLATFORM_SWITCH) && !UNITY_EDITOR
-    [DllImport("__Internal")]
-#else
-    [DllImport("RenderingPlugin")]
-#endif
-    private static extern void SetComputeData(float[] data, int count);
+[DllImport("RenderingPlugin")]
+private static extern void SetSolidComputeData(float[] data, int count);
 
-#if (PLATFORM_IOS || PLATFORM_TVOS || PLATFORM_BRATWURST || PLATFORM_SWITCH) && !UNITY_EDITOR
-    [DllImport("__Internal")]
-#else
-    [DllImport("RenderingPlugin")]
-#endif
-    private static extern void GetComputeResult(float[] outData, int count);
+[DllImport("RenderingPlugin")]
+private static extern void SetMaskData(uint[] mask, int count);
 
-#if (PLATFORM_IOS || PLATFORM_TVOS || PLATFORM_BRATWURST || PLATFORM_SWITCH) && !UNITY_EDITOR
-    [DllImport("__Internal")]
-#else
-    [DllImport("RenderingPlugin")]
-#endif
-    private static extern bool IsComputeDone();
+[DllImport("RenderingPlugin")]
+private static extern void SetSolidSimParams(float dt, float alpha,
+    uint gridWidth, uint gridHeight, uint gridDepth);
 
-#if (PLATFORM_IOS || PLATFORM_TVOS || PLATFORM_BRATWURST || PLATFORM_SWITCH) && !UNITY_EDITOR
-    [DllImport("__Internal")]
-#else
-    [DllImport("RenderingPlugin")]
-#endif
-    private static extern IntPtr GetRenderEventFunc();
+[DllImport("RenderingPlugin")]
+private static extern void GetSolidComputeResult(float[] outData, int count);
 
-#if (PLATFORM_IOS || PLATFORM_TVOS || PLATFORM_BRATWURST || PLATFORM_SWITCH) && !UNITY_EDITOR
-    [DllImport("__Internal")]
-#else
-    [DllImport("RenderingPlugin")]
-#endif
-    private static extern IntPtr GetComputeOutputBuffer();
-
-#if (PLATFORM_IOS || PLATFORM_TVOS || PLATFORM_BRATWURST || PLATFORM_SWITCH) && !UNITY_EDITOR
-    [DllImport("__Internal")]
-#else
-    [DllImport("RenderingPlugin")]
-#endif
-    private static extern void SetSimParams(float dt, float alpha, uint gridWidth, uint gridHeight, uint gridDepth);
-#if (PLATFORM_IOS || PLATFORM_TVOS || PLATFORM_BRATWURST || PLATFORM_SWITCH) && !UNITY_EDITOR
-    [DllImport("__Internal")]
-#else
-    [DllImport("RenderingPlugin")]
-#endif
-    private static extern void SetMaskData(uint[] mask, int count);
+[DllImport("RenderingPlugin")]
+private static extern IntPtr GetRenderEventFunc();
 
     // ─── Configuration ──────────────────────────────────────────────────
 
@@ -74,6 +42,10 @@ public class ThermalReceiver : MonoBehaviour
     [Tooltip("Multiplier on cell size for adjacency detection. Increase if boundary cells are missed.")]
     public float adjacencyMultiplier = 0.6f;
 
+    [Header("Debug")]
+    [Tooltip("Log diffusion stats every N frames. 0 = disabled.")]
+    public int debugLogInterval = 60;
+
     // ─── Private state ──────────────────────────────────────────────────
 
     private float[]   gridData;
@@ -83,8 +55,11 @@ public class ThermalReceiver : MonoBehaviour
     private bool      initialized = false;
 
     private Texture3D _tempTexture;
-    private Color[]   _tempColors;
     private Material  _cubeMaterial;
+
+    // For diffusion-change detection
+    private float _prevMaxTemp = float.NegativeInfinity;
+    private float _prevAvgTemp = float.NegativeInfinity;
 
     // Tracks which sources we've already baked into the mask
     // so we only recompute when something changes
@@ -106,13 +81,19 @@ public class ThermalReceiver : MonoBehaviour
         readbackData = new float[totalCells];
 
         // Upload empty grid first so the GPU buffers are initialized
-        SetComputeData(gridData, totalCells);
+
+        float dt = Time.deltaTime;
+        SetSolidSimParams(dt, alpha, (uint)gridWidth, (uint)gridHeight, (uint)gridDepth);
+        Debug.Log($"[ThermalReceiver] SetSolidSimParams → dt={dt:F4}  alpha={alpha}  " +
+                  $"grid={gridWidth}x{gridHeight}x{gridDepth}");
+        yield return new WaitForEndOfFrame();
+
+        SetSolidComputeData(gridData, totalCells);
         SetMaskData(maskData, totalCells);
 
         yield return new WaitForEndOfFrame();
 
-        SetSimParams(Time.deltaTime, alpha,(uint)gridWidth, (uint)gridHeight, (uint)gridDepth);
-        GL.IssuePluginEvent(GetRenderEventFunc(), 3);
+        GL.IssuePluginEvent(GetRenderEventFunc(), 4);
 
         initialized = true;
         InitVisualization();
@@ -120,7 +101,8 @@ public class ThermalReceiver : MonoBehaviour
         // Scan the scene for heat sources immediately on start
         RefreshHeatSources();
 
-        Debug.Log($"[ThermalReceiver] Started {gridWidth}x{gridHeight}x{gridDepth} grid.");
+        Debug.Log($"[ThermalReceiver] Started {gridWidth}x{gridHeight}x{gridDepth} grid " +
+                  $"({totalCells} cells).");
     }
 
     void Update()
@@ -130,12 +112,17 @@ public class ThermalReceiver : MonoBehaviour
         // Check if any heat sources have appeared, disappeared, or moved
         CheckForSourceChanges();
 
-        SetSimParams(Time.deltaTime, alpha,(uint)gridWidth, (uint)gridHeight, (uint)gridDepth);
-        GL.IssuePluginEvent(GetRenderEventFunc(), 3);
+        float dt = Time.deltaTime;
+        SetSolidSimParams(dt, alpha, (uint)gridWidth, (uint)gridHeight, (uint)gridDepth);
+        GL.IssuePluginEvent(GetRenderEventFunc(), 4);
         frameCount++;
 
         if (frameCount % visualizationInterval == 0)
             UpdateVisualization();
+
+        // ── Periodic diffusion health log ────────────────────────────────
+        if (debugLogInterval > 0 && frameCount % debugLogInterval == 0)
+            LogDiffusionStats(dt);
     }
 
     // ─── Heat source detection ───────────────────────────────────────────
@@ -155,15 +142,18 @@ public class ThermalReceiver : MonoBehaviour
         int sliceSize = gridWidth * gridHeight;
 
         // Compute the world-space size of one grid cell
-        Vector3 scale    = transform.lossyScale;
+        Vector3 scale     = transform.lossyScale;
         float   cellSizeX = scale.x / gridWidth;
         float   cellSizeY = scale.y / gridHeight;
         float   cellSizeZ = scale.z / gridDepth;
         float   cellSize  = Mathf.Min(cellSizeX, cellSizeY, cellSizeZ);
 
+        int totalPinnedCells = 0;
+
         foreach (HeatSourceObj source in sources)
         {
-            float temp = source.GetTemperature();
+            float temp        = source.GetTemperature();
+            int   pinnedByThis = 0;
 
             for (int z = 0; z < gridDepth; z++)
             for (int y = 0; y < gridHeight; y++)
@@ -176,16 +166,31 @@ public class ThermalReceiver : MonoBehaviour
                     int idx = z * sliceSize + y * gridWidth + x;
                     gridData[idx] = temp;
                     maskData[idx] = 1u;
+                    pinnedByThis++;
                 }
             }
+
+            // Log per-source summary so we can catch zero-cell sources
+            // (which usually means adjacencyMultiplier is too small or world transform is wrong)
+            Debug.Log($"[ThermalReceiver] Source '{source.name}'  temp={temp:F1}  " +
+                      $"pinned cells={pinnedByThis}  " +
+                      $"(cellSize={cellSize:F4}  threshold={cellSize * adjacencyMultiplier:F4})");
+
+            if (pinnedByThis == 0)
+                Debug.LogWarning($"[ThermalReceiver] ⚠ Source '{source.name}' pinned 0 cells — " +
+                                 $"it won't drive any diffusion. " +
+                                 $"Try increasing adjacencyMultiplier (currently {adjacencyMultiplier}).");
+
+            totalPinnedCells += pinnedByThis;
         }
 
         _trackedSources = new List<HeatSourceObj>(sources);
 
-        SetComputeData(gridData, totalCells);
+        SetSolidComputeData(gridData, totalCells);
         SetMaskData(maskData, totalCells);
 
-        Debug.Log($"[ThermalReceiver] Refreshed {sources.Length} heat source(s).");
+        Debug.Log($"[ThermalReceiver] Mask uploaded — {sources.Length} source(s), " +
+                  $"{totalPinnedCells}/{totalCells} cells pinned.");
     }
 
     /// <summary>
@@ -213,6 +218,8 @@ public class ThermalReceiver : MonoBehaviour
         // Check count change
         if (current.Length != _trackedSources.Count)
         {
+            Debug.Log($"[ThermalReceiver] Source count changed " +
+                      $"({_trackedSources.Count} → {current.Length}), refreshing mask.");
             RefreshHeatSources();
             return;
         }
@@ -222,14 +229,16 @@ public class ThermalReceiver : MonoBehaviour
         {
             if (!_trackedSources.Contains(src))
             {
+                Debug.Log($"[ThermalReceiver] New source detected: '{src.name}', refreshing mask.");
                 RefreshHeatSources();
                 return;
             }
 
-            // Rebuild if source moved more than half a cell size
             float cellSize = GetMinCellSize();
             if (src.transform.hasChanged)
             {
+                Debug.Log($"[ThermalReceiver] hasChanged fired for '{src.name}' frame {Time.frameCount}");
+                Debug.Log($"[ThermalReceiver] Source '{src.name}' moved, refreshing mask.");
                 RefreshHeatSources();
                 src.transform.hasChanged = false;
                 return;
@@ -243,33 +252,81 @@ public class ThermalReceiver : MonoBehaviour
         return Mathf.Min(s.x / gridWidth, s.y / gridHeight, s.z / gridDepth);
     }
 
+    // ─── Diffusion health logging ────────────────────────────────────────
+
+    /// <summary>
+    /// Reads back the current temperature buffer and logs min / max / avg
+    /// so you can confirm heat is spreading frame-over-frame.
+    /// Also warns if the buffer is all-zero (upload never reached the GPU)
+    /// or completely static (diffusion is stalled / shader not running).
+    /// </summary>
+    private void LogDiffusionStats(float dt)
+    {
+        // Pull fresh data from the GPU
+        GetSolidComputeResult(readbackData, readbackData.Length);
+
+        float minT = float.MaxValue;
+        float maxT = float.MinValue;
+        double sumT = 0;
+        int nonZero = 0;
+
+        foreach (float t in readbackData)
+        {
+            if (t < minT) minT = t;
+            if (t > maxT) maxT = t;
+            sumT += t;
+            if (t != 0f) nonZero++;
+        }
+
+        float avgT = (float)(sumT / readbackData.Length);
+
+        Debug.Log($"[ThermalReceiver] Frame {frameCount}  dt={dt:F4}  " +
+                  $"min={minT:F2}  max={maxT:F2}  avg={avgT:F4}  " +
+                  $"nonZeroCells={nonZero}/{readbackData.Length}");
+
+        // ── Sanity warnings ──────────────────────────────────────────────
+
+        if (maxT == 0f && nonZero == 0)
+            Debug.LogWarning("[ThermalReceiver] ⚠ Entire temperature buffer is zero — " +
+                             "either no heat sources are pinned or GPU readback is broken.");
+
+        if (Mathf.Approximately(maxT, _prevMaxTemp) && Mathf.Approximately(avgT, _prevAvgTemp)
+            && maxT != 0f && frameCount > debugLogInterval)
+            Debug.LogWarning($"[ThermalReceiver] ⚠ Temperature is completely static " +
+                             $"(max={maxT:F2}, avg={avgT:F4} unchanged for {debugLogInterval} frames). " +
+                             $"The shader may not be dispatching — check numthreads vs numGroups.");
+
+        if (float.IsNaN(maxT) || float.IsInfinity(maxT))
+            Debug.LogError($"[ThermalReceiver] ✖ NaN/Inf detected in temperature buffer! " +
+                           $"alpha*dt={alpha * dt:F4} — simulation is numerically unstable. " +
+                           $"Reduce alpha or dt (stability requires alpha*dt < 1/6 ≈ 0.1667).");
+
+        _prevMaxTemp = maxT;
+        _prevAvgTemp = avgT;
+    }
+
     // ─── Visualization ───────────────────────────────────────────────────
 
     private void InitVisualization()
     {
-        int totalCells = gridWidth * gridHeight * gridDepth;
-
         _tempTexture = new Texture3D(gridWidth, gridHeight, gridDepth,
-                                      TextureFormat.RFloat, false);
+                                    TextureFormat.RFloat, false);
         _tempTexture.wrapMode   = TextureWrapMode.Clamp;
         _tempTexture.filterMode = FilterMode.Bilinear;
-
-        _tempColors = new Color[totalCells];
 
         _cubeMaterial = GetComponent<Renderer>().material;
         _cubeMaterial.SetTexture("_TempTex", _tempTexture);
         _cubeMaterial.SetFloat("_MaxTemp", maxDisplayTemp);
+
+        Debug.Log($"[ThermalReceiver] Visualization texture created " +
+                  $"({gridWidth}x{gridHeight}x{gridDepth}, RFloat).");
     }
 
     private void UpdateVisualization()
     {
-        GetComputeResult(readbackData, readbackData.Length);
+        GetSolidComputeResult(readbackData, readbackData.Length);
 
-        int total = gridWidth * gridHeight * gridDepth;
-        for (int i = 0; i < total; i++)
-            _tempColors[i] = new Color(readbackData[i], 0, 0, 1);
-
-        _tempTexture.SetPixels(_tempColors);
+        _tempTexture.SetPixelData(readbackData, 0);
         _tempTexture.Apply();
     }
 }
