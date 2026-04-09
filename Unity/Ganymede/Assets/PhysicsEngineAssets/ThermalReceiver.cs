@@ -215,37 +215,43 @@ private static extern IntPtr GetRenderEventFunc();
     {
         HeatSourceObj[] current = FindObjectsByType<HeatSourceObj>(FindObjectsSortMode.None);
 
-        // Check count change
         if (current.Length != _trackedSources.Count)
         {
-            Debug.Log($"[ThermalReceiver] Source count changed " +
-                      $"({_trackedSources.Count} → {current.Length}), refreshing mask.");
+            Debug.Log($"[ThermalReceiver] Source count changed ({_trackedSources.Count} → {current.Length}), refreshing mask.");
             RefreshHeatSources();
+            // Reset hasChanged for all sources after rebuild
+            foreach (HeatSourceObj src in current)
+                src.transform.hasChanged = false;
             return;
         }
 
-        // Check if any source has moved significantly
+        bool needsRefresh = false;
+
         foreach (HeatSourceObj src in current)
         {
             if (!_trackedSources.Contains(src))
             {
                 Debug.Log($"[ThermalReceiver] New source detected: '{src.name}', refreshing mask.");
-                RefreshHeatSources();
-                return;
+                needsRefresh = true;
+                break;
             }
 
-            float cellSize = GetMinCellSize();
             if (src.transform.hasChanged)
             {
-                Debug.Log($"[ThermalReceiver] hasChanged fired for '{src.name}' frame {Time.frameCount}");
                 Debug.Log($"[ThermalReceiver] Source '{src.name}' moved, refreshing mask.");
-                RefreshHeatSources();
-                src.transform.hasChanged = false;
-                return;
+                needsRefresh = true;
+                // Don't break — keep iterating to reset all hasChanged flags below
             }
         }
-    }
 
+        if (needsRefresh)
+        {
+            RefreshHeatSources();
+            // Reset ALL sources, not just the one that triggered
+            foreach (HeatSourceObj src in current)
+                src.transform.hasChanged = false;
+        }
+    }
     private float GetMinCellSize()
     {
         Vector3 s = transform.lossyScale;
