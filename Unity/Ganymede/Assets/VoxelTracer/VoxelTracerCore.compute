@@ -384,6 +384,7 @@ struct MaterialSource
     float3 position;  // world-space center
     float3 extents;   // half-size for AABB, or (radius, radius, radius) for sphere
     float  temperature;
+    float  thermalDiffusivity;
     float  phase;     // 0 = solid, 1 = fluid
     uint   shape;     // 0 = AABB, 1 = sphere
 };
@@ -391,8 +392,10 @@ struct MaterialSource
 StructuredBuffer<MaterialSource> _MaterialSources;
 int _MaterialSourceCount;
 float _DefaultSolidTemperature;
+float _DefaultSolidDiffusivity;
 
 RWTexture3D<float> _TemperatureTex;
+RWTexture3D<float> _DiffusivityTex;
 RWTexture3D<float> _PhaseTex;
 
 // 11: Write material properties (temperature, phase) into 3D textures.
@@ -409,6 +412,7 @@ void WriteMaterialProperties(uint3 id : SV_DispatchThreadID)
 
     // Default: empty voxels get 0, filled solids get default temperature
     float temp  = fill > 0.5 ? _DefaultSolidTemperature : 0.0;
+    float diff  = fill > 0.5 ? _DefaultSolidDiffusivity : 0.0;
     float phase = 0.0; // 0 = solid (or empty)
 
     // Stamp sources — later sources override earlier ones
@@ -431,11 +435,13 @@ void WriteMaterialProperties(uint3 id : SV_DispatchThreadID)
         if (inside)
         {
             temp  = src.temperature;
+            diff  = src.thermalDiffusivity;
             phase = src.phase;
         }
     }
 
-    _TemperatureTex[p] = temp;
+    _TemperatureTex[p]  = temp;
+    _DiffusivityTex[p] = diff;
     _PhaseTex[p]       = phase;
 }
 

@@ -51,6 +51,8 @@ public sealed class VoxelTracerSystem : MonoBehaviour
     [Header("Material Properties")]
     [Tooltip("Default temperature for filled solid voxels (ambient)")]
     public float defaultSolidTemperature = 25f;
+    [Tooltip("Default thermal diffusivity for filled solid voxels")]
+    [Min(0)] public float defaultSolidDiffusivity = 0.1f;
 
     [Header("Safety")]
     [Range(32, 512)] public int maxVoxelsPerAxis = 256;
@@ -81,6 +83,7 @@ public sealed class VoxelTracerSystem : MonoBehaviour
         public Vector3 position;   // world-space center
         public Vector3 extents;    // half-size (AABB) or (radius,radius,radius) for sphere
         public float temperature;
+        public float thermalDiffusivity;
         public float phase;      // 0 = solid, 1 = fluid
         public uint shape;      // 0 = AABB, 1 = sphere
     }
@@ -92,6 +95,7 @@ public sealed class VoxelTracerSystem : MonoBehaviour
     public RenderTexture FillTexture => _fillTex;
     public RenderTexture NormalsTexture => _normalsTex;
     public RenderTexture TemperatureTexture => _temperatureTex;
+    public RenderTexture DiffusivityTexture => _diffusivityTex;
     public RenderTexture PhaseTexture => _phaseTex;
     public RenderTexture SDFTexture => _sdfTex;
     public int Nx => _nx;
@@ -139,6 +143,7 @@ public sealed class VoxelTracerSystem : MonoBehaviour
     RenderTexture _blurredFillTex;
     RenderTexture _normalsTex;
     RenderTexture _temperatureTex;
+    RenderTexture _diffusivityTex;
     RenderTexture _phaseTex;
     RenderTexture _sdfTex;
 
@@ -1007,6 +1012,18 @@ public sealed class VoxelTracerSystem : MonoBehaviour
         };
         _temperatureTex.Create();
 
+        _diffusivityTex = new RenderTexture(gx, gy, 0, RenderTextureFormat.RFloat)
+        {
+            dimension = UnityEngine.Rendering.TextureDimension.Tex3D,
+            volumeDepth = gz,
+            enableRandomWrite = true,
+            useMipMap = false,
+            autoGenerateMips = false,
+            wrapMode = TextureWrapMode.Clamp,
+            filterMode = FilterMode.Point
+        };
+        _diffusivityTex.Create();
+
         _phaseTex = new RenderTexture(gx, gy, 0, RenderTextureFormat.RFloat)
         {
             dimension = UnityEngine.Rendering.TextureDimension.Tex3D,
@@ -1118,6 +1135,7 @@ public sealed class VoxelTracerSystem : MonoBehaviour
         if (_blurredFillTex != null) { _blurredFillTex.Release(); Destroy(_blurredFillTex); _blurredFillTex = null; }
         if (_normalsTex != null) { _normalsTex.Release(); Destroy(_normalsTex); _normalsTex = null; }
         if (_temperatureTex != null) { _temperatureTex.Release(); Destroy(_temperatureTex); _temperatureTex = null; }
+        if (_diffusivityTex != null) { _diffusivityTex.Release(); Destroy(_diffusivityTex); _diffusivityTex = null; }
         if (_phaseTex != null) { _phaseTex.Release(); Destroy(_phaseTex); _phaseTex = null; }
         if (_sdfTex != null) { _sdfTex.Release(); Destroy(_sdfTex); _sdfTex = null; }
     }
@@ -1201,7 +1219,7 @@ public sealed class VoxelTracerSystem : MonoBehaviour
     /// fluid sources, and water bodies, then dispatch the GPU stamp kernel.</summary>
     void StampMaterialProperties(int gx, int gy, int gz, Vector3Int regMin, Vector3Int regMax)
     {
-        if (_temperatureTex == null || _phaseTex == null) return;
+        if (_temperatureTex == null || _phaseTex == null || _diffusivityTex == null) return;
 
         BuildMaterialSourceList();
         UploadMaterialSources();
@@ -1210,9 +1228,11 @@ public sealed class VoxelTracerSystem : MonoBehaviour
         SetRegionMin(regMin.x, regMin.y, regMin.z);
 
         coreCS.SetFloat("_DefaultSolidTemperature", defaultSolidTemperature);
+        coreCS.SetFloat("_DefaultSolidDiffusivity", defaultSolidDiffusivity);
         coreCS.SetInt("_MaterialSourceCount", _materialSourceList.Count);
         coreCS.SetTexture(KWriteMaterialProperties, "_FillTex", _fillTex);
         coreCS.SetTexture(KWriteMaterialProperties, "_TemperatureTex", _temperatureTex);
+        coreCS.SetTexture(KWriteMaterialProperties, "_DiffusivityTex", _diffusivityTex);
         coreCS.SetTexture(KWriteMaterialProperties, "_PhaseTex", _phaseTex);
         if (_materialSourceBuffer != null)
             coreCS.SetBuffer(KWriteMaterialProperties, "_MaterialSources", _materialSourceBuffer);
@@ -1236,6 +1256,7 @@ public sealed class VoxelTracerSystem : MonoBehaviour
                     position = hs.transform.position,
                     extents = Vector3.one * hs.radius,
                     temperature = hs.temperature,
+                    thermalDiffusivity = 0f,
                     phase = 0f, // solid
                     shape = 1   // sphere
                 });
@@ -1250,6 +1271,7 @@ public sealed class VoxelTracerSystem : MonoBehaviour
                         position = r.bounds.center,
                         extents = r.bounds.extents,
                         temperature = hs.temperature,
+                        thermalDiffusivity = 0f,
                         phase = 0f, // solid
                         shape = 0   // AABB
                     });
@@ -1261,6 +1283,7 @@ public sealed class VoxelTracerSystem : MonoBehaviour
                         position = hs.transform.position,
                         extents = Vector3.one * 0.5f,
                         temperature = hs.temperature,
+                        thermalDiffusivity = 0f,
                         phase = 0f,
                         shape = 1
                     });
@@ -1280,6 +1303,7 @@ public sealed class VoxelTracerSystem : MonoBehaviour
                     position = r.bounds.center,
                     extents = r.bounds.extents,
                     temperature = sm.temperature,
+                    thermalDiffusivity = sm.thermalDiffusivity,
                     phase = 0f, // solid
                     shape = 0   // AABB
                 });
@@ -1291,6 +1315,7 @@ public sealed class VoxelTracerSystem : MonoBehaviour
                     position = sm.transform.position,
                     extents = Vector3.one * 0.5f,
                     temperature = sm.temperature,
+                    thermalDiffusivity = sm.thermalDiffusivity,
                     phase = 0f,
                     shape = 1
                 });
@@ -1304,12 +1329,14 @@ public sealed class VoxelTracerSystem : MonoBehaviour
             if (wb == null || !wb.isActiveAndEnabled) continue;
             var fm = wb.GetComponent<VoxelFluidMaterial>();
             float temp = fm != null ? fm.temperature : wb.initialTemperature;
+            float diff = fm != null ? fm.thermalDiffusivity : 0f;
             float phase = fm != null ? (float)fm.phase : 1f;
             _materialSourceList.Add(new MaterialSource
             {
                 position = wb.transform.position,
                 extents = wb.size * 0.5f,
                 temperature = temp,
+                thermalDiffusivity = diff,
                 phase = phase,
                 shape = 0   // AABB
             });
@@ -1322,12 +1349,14 @@ public sealed class VoxelTracerSystem : MonoBehaviour
             if (fs == null || !fs.isActiveAndEnabled) continue;
             var fm = fs.GetComponent<VoxelFluidMaterial>();
             float temp = fm != null ? fm.temperature : fs.initialTemperature;
+            float diff = fm != null ? fm.thermalDiffusivity : 0f;
             float phase = fm != null ? (float)fm.phase : 1f;
             _materialSourceList.Add(new MaterialSource
             {
                 position = fs.transform.position,
                 extents = Vector3.one * fs.emissionRadius,
                 temperature = temp,
+                thermalDiffusivity = diff,
                 phase = phase,
                 shape = 1   // sphere
             });
