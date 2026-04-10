@@ -1226,13 +1226,43 @@ public sealed class VoxelTracerSystem : MonoBehaviour
         if (_temperatureTex == null || _phaseTex == null || _diffusivityTex == null) return;
 
         BuildMaterialSourceList();
+
+        // If a terrain has VoxelSolidMaterial, use its values as the grid-wide
+        // defaults. This avoids a grid-spanning AABB source that would overwrite
+        // every other object. Per-object sources then only need to cover their own voxels.
+        float tempDefault = defaultSolidTemperature;
+        float diffDefault = defaultSolidDiffusivity;
+        foreach (var sm in _registeredSolidMaterials)
+        {
+            if (sm != null && sm.isActiveAndEnabled && sm.GetComponent<Terrain>() != null)
+            {
+                tempDefault = sm.temperature;
+                diffDefault = sm.thermalDiffusivity;
+                break;
+            }
+        }
+
+        // DEBUG: log all material sources being uploaded
+        if (Input.GetKey(KeyCode.F3))
+        {
+            for (int i = 0; i < _materialSourceList.Count; i++)
+            {
+                var s = _materialSourceList[i];
+                Debug.Log($"[VoxelTracer] Source[{i}]: pos={s.position}, ext={s.extents}, " +
+                          $"temp={s.temperature:F2}, diff={s.thermalDiffusivity:F4}, " +
+                          $"phase={s.phase}, shape={s.shape}");
+            }
+            Debug.Log($"[VoxelTracer] Default: temp={tempDefault}, diff={diffDefault}, " +
+                      $"sources={_materialSourceList.Count}, structSize={Marshal.SizeOf(typeof(MaterialSource))}");
+        }
+
         UploadMaterialSources();
 
         Vector3Int regSize = regMax - regMin + Vector3Int.one;
         SetRegionMin(regMin.x, regMin.y, regMin.z);
 
-        coreCS.SetFloat("_DefaultSolidTemperature", defaultSolidTemperature);
-        coreCS.SetFloat("_DefaultSolidDiffusivity", defaultSolidDiffusivity);
+        coreCS.SetFloat("_DefaultSolidTemperature", tempDefault);
+        coreCS.SetFloat("_DefaultSolidDiffusivity", diffDefault);
         coreCS.SetInt("_MaterialSourceCount", _materialSourceList.Count);
         coreCS.SetTexture(KWriteMaterialProperties, "_FillTex", _fillTex);
         coreCS.SetTexture(KWriteMaterialProperties, "_TemperatureTex", _temperatureTex);
@@ -1248,7 +1278,54 @@ public sealed class VoxelTracerSystem : MonoBehaviour
     {
         _materialSourceList.Clear();
 
-        // Heat sources: mark voxels as solid with specified temperature
+        // Half-voxel padding: the SAT voxelizer marks voxels as filled up to
+        // _HalfUnit beyond the mesh surface, so Renderer.bounds doesn't fully
+        // cover the voxelized shell. Safe now that terrain uses defaults.
+        Vector3 halfVoxelPad = Vector3.one * (voxelSize * 0.5f);
+
+        // ---- Priority order (lowest first, last wins): ----
+        // Terrain VoxelSolidMaterial is NOT added as a source — it sets the
+        // grid-wide defaults in StampMaterialProperties() instead, so it
+        // cannot cross-contaminate other objects.
+        // 1. Non-terrain solid materials (per-object bounds)
+        // 2. Heat sources
+        // 3. Water bodies
+        // 4. Fluid sources (highest priority)
+
+        // 1) Non-terrain solid materials
+        foreach (var sm in _registeredSolidMaterials)
+        {
+            if (sm == null || !sm.isActiveAndEnabled) continue;
+            if (sm.GetComponent<Terrain>() != null) continue; // handled via defaults
+
+            var r = sm.GetComponent<Renderer>();
+            if (r != null)
+            {
+                _materialSourceList.Add(new MaterialSource
+                {
+                    position = r.bounds.center,
+                    extents = r.bounds.extents + halfVoxelPad,
+                    temperature = sm.temperature,
+                    thermalDiffusivity = sm.thermalDiffusivity,
+                    phase = 0f,
+                    shape = 0
+                });
+            }
+            else
+            {
+                _materialSourceList.Add(new MaterialSource
+                {
+                    position = sm.transform.position,
+                    extents = Vector3.one * 0.5f,
+                    temperature = sm.temperature,
+                    thermalDiffusivity = sm.thermalDiffusivity,
+                    phase = 0f,
+                    shape = 1
+                });
+            }
+        }
+
+        // 2) Heat sources
         foreach (var hs in _registeredHeatSources)
         {
             if (hs == null || !hs.isActiveAndEnabled || !hs.active) continue;
@@ -1261,8 +1338,8 @@ public sealed class VoxelTracerSystem : MonoBehaviour
                     extents = Vector3.one * hs.radius,
                     temperature = hs.temperature,
                     thermalDiffusivity = 0f,
-                    phase = 0f, // solid
-                    shape = 1   // sphere
+                    phase = 0f,
+                    shape = 1
                 });
             }
             else
@@ -1273,11 +1350,11 @@ public sealed class VoxelTracerSystem : MonoBehaviour
                     _materialSourceList.Add(new MaterialSource
                     {
                         position = r.bounds.center,
-                        extents = r.bounds.extents,
+                        extents = r.bounds.extents + halfVoxelPad,
                         temperature = hs.temperature,
                         thermalDiffusivity = 0f,
-                        phase = 0f, // solid
-                        shape = 0   // AABB
+                        phase = 0f,
+                        shape = 0
                     });
                 }
                 else
@@ -1295,59 +1372,7 @@ public sealed class VoxelTracerSystem : MonoBehaviour
             }
         }
 
-        // Solid materials: stamp temperature from VoxelSolidMaterial onto renderer/terrain bounds
-        foreach (var sm in _registeredSolidMaterials)
-        {
-            if (sm == null || !sm.isActiveAndEnabled) continue;
-
-            // Try Renderer first, then Terrain, then fallback to small sphere
-            var r = sm.GetComponent<Renderer>();
-            var terrain = sm.GetComponent<Terrain>();
-
-            if (r != null)
-            {
-                _materialSourceList.Add(new MaterialSource
-                {
-                    position = r.bounds.center,
-                    extents = r.bounds.extents,
-                    temperature = sm.temperature,
-                    thermalDiffusivity = sm.thermalDiffusivity,
-                    phase = 0f, // solid
-                    shape = 0   // AABB
-                });
-            }
-            else if (terrain != null)
-            {
-                var td = terrain.terrainData;
-                Vector3 terrainPos = sm.transform.position;
-                Vector3 size = td.size;
-                Vector3 center = terrainPos + size * 0.5f;
-                _materialSourceList.Add(new MaterialSource
-                {
-                    position = center,
-                    extents = size * 0.5f,
-                    temperature = sm.temperature,
-                    thermalDiffusivity = sm.thermalDiffusivity,
-                    phase = 0f, // solid
-                    shape = 0   // AABB
-                });
-            }
-            else
-            {
-                _materialSourceList.Add(new MaterialSource
-                {
-                    position = sm.transform.position,
-                    extents = Vector3.one * 0.5f,
-                    temperature = sm.temperature,
-                    thermalDiffusivity = sm.thermalDiffusivity,
-                    phase = 0f,
-                    shape = 1
-                });
-            }
-        }
-
-        // Water bodies: AABB volumes marked as fluid
-        // Use VoxelFluidMaterial temperature if attached, otherwise fallback to initialTemperature
+        // 4) Water bodies
         foreach (var wb in _registeredWaterBodies)
         {
             if (wb == null || !wb.isActiveAndEnabled) continue;
