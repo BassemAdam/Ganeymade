@@ -228,6 +228,10 @@ public sealed class VoxelTracerSystem : MonoBehaviour
             RebuildStatic();
 
         VoxelizeFrame();
+
+        // Press F3 during play mode to dump temperature & diffusivity stats
+        if (Input.GetKeyDown(KeyCode.F3))
+            DebugPrintMaterialTextures();
     }
 
     // ================================================================
@@ -1291,17 +1295,37 @@ public sealed class VoxelTracerSystem : MonoBehaviour
             }
         }
 
-        // Solid materials: stamp temperature from VoxelSolidMaterial onto renderer bounds
+        // Solid materials: stamp temperature from VoxelSolidMaterial onto renderer/terrain bounds
         foreach (var sm in _registeredSolidMaterials)
         {
             if (sm == null || !sm.isActiveAndEnabled) continue;
+
+            // Try Renderer first, then Terrain, then fallback to small sphere
             var r = sm.GetComponent<Renderer>();
+            var terrain = sm.GetComponent<Terrain>();
+
             if (r != null)
             {
                 _materialSourceList.Add(new MaterialSource
                 {
                     position = r.bounds.center,
                     extents = r.bounds.extents,
+                    temperature = sm.temperature,
+                    thermalDiffusivity = sm.thermalDiffusivity,
+                    phase = 0f, // solid
+                    shape = 0   // AABB
+                });
+            }
+            else if (terrain != null)
+            {
+                var td = terrain.terrainData;
+                Vector3 terrainPos = sm.transform.position;
+                Vector3 size = td.size;
+                Vector3 center = terrainPos + size * 0.5f;
+                _materialSourceList.Add(new MaterialSource
+                {
+                    position = center,
+                    extents = size * 0.5f,
                     temperature = sm.temperature,
                     thermalDiffusivity = sm.thermalDiffusivity,
                     phase = 0f, // solid
@@ -1445,5 +1469,101 @@ public sealed class VoxelTracerSystem : MonoBehaviour
             Vector3 s = _activeMax - _activeMin;
             Gizmos.DrawWireCube(_activeMin + s * 0.5f, s);
         }
+    }
+
+    // ================================================================
+    // Debug: temperature & diffusivity readback
+    // ================================================================
+
+    /// <summary>Read back a 3D RFloat RenderTexture into a flat float array (CPU-side).</summary>
+    static float[] ReadBack3DTexture(RenderTexture rt, int nx, int ny, int nz)
+    {
+        float[] data = new float[nx * ny * nz];
+        var tempRT = RenderTexture.GetTemporary(nx, ny, 0, RenderTextureFormat.RFloat);
+        var tempTex = new Texture2D(nx, ny, TextureFormat.RFloat, false);
+
+        for (int z = 0; z < nz; z++)
+        {
+            Graphics.CopyTexture(rt, z, 0, tempRT, 0, 0);
+            var prev = RenderTexture.active;
+            RenderTexture.active = tempRT;
+            tempTex.ReadPixels(new Rect(0, 0, nx, ny), 0, 0, false);
+            tempTex.Apply(false);
+            RenderTexture.active = prev;
+
+            var raw = tempTex.GetRawTextureData<float>();
+            for (int i = 0; i < nx * ny; i++)
+                data[z * (nx * ny) + i] = raw[i];
+        }
+
+        RenderTexture.ReleaseTemporary(tempRT);
+        Destroy(tempTex);
+        return data;
+    }
+
+    /// <summary>
+    /// Logs a summary of temperature and diffusivity textures to the console.
+    /// Shows min/max/avg and lists all non-zero voxels (capped to avoid console flood).
+    /// Call from inspector context menu or script: GetComponent&lt;VoxelTracerSystem&gt;().DebugPrintMaterialTextures();
+    /// </summary>
+    [ContextMenu("Debug Print Temperature & Diffusivity")]
+    public void DebugPrintMaterialTextures()
+    {
+        if (_temperatureTex == null || _diffusivityTex == null)
+        {
+            Debug.LogWarning("[VoxelTracer] Textures not allocated yet.");
+            return;
+        }
+
+        int nx = _nx, ny = _ny, nz = _nz;
+        float[] tempData = ReadBack3DTexture(_temperatureTex, nx, ny, nz);
+        float[] diffData = ReadBack3DTexture(_diffusivityTex, nx, ny, nz);
+
+        float tMin = float.MaxValue, tMax = float.MinValue, tSum = 0f;
+        float dMin = float.MaxValue, dMax = float.MinValue, dSum = 0f;
+        int nonZeroTemp = 0, nonZeroDiff = 0;
+        int total = nx * ny * nz;
+
+        for (int i = 0; i < total; i++)
+        {
+            float t = tempData[i];
+            float d = diffData[i];
+            if (t < tMin) tMin = t;
+            if (t > tMax) tMax = t;
+            tSum += t;
+            if (t != 0f) nonZeroTemp++;
+
+            if (d < dMin) dMin = d;
+            if (d > dMax) dMax = d;
+            dSum += d;
+            if (d != 0f) nonZeroDiff++;
+        }
+
+        Debug.Log($"[VoxelTracer] Grid {nx}x{ny}x{nz} = {total} voxels\n" +
+                  $"  Temperature  — min: {tMin:F3}, max: {tMax:F3}, avg: {tSum / total:F3}, non-zero: {nonZeroTemp}\n" +
+                  $"  Diffusivity  — min: {dMin:F3}, max: {dMax:F3}, avg: {dSum / total:F3}, non-zero: {nonZeroDiff}");
+
+        // Print up to 50 sample non-zero voxels
+        int logged = 0;
+        const int maxSamples = 50;
+        var sb = new System.Text.StringBuilder();
+        sb.AppendLine("[VoxelTracer] Non-zero voxel samples (x,y,z) → temp, diff:");
+
+        for (int idx = 0; idx < total && logged < maxSamples; idx++)
+        {
+            if (tempData[idx] == 0f && diffData[idx] == 0f) continue;
+            int x = idx % nx;
+            int y = (idx / nx) % ny;
+            int z = idx / (nx * ny);
+            sb.AppendLine($"  ({x},{y},{z}) → temp={tempData[idx]:F2}, diff={diffData[idx]:F4}");
+            logged++;
+        }
+
+        if (logged == 0)
+            sb.AppendLine("  (none)");
+        else if (nonZeroTemp > maxSamples || nonZeroDiff > maxSamples)
+            sb.AppendLine($"  ... ({Mathf.Max(nonZeroTemp, nonZeroDiff) - maxSamples} more)");
+
+        Debug.Log(sb.ToString());
     }
 }

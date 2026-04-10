@@ -432,7 +432,7 @@ void WriteMaterialProperties(uint3 id : SV_DispatchThreadID)
             inside = dot(d, d) <= (src.extents.x * src.extents.x);
         }
 
-        if (inside)
+        if (inside && fill > 0.5)
         {
             temp  = src.temperature;
             diff  = src.thermalDiffusivity;
