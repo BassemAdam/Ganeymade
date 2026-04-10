@@ -38,6 +38,10 @@ public sealed class VoxelTracerSystem : MonoBehaviour
     [Tooltip("Compute gradient normals each frame. Only enable if a consumer reads NormalsTexture.")]
     public bool computeNormals = false;
 
+    [Header("SDF")]
+    [Tooltip("Compute a signed distance field each frame via Jump Flood Algorithm.")]
+    public bool computeSDF = false;
+
     [Header("Scene Input")]
     public bool includeMeshRenderers = true;
     public bool includeSkinnedMeshRenderers = true;
@@ -89,6 +93,7 @@ public sealed class VoxelTracerSystem : MonoBehaviour
     public RenderTexture NormalsTexture => _normalsTex;
     public RenderTexture TemperatureTexture => _temperatureTex;
     public RenderTexture PhaseTexture => _phaseTex;
+    public RenderTexture SDFTexture => _sdfTex;
     public int Nx => _nx;
     public int Ny => _ny;
     public int Nz => _nz;
@@ -118,6 +123,7 @@ public sealed class VoxelTracerSystem : MonoBehaviour
     int KRestoreStaticFull, KRestoreStaticFullLinear;
     int KClearVoxelBuffer, KCopyWorkingToStatic;
     int KWriteMaterialProperties;
+    int KSDFSeed, KSDFJumpFlood, KSDFFinalize;
     bool _kernelsCached;
 
     // GPU buffers
@@ -134,6 +140,11 @@ public sealed class VoxelTracerSystem : MonoBehaviour
     RenderTexture _normalsTex;
     RenderTexture _temperatureTex;
     RenderTexture _phaseTex;
+    RenderTexture _sdfTex;
+
+    // SDF (Jump Flood Algorithm) buffers
+    ComputeBuffer _jfaBufferA;
+    ComputeBuffer _jfaBufferB;
 
     // Material source GPU buffer
     ComputeBuffer _materialSourceBuffer;
@@ -572,6 +583,10 @@ public sealed class VoxelTracerSystem : MonoBehaviour
 
         // Write material properties (temperature, phase) after fill is known
         StampMaterialProperties(gx, gy, gz, regMin, regMax);
+
+        // Compute SDF via Jump Flood Algorithm after fill texture is ready
+        if (computeSDF && _sdfTex != null)
+            ComputeSDFJumpFlood(gx, gy, gz);
     }
 
     void SetGridUniforms(int gx, int gy, int gz)
@@ -950,6 +965,9 @@ public sealed class VoxelTracerSystem : MonoBehaviour
         KClearVoxelBuffer = coreCS.FindKernel("ClearVoxelBuffer");
         KCopyWorkingToStatic = coreCS.FindKernel("CopyWorkingToStatic");
         KWriteMaterialProperties = coreCS.FindKernel("WriteMaterialProperties");
+        KSDFSeed = coreCS.FindKernel("SDFSeed");
+        KSDFJumpFlood = coreCS.FindKernel("SDFJumpFlood");
+        KSDFFinalize = coreCS.FindKernel("SDFFinalize");
         _kernelsCached = true;
     }
 
@@ -1027,6 +1045,25 @@ public sealed class VoxelTracerSystem : MonoBehaviour
             };
             _normalsTex.Create();
         }
+
+        // SDF texture + JFA buffers: only allocate when computeSDF is enabled
+        if (computeSDF)
+        {
+            _sdfTex = new RenderTexture(gx, gy, 0, RenderTextureFormat.RFloat)
+            {
+                dimension = UnityEngine.Rendering.TextureDimension.Tex3D,
+                volumeDepth = gz,
+                enableRandomWrite = true,
+                useMipMap = false,
+                autoGenerateMips = false,
+                wrapMode = TextureWrapMode.Clamp,
+                filterMode = FilterMode.Bilinear
+            };
+            _sdfTex.Create();
+
+            _jfaBufferA = new ComputeBuffer(totalVoxels, sizeof(uint));
+            _jfaBufferB = new ComputeBuffer(totalVoxels, sizeof(uint));
+        }
     }
 
     void UploadStaticTriangles()
@@ -1064,6 +1101,8 @@ public sealed class VoxelTracerSystem : MonoBehaviour
     {
         if (_voxelBuffer != null) { _voxelBuffer.Release(); _voxelBuffer = null; }
         if (_staticVoxelBuf != null) { _staticVoxelBuf.Release(); _staticVoxelBuf = null; }
+        if (_jfaBufferA != null) { _jfaBufferA.Release(); _jfaBufferA = null; }
+        if (_jfaBufferB != null) { _jfaBufferB.Release(); _jfaBufferB = null; }
     }
 
     void ReleaseTextures()
@@ -1073,6 +1112,7 @@ public sealed class VoxelTracerSystem : MonoBehaviour
         if (_normalsTex != null) { _normalsTex.Release(); Destroy(_normalsTex); _normalsTex = null; }
         if (_temperatureTex != null) { _temperatureTex.Release(); Destroy(_temperatureTex); _temperatureTex = null; }
         if (_phaseTex != null) { _phaseTex.Release(); Destroy(_phaseTex); _phaseTex = null; }
+        if (_sdfTex != null) { _sdfTex.Release(); Destroy(_sdfTex); _sdfTex = null; }
     }
 
     void ReleaseTriBuffers()
@@ -1090,6 +1130,51 @@ public sealed class VoxelTracerSystem : MonoBehaviour
         ReleaseTriBuffers();
         if (_materialSourceBuffer != null) { _materialSourceBuffer.Release(); _materialSourceBuffer = null; }
         if (_bakedMesh != null) { Destroy(_bakedMesh); _bakedMesh = null; }
+    }
+
+    // ================================================================
+    // SDF computation (Jump Flood Algorithm)
+    // ================================================================
+
+    /// <summary>Compute a signed distance field from the fill texture using JFA.
+    /// Runs over the full grid (not region-scoped) since JFA is a global algorithm.</summary>
+    void ComputeSDFJumpFlood(int gx, int gy, int gz)
+    {
+        if (_jfaBufferA == null || _jfaBufferB == null || _sdfTex == null) return;
+
+        // 1) Seed: surface voxels → self-reference, others → 0xFFFFFFFF
+        coreCS.SetTexture(KSDFSeed, "_FillTex", _fillTex);
+        coreCS.SetBuffer(KSDFSeed, "_JFABuffer", _jfaBufferA);
+        Dispatch3D(KSDFSeed, gx, gy, gz);
+
+        // 2) JFA steps: starting from half the max dimension, halving each step
+        int maxDim = Mathf.Max(gx, Mathf.Max(gy, gz));
+        int step = Mathf.Max(1, Mathf.NextPowerOfTwo(maxDim) / 2);
+        bool pingToA = false; // seed is in A, first step reads A writes B
+
+        while (step >= 1)
+        {
+            coreCS.SetInt("_JFAStepSize", step);
+
+            // Read from current source, write to current dest
+            ComputeBuffer src = pingToA ? _jfaBufferB : _jfaBufferA;
+            ComputeBuffer dst = pingToA ? _jfaBufferA : _jfaBufferB;
+
+            coreCS.SetBuffer(KSDFJumpFlood, "_JFABuffer", src);
+            coreCS.SetBuffer(KSDFJumpFlood, "_JFABufferB", dst);
+            Dispatch3D(KSDFJumpFlood, gx, gy, gz);
+
+            pingToA = !pingToA;
+            step /= 2;
+        }
+
+        // 3) Finalize: convert JFA result → signed distance in world units
+        // Result buffer is whichever was last written to
+        ComputeBuffer resultBuf = pingToA ? _jfaBufferA : _jfaBufferB;
+        coreCS.SetBuffer(KSDFFinalize, "_JFABuffer", resultBuf);
+        coreCS.SetTexture(KSDFFinalize, "_FillTex", _fillTex);
+        coreCS.SetTexture(KSDFFinalize, "_SDFTex", _sdfTex);
+        Dispatch3D(KSDFFinalize, gx, gy, gz);
     }
 
     // ================================================================

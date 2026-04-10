@@ -4,6 +4,8 @@ using UnityEngine;
 /// Full-screen slice viewer of the voxel fill volume.
 /// Press a key to toggle the overlay on/off.
 /// Scrub slices with scroll wheel while overlay is visible.
+/// Press Tab to cycle display modes: Fill → SDF → Fill…
+/// In SDF mode, hover the mouse to see the SDF value at that voxel.
 /// </summary>
 [RequireComponent(typeof(Camera))]
 [DefaultExecutionOrder(200)]
@@ -23,25 +25,38 @@ public class VoxelSliceViewer : MonoBehaviour
     public Color surfaceColor = new Color(0.2f, 0.8f, 0.2f, 1f);
     public bool highlightSurface = true;
 
+    [Header("SDF Display")]
+    [Tooltip("Maximum SDF distance (in world units) for color mapping")]
+    public float sdfDisplayRange = 5f;
+
     [Header("Controls")]
     [Tooltip("Key to toggle the slice overlay on/off")]
     public KeyCode toggleKey = KeyCode.F2;
 
     public enum SliceAxis { X, Y, Z }
+    public enum DisplayMode { Fill, SDF }
+
+    DisplayMode _displayMode = DisplayMode.Fill;
 
     bool _visible;
     Texture2D _sliceTex;
     float[] _fillData;
+    float[] _sdfData;
     int _cachedNx, _cachedNy, _cachedNz;
     int _texW, _texH;
     float _lastRefresh = -999f;
     GUIStyle _labelStyle;
     GUIStyle _boxStyle;
 
+    // Hover info for SDF mode
+    float _imgX, _imgY, _imgW, _imgH;
+    int _sliceIdx;
+
     void OnDisable()
     {
         if (_sliceTex != null) { Destroy(_sliceTex); _sliceTex = null; }
         _fillData = null;
+        _sdfData = null;
     }
 
     void Update()
@@ -68,6 +83,13 @@ public class VoxelSliceViewer : MonoBehaviour
         if (Input.GetKeyDown(KeyCode.Alpha1)) axis = SliceAxis.X;
         if (Input.GetKeyDown(KeyCode.Alpha2)) axis = SliceAxis.Y;
         if (Input.GetKeyDown(KeyCode.Alpha3)) axis = SliceAxis.Z;
+
+        // Tab cycles display mode: Fill → SDF → Fill…
+        if (Input.GetKeyDown(KeyCode.Tab))
+        {
+            _displayMode = _displayMode == DisplayMode.Fill ? DisplayMode.SDF : DisplayMode.Fill;
+            _lastRefresh = -999f; // force immediate rebuild
+        }
 
         if (Time.time - _lastRefresh < 0.1f) return;
         _lastRefresh = Time.time;
@@ -105,12 +127,33 @@ public class VoxelSliceViewer : MonoBehaviour
             _cachedNz = nz;
         }
 
+        Read3DTexture(fillRT, _fillData, nx, ny, nz);
+    }
+
+    void ReadSDFData()
+    {
+        int nx = voxelSystem.Nx;
+        int ny = voxelSystem.Ny;
+        int nz = voxelSystem.Nz;
+        int total = nx * ny * nz;
+
+        var sdfRT = voxelSystem.SDFTexture;
+        if (sdfRT == null) return;
+
+        if (_sdfData == null || _sdfData.Length != total)
+            _sdfData = new float[total];
+
+        Read3DTexture(sdfRT, _sdfData, nx, ny, nz);
+    }
+
+    void Read3DTexture(RenderTexture rt, float[] dest, int nx, int ny, int nz)
+    {
         var tempRT = RenderTexture.GetTemporary(nx, ny, 0, RenderTextureFormat.RFloat);
         var tempTex = new Texture2D(nx, ny, TextureFormat.RFloat, false);
 
         for (int z = 0; z < nz; z++)
         {
-            Graphics.CopyTexture(fillRT, z, 0, tempRT, 0, 0);
+            Graphics.CopyTexture(rt, z, 0, tempRT, 0, 0);
             var prev = RenderTexture.active;
             RenderTexture.active = tempRT;
             tempTex.ReadPixels(new Rect(0, 0, nx, ny), 0, 0, false);
@@ -119,7 +162,7 @@ public class VoxelSliceViewer : MonoBehaviour
 
             var raw = tempTex.GetRawTextureData<float>();
             for (int i = 0; i < nx * ny; i++)
-                _fillData[z * (nx * ny) + i] = raw[i];
+                dest[z * (nx * ny) + i] = raw[i];
         }
 
         RenderTexture.ReleaseTemporary(tempRT);
@@ -130,6 +173,13 @@ public class VoxelSliceViewer : MonoBehaviour
     {
         if (x < 0 || x >= _cachedNx || y < 0 || y >= _cachedNy || z < 0 || z >= _cachedNz) return 0;
         return _fillData[z * (_cachedNx * _cachedNy) + y * _cachedNx + x];
+    }
+
+    float GetSDF(int x, int y, int z)
+    {
+        if (_sdfData == null) return 0;
+        if (x < 0 || x >= _cachedNx || y < 0 || y >= _cachedNy || z < 0 || z >= _cachedNz) return 0;
+        return _sdfData[z * (_cachedNx * _cachedNy) + y * _cachedNx + x];
     }
 
     bool IsSurface(int x, int y, int z)
@@ -145,23 +195,26 @@ public class VoxelSliceViewer : MonoBehaviour
         ReadFillData();
         if (_fillData == null) return;
 
+        if (_displayMode == DisplayMode.SDF)
+            ReadSDFData();
+
         int nx = _cachedNx, ny = _cachedNy, nz = _cachedNz;
 
         // Determine slice dimensions based on axis
-        int sliceW, sliceH, sliceIdx;
+        int sliceW, sliceH;
         switch (axis)
         {
             case SliceAxis.X:
                 sliceW = nz; sliceH = ny;
-                sliceIdx = Mathf.Clamp(Mathf.RoundToInt(slicePosition * (nx - 1)), 0, nx - 1);
+                _sliceIdx = Mathf.Clamp(Mathf.RoundToInt(slicePosition * (nx - 1)), 0, nx - 1);
                 break;
             case SliceAxis.Y:
                 sliceW = nx; sliceH = nz;
-                sliceIdx = Mathf.Clamp(Mathf.RoundToInt(slicePosition * (ny - 1)), 0, ny - 1);
+                _sliceIdx = Mathf.Clamp(Mathf.RoundToInt(slicePosition * (ny - 1)), 0, ny - 1);
                 break;
             default: // Z
                 sliceW = nx; sliceH = ny;
-                sliceIdx = Mathf.Clamp(Mathf.RoundToInt(slicePosition * (nz - 1)), 0, nz - 1);
+                _sliceIdx = Mathf.Clamp(Mathf.RoundToInt(slicePosition * (nz - 1)), 0, nz - 1);
                 break;
         }
 
@@ -188,23 +241,30 @@ public class VoxelSliceViewer : MonoBehaviour
                 int x, y, z;
                 switch (axis)
                 {
-                    case SliceAxis.X: x = sliceIdx; y = v; z = u; break;
-                    case SliceAxis.Y: x = u; y = sliceIdx; z = v; break;
-                    default: x = u; y = v; z = sliceIdx; break;
+                    case SliceAxis.X: x = _sliceIdx; y = v; z = u; break;
+                    case SliceAxis.Y: x = u; y = _sliceIdx; z = v; break;
+                    default: x = u; y = v; z = _sliceIdx; break;
                 }
 
-                float fill = GetFill(x, y, z);
                 Color c;
-                if (fill > 0.5f)
+                if (_displayMode == DisplayMode.SDF && _sdfData != null)
                 {
-                    if (highlightSurface && IsSurface(x, y, z))
-                        c = surfaceColor;
-                    else
-                        c = filledColor;
+                    c = SDFToColor(GetSDF(x, y, z));
                 }
                 else
                 {
-                    c = emptyColor;
+                    float fill = GetFill(x, y, z);
+                    if (fill > 0.5f)
+                    {
+                        if (highlightSurface && IsSurface(x, y, z))
+                            c = surfaceColor;
+                        else
+                            c = filledColor;
+                    }
+                    else
+                    {
+                        c = emptyColor;
+                    }
                 }
 
                 pixels[v * sliceW + u] = c;
@@ -213,6 +273,31 @@ public class VoxelSliceViewer : MonoBehaviour
 
         _sliceTex.SetPixels32(pixels);
         _sliceTex.Apply(false);
+    }
+
+    /// <summary>Map SDF value to a color: blue (inside/negative) → black (zero/surface) → red/yellow (outside/positive)</summary>
+    Color SDFToColor(float sdf)
+    {
+        float range = Mathf.Max(sdfDisplayRange, 0.001f);
+        float t = Mathf.Clamp(sdf / range, -1f, 1f); // -1 = deep inside, +1 = far outside
+
+        if (t < 0f)
+        {
+            // Inside geometry: blue intensity (deep = bright blue, near surface = dark)
+            float a = -t; // 0..1
+            return new Color(0f, 0f, a, 1f);
+        }
+        else if (t < 0.01f)
+        {
+            // Near zero = surface boundary = green
+            return new Color(0f, 1f, 0f, 1f);
+        }
+        else
+        {
+            // Outside geometry: red → yellow (far = bright yellow, near surface = dark red)
+            float a = t; // 0..1
+            return new Color(a, a * 0.5f, 0f, 1f);
+        }
     }
 
     void OnGUI()
@@ -263,11 +348,14 @@ public class VoxelSliceViewer : MonoBehaviour
         float imgX = (sw - imgW) * 0.5f;
         float imgY = barH + (availH - imgH) * 0.5f + padding;
 
+        // Store image rect for hover detection
+        _imgX = imgX; _imgY = imgY; _imgW = imgW; _imgH = imgH;
+
         // Draw the slice
         GUI.DrawTexture(new Rect(imgX, imgY, imgW, imgH), _sliceTex, ScaleMode.StretchToFill, true);
 
         // Thin border
-        GUI.color = Color.green;
+        GUI.color = _displayMode == DisplayMode.SDF ? Color.cyan : Color.green;
         float b = 2f;
         GUI.DrawTexture(new Rect(imgX - b, imgY - b, imgW + b * 2, b), Texture2D.whiteTexture); // top
         GUI.DrawTexture(new Rect(imgX - b, imgY + imgH, imgW + b * 2, b), Texture2D.whiteTexture); // bottom
@@ -277,9 +365,100 @@ public class VoxelSliceViewer : MonoBehaviour
 
         // Info bar
         int maxIdx = GetSliceCount() - 1;
-        int sliceIdx = Mathf.RoundToInt(slicePosition * Mathf.Max(maxIdx, 1));
+        string modeStr = _displayMode == DisplayMode.SDF ? "SDF" : "Fill";
 
-        string info = $"{axis} Slice {sliceIdx}/{maxIdx}   |   [Scroll] change slice   [1/2/3] change axis   [{toggleKey}] close";
+        string info = $"[{modeStr}] {axis} Slice {_sliceIdx}/{maxIdx}   |   [Scroll] slice   [1/2/3] axis   [Tab] mode   [{toggleKey}] close";
         GUI.Label(new Rect(0, 10, sw, barH), info, _labelStyle);
+
+        // SDF hover tooltip
+        if (_displayMode == DisplayMode.SDF && _sdfData != null)
+        {
+            DrawSDFHoverInfo(imgX, imgY, imgW, imgH);
+            DrawSDFLegend(imgX, imgY, imgH);
+        }
+    }
+
+    void DrawSDFHoverInfo(float imgX, float imgY, float imgW, float imgH)
+    {
+        Vector2 mouse = Event.current.mousePosition;
+        if (mouse.x < imgX || mouse.x > imgX + imgW ||
+            mouse.y < imgY || mouse.y > imgY + imgH) return;
+
+        // Map mouse to voxel coordinates
+        float u01 = (mouse.x - imgX) / imgW;
+        float v01 = 1f - (mouse.y - imgY) / imgH; // flip Y (GUI is top-down, texture is bottom-up)
+
+        int u = Mathf.Clamp(Mathf.FloorToInt(u01 * _texW), 0, _texW - 1);
+        int v = Mathf.Clamp(Mathf.FloorToInt(v01 * _texH), 0, _texH - 1);
+
+        int x, y, z;
+        switch (axis)
+        {
+            case SliceAxis.X: x = _sliceIdx; y = v; z = u; break;
+            case SliceAxis.Y: x = u; y = _sliceIdx; z = v; break;
+            default: x = u; y = v; z = _sliceIdx; break;
+        }
+
+        float sdf = GetSDF(x, y, z);
+        float fill = GetFill(x, y, z);
+
+        string label = $"Voxel [{x},{y},{z}]  SDF: {sdf:F3}  Fill: {(fill > 0.5f ? "solid" : "empty")}";
+
+        // Draw tooltip near cursor
+        var tooltipStyle = new GUIStyle(GUI.skin.label)
+        {
+            fontSize = 16,
+            fontStyle = FontStyle.Bold,
+            alignment = TextAnchor.MiddleLeft
+        };
+        tooltipStyle.normal.textColor = Color.white;
+
+        float tw = tooltipStyle.CalcSize(new GUIContent(label)).x + 16f;
+        float th = 28f;
+        float tx = Mathf.Min(mouse.x + 20f, Screen.width - tw - 10f);
+        float ty = mouse.y - th - 5f;
+
+        GUI.color = new Color(0, 0, 0, 0.85f);
+        GUI.DrawTexture(new Rect(tx - 4, ty - 2, tw + 8, th + 4), Texture2D.whiteTexture);
+        GUI.color = Color.white;
+        GUI.Label(new Rect(tx, ty, tw, th), label, tooltipStyle);
+    }
+
+    void DrawSDFLegend(float imgX, float imgY, float imgH)
+    {
+        // Color bar legend on the right side
+        float legendW = 20f;
+        float legendH = Mathf.Min(imgH * 0.6f, 300f);
+        float legendX = imgX + _imgW + 15f;
+        float legendY = imgY + (imgH - legendH) * 0.5f;
+
+        if (legendX + legendW + 60f > Screen.width)
+            legendX = imgX - legendW - 70f; // put on left if no room
+
+        // Draw gradient bar
+        int steps = (int)legendH;
+        for (int i = 0; i < steps; i++)
+        {
+            float t = 1f - (float)i / (steps - 1); // top = +range, bottom = -range
+            float sdf = Mathf.Lerp(-sdfDisplayRange, sdfDisplayRange, t);
+            GUI.color = SDFToColor(sdf);
+            GUI.DrawTexture(new Rect(legendX, legendY + i, legendW, 1), Texture2D.whiteTexture);
+        }
+        GUI.color = Color.white;
+
+        // Labels
+        var legendLabel = new GUIStyle(GUI.skin.label)
+        {
+            fontSize = 12,
+            alignment = TextAnchor.MiddleLeft
+        };
+        legendLabel.normal.textColor = Color.white;
+
+        GUI.Label(new Rect(legendX + legendW + 4, legendY - 8, 60, 20),
+            $"+{sdfDisplayRange:F1}", legendLabel);
+        GUI.Label(new Rect(legendX + legendW + 4, legendY + legendH * 0.5f - 8, 60, 20),
+            "0 (surface)", legendLabel);
+        GUI.Label(new Rect(legendX + legendW + 4, legendY + legendH - 12, 60, 20),
+            $"-{sdfDisplayRange:F1}", legendLabel);
     }
 }
