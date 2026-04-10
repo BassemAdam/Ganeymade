@@ -123,7 +123,7 @@ public sealed class VoxelTracerSystem : MonoBehaviour
     int KRestoreStaticFull, KRestoreStaticFullLinear;
     int KClearVoxelBuffer, KCopyWorkingToStatic;
     int KWriteMaterialProperties;
-    int KSDFSeed, KSDFJumpFlood, KSDFFinalize;
+    int KSDFSeed, KSDFJumpFlood, KSDFFinalize, KComputeSDFNormals;
     bool _kernelsCached;
 
     // GPU buffers
@@ -562,8 +562,8 @@ public sealed class VoxelTracerSystem : MonoBehaviour
         coreCS.SetTexture(KBuildTexture, "_FillTex", _fillTex);
         Dispatch3D(KBuildTexture, regSize.x, regSize.y, regSize.z);
 
-        // Blur fill + compute normals (padded by 1 for neighbor reads)
-        if (computeNormals && _blurredFillTex != null && _normalsTex != null)
+        // Blur fill + compute normals (legacy path — only when SDF is off)
+        if (!computeSDF && computeNormals && _blurredFillTex != null && _normalsTex != null)
         {
             Vector3Int blurMin = Vector3Int.Max(regMin - Vector3Int.one, Vector3Int.zero);
             Vector3Int blurMax = Vector3Int.Min(regMax + Vector3Int.one,
@@ -584,7 +584,7 @@ public sealed class VoxelTracerSystem : MonoBehaviour
         // Write material properties (temperature, phase) after fill is known
         StampMaterialProperties(gx, gy, gz, regMin, regMax);
 
-        // Compute SDF via Jump Flood Algorithm after fill texture is ready
+        // Compute SDF + SDF-based normals (replaces blur normals when SDF is on)
         if (computeSDF && _sdfTex != null)
             ComputeSDFJumpFlood(gx, gy, gz);
     }
@@ -968,6 +968,7 @@ public sealed class VoxelTracerSystem : MonoBehaviour
         KSDFSeed = coreCS.FindKernel("SDFSeed");
         KSDFJumpFlood = coreCS.FindKernel("SDFJumpFlood");
         KSDFFinalize = coreCS.FindKernel("SDFFinalize");
+        KComputeSDFNormals = coreCS.FindKernel("ComputeSDFNormals");
         _kernelsCached = true;
     }
 
@@ -1018,20 +1019,26 @@ public sealed class VoxelTracerSystem : MonoBehaviour
         };
         _phaseTex.Create();
 
-        // Normals textures: only allocate when computeNormals is enabled
-        if (computeNormals)
+        // Normals textures: allocate when computeNormals OR computeSDF is enabled
+        // When SDF is on, normals come from SDF gradient (no blur needed)
+        bool needNormals = computeNormals || computeSDF;
+        if (needNormals)
         {
-            _blurredFillTex = new RenderTexture(gx, gy, 0, RenderTextureFormat.RFloat)
+            // Blur texture only needed for legacy fill-based normals (non-SDF path)
+            if (computeNormals && !computeSDF)
             {
-                dimension = UnityEngine.Rendering.TextureDimension.Tex3D,
-                volumeDepth = gz,
-                enableRandomWrite = true,
-                useMipMap = false,
-                autoGenerateMips = false,
-                wrapMode = TextureWrapMode.Clamp,
-                filterMode = FilterMode.Point
-            };
-            _blurredFillTex.Create();
+                _blurredFillTex = new RenderTexture(gx, gy, 0, RenderTextureFormat.RFloat)
+                {
+                    dimension = UnityEngine.Rendering.TextureDimension.Tex3D,
+                    volumeDepth = gz,
+                    enableRandomWrite = true,
+                    useMipMap = false,
+                    autoGenerateMips = false,
+                    wrapMode = TextureWrapMode.Clamp,
+                    filterMode = FilterMode.Point
+                };
+                _blurredFillTex.Create();
+            }
 
             _normalsTex = new RenderTexture(gx, gy, 0, RenderTextureFormat.ARGBFloat)
             {
@@ -1175,6 +1182,15 @@ public sealed class VoxelTracerSystem : MonoBehaviour
         coreCS.SetTexture(KSDFFinalize, "_FillTex", _fillTex);
         coreCS.SetTexture(KSDFFinalize, "_SDFTex", _sdfTex);
         Dispatch3D(KSDFFinalize, gx, gy, gz);
+
+        // 4) Compute normals from SDF gradient (always, since SDF is on)
+        if (_normalsTex != null)
+        {
+            coreCS.SetTexture(KComputeSDFNormals, "_FillTex", _fillTex);
+            coreCS.SetTexture(KComputeSDFNormals, "_SDFTex", _sdfTex);
+            coreCS.SetTexture(KComputeSDFNormals, "_NormalTex", _normalsTex);
+            Dispatch3D(KComputeSDFNormals, gx, gy, gz);
+        }
     }
 
     // ================================================================

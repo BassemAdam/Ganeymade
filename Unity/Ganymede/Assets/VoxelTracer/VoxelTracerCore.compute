@@ -23,6 +23,7 @@
 #pragma kernel SDFSeed
 #pragma kernel SDFJumpFlood
 #pragma kernel SDFFinalize
+#pragma kernel ComputeSDFNormals
 
 // ---- Grid ----
 int _Width, _Height, _Depth;
@@ -564,4 +565,41 @@ void SDFFinalize(uint3 id : SV_DispatchThreadID)
 
     // Convert from voxel-space distance to world-space distance
     _SDFTex[p] = dist * _Unit;
+}
+
+// 15: Compute normals from SDF gradient — accurate everywhere in the volume
+[numthreads(8, 8, 8)]
+void ComputeSDFNormals(uint3 id : SV_DispatchThreadID)
+{
+    int3 p = (int3)id;
+    if (p.x >= _Width || p.y >= _Height || p.z >= _Depth) return;
+
+    float here = _FillTex[p];
+    if (here < 0.5)
+    {
+        _NormalTex[p] = float4(0, 0, 0, 0);
+        return;
+    }
+
+    // Central differences on the SDF texture
+    float gx = _SDFTex[int3(min(p.x + 1, _Width  - 1), p.y, p.z)]
+             - _SDFTex[int3(max(p.x - 1, 0),            p.y, p.z)];
+    float gy = _SDFTex[int3(p.x, min(p.y + 1, _Height - 1), p.z)]
+             - _SDFTex[int3(p.x, max(p.y - 1, 0),            p.z)];
+    float gz = _SDFTex[int3(p.x, p.y, min(p.z + 1, _Depth - 1))]
+             - _SDFTex[int3(p.x, p.y, max(p.z - 1, 0))];
+
+    float3 grad = float3(gx, gy, gz);
+    float len2 = dot(grad, grad);
+
+    if (len2 < 1e-10)
+    {
+        _NormalTex[p] = float4(0, 0, 0, 1);
+        return;
+    }
+
+    // SDF gradient points outward (positive = outside), so it's already
+    // the outward-facing normal. Normalize it.
+    float3 n = grad * rsqrt(len2);
+    _NormalTex[p] = float4(n, 1);
 }
