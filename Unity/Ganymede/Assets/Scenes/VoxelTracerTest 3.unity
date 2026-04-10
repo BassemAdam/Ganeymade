@@ -436,6 +436,7 @@ MonoBehaviour:
   emptyColor: {r: 0, g: 0, b: 0, a: 0.8}
   surfaceColor: {r: 0.2, g: 0.8, b: 0.2, a: 1}
   highlightSurface: 1
+  sdfDisplayRange: 5
   toggleKey: 32
 --- !u!114 &987774562
 MonoBehaviour:
@@ -799,6 +800,7 @@ MonoBehaviour:
   fillVolume: 1
   fillSweepRounds: 2
   computeNormals: 1
+  computeSDF: 1
   includeMeshRenderers: 1
   includeSkinnedMeshRenderers: 1
   includeTerrains: 1

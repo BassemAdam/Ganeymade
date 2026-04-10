@@ -20,6 +20,10 @@
 #pragma kernel ClearVoxelBuffer
 #pragma kernel CopyWorkingToStatic
 #pragma kernel WriteMaterialProperties
+#pragma kernel SDFSeed
+#pragma kernel SDFJumpFlood
+#pragma kernel SDFFinalize
+#pragma kernel ComputeSDFNormals
 
 // ---- Grid ----
 int _Width, _Height, _Depth;
@@ -433,4 +437,169 @@ void WriteMaterialProperties(uint3 id : SV_DispatchThreadID)
 
     _TemperatureTex[p] = temp;
     _PhaseTex[p]       = phase;
+}
+
+// ========================= SDF via Jump Flood Algorithm =========================
+// JFA buffer stores the closest surface voxel coordinate for each voxel.
+// Encoded as a single uint: (x | y<<10 | z<<20), with 0xFFFFFFFF meaning "no seed".
+// Max grid dimension = 1024 per axis (10 bits each), well above our 256 cap.
+
+RWStructuredBuffer<uint> _JFABuffer;   // ping buffer
+RWStructuredBuffer<uint> _JFABufferB;  // pong buffer
+int _JFAStepSize;
+RWTexture3D<float> _SDFTex;
+
+uint EncodeJFA(int x, int y, int z)
+{
+    return (uint)x | ((uint)y << 10) | ((uint)z << 20);
+}
+
+int3 DecodeJFA(uint packed)
+{
+    return int3(packed & 0x3FF, (packed >> 10) & 0x3FF, (packed >> 20) & 0x3FF);
+}
+
+// 12: Seed JFA buffer from fill texture — surface voxels seed themselves
+[numthreads(8, 8, 8)]
+void SDFSeed(uint3 id : SV_DispatchThreadID)
+{
+    int3 p = (int3)id;
+    if (p.x >= _Width || p.y >= _Height || p.z >= _Depth) return;
+    int idx = VoxelIndex(p.x, p.y, p.z);
+
+    // A voxel is a surface seed if it is filled and has at least one empty neighbor
+    float here = _FillTex[p];
+    bool isSurface = false;
+    if (here > 0.5)
+    {
+        // Check 6-connected neighbors for emptiness
+        if (p.x > 0            && _FillTex[int3(p.x - 1, p.y, p.z)] < 0.5) isSurface = true;
+        if (p.x < _Width  - 1  && _FillTex[int3(p.x + 1, p.y, p.z)] < 0.5) isSurface = true;
+        if (p.y > 0            && _FillTex[int3(p.x, p.y - 1, p.z)] < 0.5) isSurface = true;
+        if (p.y < _Height - 1  && _FillTex[int3(p.x, p.y + 1, p.z)] < 0.5) isSurface = true;
+        if (p.z > 0            && _FillTex[int3(p.x, p.y, p.z - 1)] < 0.5) isSurface = true;
+        if (p.z < _Depth  - 1  && _FillTex[int3(p.x, p.y, p.z + 1)] < 0.5) isSurface = true;
+    }
+
+    _JFABuffer[idx] = isSurface ? EncodeJFA(p.x, p.y, p.z) : 0xFFFFFFFFu;
+}
+
+// 13: JFA stepping — read from _JFABuffer, write to _JFABufferB
+// Caller must ping-pong by swapping buffer bindings each step.
+[numthreads(8, 8, 8)]
+void SDFJumpFlood(uint3 id : SV_DispatchThreadID)
+{
+    int3 p = (int3)id;
+    if (p.x >= _Width || p.y >= _Height || p.z >= _Depth) return;
+    int idx = VoxelIndex(p.x, p.y, p.z);
+
+    int step = _JFAStepSize;
+    uint bestPacked = _JFABuffer[idx];
+    float bestDist2 = 1e30;
+
+    if (bestPacked != 0xFFFFFFFFu)
+    {
+        int3 s = DecodeJFA(bestPacked);
+        float3 d = float3(s - p);
+        bestDist2 = dot(d, d);
+    }
+
+    // Check 26 neighbors at current step size (3x3x3 - 1 + self already checked)
+    for (int dz = -1; dz <= 1; dz++)
+    for (int dy = -1; dy <= 1; dy++)
+    for (int dx = -1; dx <= 1; dx++)
+    {
+        if (dx == 0 && dy == 0 && dz == 0) continue;
+
+        int3 np = p + int3(dx, dy, dz) * step;
+        if (np.x < 0 || np.x >= _Width ||
+            np.y < 0 || np.y >= _Height ||
+            np.z < 0 || np.z >= _Depth) continue;
+
+        int nIdx = VoxelIndex(np.x, np.y, np.z);
+        uint nPacked = _JFABuffer[nIdx];
+        if (nPacked == 0xFFFFFFFFu) continue;
+
+        int3 s = DecodeJFA(nPacked);
+        float3 d = float3(s - p);
+        float dist2 = dot(d, d);
+
+        if (dist2 < bestDist2)
+        {
+            bestDist2 = dist2;
+            bestPacked = nPacked;
+        }
+    }
+
+    _JFABufferB[idx] = bestPacked;
+}
+
+// 14: Finalize SDF — compute signed distance from JFA result
+// Positive = outside geometry, Negative = inside geometry
+[numthreads(8, 8, 8)]
+void SDFFinalize(uint3 id : SV_DispatchThreadID)
+{
+    int3 p = (int3)id;
+    if (p.x >= _Width || p.y >= _Height || p.z >= _Depth) return;
+    int idx = VoxelIndex(p.x, p.y, p.z);
+
+    uint packed = _JFABuffer[idx];
+    float dist = 0.0;
+
+    if (packed != 0xFFFFFFFFu)
+    {
+        int3 s = DecodeJFA(packed);
+        float3 d = float3(s - p);
+        dist = sqrt(dot(d, d));
+    }
+    else
+    {
+        // No nearest surface found — far from any geometry
+        dist = 9999.0;
+    }
+
+    // Sign: negative inside filled geometry, positive outside
+    float fill = _FillTex[p];
+    if (fill > 0.5)
+        dist = -dist;
+
+    // Convert from voxel-space distance to world-space distance
+    _SDFTex[p] = dist * _Unit;
+}
+
+// 15: Compute normals from SDF gradient — accurate everywhere in the volume
+[numthreads(8, 8, 8)]
+void ComputeSDFNormals(uint3 id : SV_DispatchThreadID)
+{
+    int3 p = (int3)id;
+    if (p.x >= _Width || p.y >= _Height || p.z >= _Depth) return;
+
+    float here = _FillTex[p];
+    if (here < 0.5)
+    {
+        _NormalTex[p] = float4(0, 0, 0, 0);
+        return;
+    }
+
+    // Central differences on the SDF texture
+    float gx = _SDFTex[int3(min(p.x + 1, _Width  - 1), p.y, p.z)]
+             - _SDFTex[int3(max(p.x - 1, 0),            p.y, p.z)];
+    float gy = _SDFTex[int3(p.x, min(p.y + 1, _Height - 1), p.z)]
+             - _SDFTex[int3(p.x, max(p.y - 1, 0),            p.z)];
+    float gz = _SDFTex[int3(p.x, p.y, min(p.z + 1, _Depth - 1))]
+             - _SDFTex[int3(p.x, p.y, max(p.z - 1, 0))];
+
+    float3 grad = float3(gx, gy, gz);
+    float len2 = dot(grad, grad);
+
+    if (len2 < 1e-10)
+    {
+        _NormalTex[p] = float4(0, 0, 0, 1);
+        return;
+    }
+
+    // SDF gradient points outward (positive = outside), so it's already
+    // the outward-facing normal. Normalize it.
+    float3 n = grad * rsqrt(len2);
+    _NormalTex[p] = float4(n, 1);
 }

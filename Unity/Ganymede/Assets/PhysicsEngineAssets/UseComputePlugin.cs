@@ -215,7 +215,7 @@ public class UseComputePlugin : MonoBehaviour
                              "Enable Vulkan in Project Settings > Player > Other Settings > Graphics APIs.");
         }
     }
-
+    //
     private void Update()
     {
         if (!initialized)
