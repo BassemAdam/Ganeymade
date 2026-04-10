@@ -4,8 +4,10 @@ using UnityEngine;
 /// Full-screen slice viewer of the voxel fill volume.
 /// Press a key to toggle the overlay on/off.
 /// Scrub slices with scroll wheel while overlay is visible.
-/// Press Tab to cycle display modes: Fill → SDF → Fill…
+/// Press Tab to cycle display modes: Fill → SDF → HeatMap → Diffusivity → Fill…
 /// In SDF mode, hover the mouse to see the SDF value at that voxel.
+/// In HeatMap mode, hover to see the temperature value.
+/// In Diffusivity mode, hover to see the thermal diffusivity value.
 /// </summary>
 [RequireComponent(typeof(Camera))]
 [DefaultExecutionOrder(200)]
@@ -29,12 +31,22 @@ public class VoxelSliceViewer : MonoBehaviour
     [Tooltip("Maximum SDF distance (in world units) for color mapping")]
     public float sdfDisplayRange = 5f;
 
+    [Header("HeatMap Display")]
+    [Tooltip("Temperature mapped to cold end of gradient")]
+    public float heatMapMin = 0f;
+    [Tooltip("Temperature mapped to hot end of gradient")]
+    public float heatMapMax = 100f;
+
+    [Header("Diffusivity Display")]
+    [Tooltip("Maximum diffusivity for color mapping")]
+    public float diffusivityMax = 1f;
+
     [Header("Controls")]
     [Tooltip("Key to toggle the slice overlay on/off")]
     public KeyCode toggleKey = KeyCode.F2;
 
     public enum SliceAxis { X, Y, Z }
-    public enum DisplayMode { Fill, SDF }
+    public enum DisplayMode { Fill, SDF, HeatMap, Diffusivity }
 
     DisplayMode _displayMode = DisplayMode.Fill;
 
@@ -42,6 +54,8 @@ public class VoxelSliceViewer : MonoBehaviour
     Texture2D _sliceTex;
     float[] _fillData;
     float[] _sdfData;
+    float[] _tempData;
+    float[] _diffData;
     int _cachedNx, _cachedNy, _cachedNz;
     int _texW, _texH;
     float _lastRefresh = -999f;
@@ -57,6 +71,8 @@ public class VoxelSliceViewer : MonoBehaviour
         if (_sliceTex != null) { Destroy(_sliceTex); _sliceTex = null; }
         _fillData = null;
         _sdfData = null;
+        _tempData = null;
+        _diffData = null;
     }
 
     void Update()
@@ -84,10 +100,16 @@ public class VoxelSliceViewer : MonoBehaviour
         if (Input.GetKeyDown(KeyCode.Alpha2)) axis = SliceAxis.Y;
         if (Input.GetKeyDown(KeyCode.Alpha3)) axis = SliceAxis.Z;
 
-        // Tab cycles display mode: Fill → SDF → Fill…
+        // Tab cycles display mode: Fill → SDF → HeatMap → Diffusivity → Fill…
         if (Input.GetKeyDown(KeyCode.Tab))
         {
-            _displayMode = _displayMode == DisplayMode.Fill ? DisplayMode.SDF : DisplayMode.Fill;
+            _displayMode = _displayMode switch
+            {
+                DisplayMode.Fill => DisplayMode.SDF,
+                DisplayMode.SDF => DisplayMode.HeatMap,
+                DisplayMode.HeatMap => DisplayMode.Diffusivity,
+                _ => DisplayMode.Fill
+            };
             _lastRefresh = -999f; // force immediate rebuild
         }
 
@@ -146,6 +168,38 @@ public class VoxelSliceViewer : MonoBehaviour
         Read3DTexture(sdfRT, _sdfData, nx, ny, nz);
     }
 
+    void ReadTemperatureData()
+    {
+        int nx = voxelSystem.Nx;
+        int ny = voxelSystem.Ny;
+        int nz = voxelSystem.Nz;
+        int total = nx * ny * nz;
+
+        var tempRT = voxelSystem.TemperatureTexture;
+        if (tempRT == null) return;
+
+        if (_tempData == null || _tempData.Length != total)
+            _tempData = new float[total];
+
+        Read3DTexture(tempRT, _tempData, nx, ny, nz);
+    }
+
+    void ReadDiffusivityData()
+    {
+        int nx = voxelSystem.Nx;
+        int ny = voxelSystem.Ny;
+        int nz = voxelSystem.Nz;
+        int total = nx * ny * nz;
+
+        var diffRT = voxelSystem.DiffusivityTexture;
+        if (diffRT == null) return;
+
+        if (_diffData == null || _diffData.Length != total)
+            _diffData = new float[total];
+
+        Read3DTexture(diffRT, _diffData, nx, ny, nz);
+    }
+
     void Read3DTexture(RenderTexture rt, float[] dest, int nx, int ny, int nz)
     {
         var tempRT = RenderTexture.GetTemporary(nx, ny, 0, RenderTextureFormat.RFloat);
@@ -182,6 +236,20 @@ public class VoxelSliceViewer : MonoBehaviour
         return _sdfData[z * (_cachedNx * _cachedNy) + y * _cachedNx + x];
     }
 
+    float GetTemperature(int x, int y, int z)
+    {
+        if (_tempData == null) return 0;
+        if (x < 0 || x >= _cachedNx || y < 0 || y >= _cachedNy || z < 0 || z >= _cachedNz) return 0;
+        return _tempData[z * (_cachedNx * _cachedNy) + y * _cachedNx + x];
+    }
+
+    float GetDiffusivity(int x, int y, int z)
+    {
+        if (_diffData == null) return 0;
+        if (x < 0 || x >= _cachedNx || y < 0 || y >= _cachedNy || z < 0 || z >= _cachedNz) return 0;
+        return _diffData[z * (_cachedNx * _cachedNy) + y * _cachedNx + x];
+    }
+
     bool IsSurface(int x, int y, int z)
     {
         if (GetFill(x, y, z) < 0.5f) return false;
@@ -197,6 +265,10 @@ public class VoxelSliceViewer : MonoBehaviour
 
         if (_displayMode == DisplayMode.SDF)
             ReadSDFData();
+        if (_displayMode == DisplayMode.HeatMap)
+            ReadTemperatureData();
+        if (_displayMode == DisplayMode.Diffusivity)
+            ReadDiffusivityData();
 
         int nx = _cachedNx, ny = _cachedNy, nz = _cachedNz;
 
@@ -251,6 +323,22 @@ public class VoxelSliceViewer : MonoBehaviour
                 {
                     c = SDFToColor(GetSDF(x, y, z));
                 }
+                else if (_displayMode == DisplayMode.HeatMap && _tempData != null)
+                {
+                    float fill = GetFill(x, y, z);
+                    if (fill > 0.5f)
+                        c = TemperatureToColor(GetTemperature(x, y, z));
+                    else
+                        c = emptyColor;
+                }
+                else if (_displayMode == DisplayMode.Diffusivity && _diffData != null)
+                {
+                    float fill = GetFill(x, y, z);
+                    if (fill > 0.5f)
+                        c = DiffusivityToColor(GetDiffusivity(x, y, z));
+                    else
+                        c = emptyColor;
+                }
                 else
                 {
                     float fill = GetFill(x, y, z);
@@ -297,6 +385,59 @@ public class VoxelSliceViewer : MonoBehaviour
             // Outside geometry: red → yellow (far = bright yellow, near surface = dark red)
             float a = t; // 0..1
             return new Color(a, a * 0.5f, 0f, 1f);
+        }
+    }
+
+    /// <summary>Map temperature to a cold-to-hot gradient: blue → cyan → green → yellow → red</summary>
+    Color TemperatureToColor(float temp)
+    {
+        float range = Mathf.Max(heatMapMax - heatMapMin, 0.001f);
+        float t = Mathf.Clamp01((temp - heatMapMin) / range);
+
+        // 5-stop gradient: blue(0) → cyan(0.25) → green(0.5) → yellow(0.75) → red(1)
+        if (t < 0.25f)
+        {
+            float s = t / 0.25f;
+            return new Color(0f, s, 1f, 1f); // blue → cyan
+        }
+        else if (t < 0.5f)
+        {
+            float s = (t - 0.25f) / 0.25f;
+            return new Color(0f, 1f, 1f - s, 1f); // cyan → green
+        }
+        else if (t < 0.75f)
+        {
+            float s = (t - 0.5f) / 0.25f;
+            return new Color(s, 1f, 0f, 1f); // green → yellow
+        }
+        else
+        {
+            float s = (t - 0.75f) / 0.25f;
+            return new Color(1f, 1f - s, 0f, 1f); // yellow → red
+        }
+    }
+
+    /// <summary>Map diffusivity to a dark-to-bright purple gradient: black → indigo → violet → magenta → white</summary>
+    Color DiffusivityToColor(float diff)
+    {
+        float range = Mathf.Max(diffusivityMax, 0.001f);
+        float t = Mathf.Clamp01(diff / range);
+
+        // 4-stop gradient: dark purple(0) → purple(0.33) → magenta(0.66) → white(1)
+        if (t < 0.33f)
+        {
+            float s = t / 0.33f;
+            return new Color(0.15f * s, 0f, 0.4f * s, 1f); // black → dark purple
+        }
+        else if (t < 0.66f)
+        {
+            float s = (t - 0.33f) / 0.33f;
+            return new Color(0.15f + 0.85f * s, 0f, 0.4f + 0.2f * s, 1f); // dark purple → magenta
+        }
+        else
+        {
+            float s = (t - 0.66f) / 0.34f;
+            return new Color(1f, s, 0.6f + 0.4f * s, 1f); // magenta → white
         }
     }
 
@@ -355,7 +496,14 @@ public class VoxelSliceViewer : MonoBehaviour
         GUI.DrawTexture(new Rect(imgX, imgY, imgW, imgH), _sliceTex, ScaleMode.StretchToFill, true);
 
         // Thin border
-        GUI.color = _displayMode == DisplayMode.SDF ? Color.cyan : Color.green;
+        Color borderColor = _displayMode switch
+        {
+            DisplayMode.SDF => Color.cyan,
+            DisplayMode.HeatMap => new Color(1f, 0.5f, 0f),
+            DisplayMode.Diffusivity => new Color(0.5f, 0f, 1f),
+            _ => Color.green
+        };
+        GUI.color = borderColor;
         float b = 2f;
         GUI.DrawTexture(new Rect(imgX - b, imgY - b, imgW + b * 2, b), Texture2D.whiteTexture); // top
         GUI.DrawTexture(new Rect(imgX - b, imgY + imgH, imgW + b * 2, b), Texture2D.whiteTexture); // bottom
@@ -365,16 +513,30 @@ public class VoxelSliceViewer : MonoBehaviour
 
         // Info bar
         int maxIdx = GetSliceCount() - 1;
-        string modeStr = _displayMode == DisplayMode.SDF ? "SDF" : "Fill";
+        string modeStr = _displayMode.ToString();
 
         string info = $"[{modeStr}] {axis} Slice {_sliceIdx}/{maxIdx}   |   [Scroll] slice   [1/2/3] axis   [Tab] mode   [{toggleKey}] close";
         GUI.Label(new Rect(0, 10, sw, barH), info, _labelStyle);
 
-        // SDF hover tooltip
+        // SDF hover tooltip & legend
         if (_displayMode == DisplayMode.SDF && _sdfData != null)
         {
             DrawSDFHoverInfo(imgX, imgY, imgW, imgH);
             DrawSDFLegend(imgX, imgY, imgH);
+        }
+
+        // HeatMap hover tooltip & legend
+        if (_displayMode == DisplayMode.HeatMap && _tempData != null)
+        {
+            DrawHeatMapHoverInfo(imgX, imgY, imgW, imgH);
+            DrawHeatMapLegend(imgX, imgY, imgH);
+        }
+
+        // Diffusivity hover tooltip & legend
+        if (_displayMode == DisplayMode.Diffusivity && _diffData != null)
+        {
+            DrawDiffusivityHoverInfo(imgX, imgY, imgW, imgH);
+            DrawDiffusivityLegend(imgX, imgY, imgH);
         }
     }
 
@@ -460,5 +622,163 @@ public class VoxelSliceViewer : MonoBehaviour
             "0 (surface)", legendLabel);
         GUI.Label(new Rect(legendX + legendW + 4, legendY + legendH - 12, 60, 20),
             $"-{sdfDisplayRange:F1}", legendLabel);
+    }
+
+    void DrawHeatMapHoverInfo(float imgX, float imgY, float imgW, float imgH)
+    {
+        Vector2 mouse = Event.current.mousePosition;
+        if (mouse.x < imgX || mouse.x > imgX + imgW ||
+            mouse.y < imgY || mouse.y > imgY + imgH) return;
+
+        float u01 = (mouse.x - imgX) / imgW;
+        float v01 = 1f - (mouse.y - imgY) / imgH;
+
+        int u = Mathf.Clamp(Mathf.FloorToInt(u01 * _texW), 0, _texW - 1);
+        int v = Mathf.Clamp(Mathf.FloorToInt(v01 * _texH), 0, _texH - 1);
+
+        int x, y, z;
+        switch (axis)
+        {
+            case SliceAxis.X: x = _sliceIdx; y = v; z = u; break;
+            case SliceAxis.Y: x = u; y = _sliceIdx; z = v; break;
+            default: x = u; y = v; z = _sliceIdx; break;
+        }
+
+        float temp = GetTemperature(x, y, z);
+        float fill = GetFill(x, y, z);
+
+        string label = $"Voxel [{x},{y},{z}]  Temp: {temp:F2}  Fill: {(fill > 0.5f ? "solid" : "empty")}";
+
+        var tooltipStyle = new GUIStyle(GUI.skin.label)
+        {
+            fontSize = 16,
+            fontStyle = FontStyle.Bold,
+            alignment = TextAnchor.MiddleLeft
+        };
+        tooltipStyle.normal.textColor = Color.white;
+
+        float tw = tooltipStyle.CalcSize(new GUIContent(label)).x + 16f;
+        float th = 28f;
+        float tx = Mathf.Min(mouse.x + 20f, Screen.width - tw - 10f);
+        float ty = mouse.y - th - 5f;
+
+        GUI.color = new Color(0, 0, 0, 0.85f);
+        GUI.DrawTexture(new Rect(tx - 4, ty - 2, tw + 8, th + 4), Texture2D.whiteTexture);
+        GUI.color = Color.white;
+        GUI.Label(new Rect(tx, ty, tw, th), label, tooltipStyle);
+    }
+
+    void DrawHeatMapLegend(float imgX, float imgY, float imgH)
+    {
+        float legendW = 20f;
+        float legendH = Mathf.Min(imgH * 0.6f, 300f);
+        float legendX = imgX + _imgW + 15f;
+        float legendY = imgY + (imgH - legendH) * 0.5f;
+
+        if (legendX + legendW + 60f > Screen.width)
+            legendX = imgX - legendW - 70f;
+
+        int steps = (int)legendH;
+        for (int i = 0; i < steps; i++)
+        {
+            float t01 = 1f - (float)i / (steps - 1); // top = hot, bottom = cold
+            float temp = Mathf.Lerp(heatMapMin, heatMapMax, t01);
+            GUI.color = TemperatureToColor(temp);
+            GUI.DrawTexture(new Rect(legendX, legendY + i, legendW, 1), Texture2D.whiteTexture);
+        }
+        GUI.color = Color.white;
+
+        var legendLabel = new GUIStyle(GUI.skin.label)
+        {
+            fontSize = 12,
+            alignment = TextAnchor.MiddleLeft
+        };
+        legendLabel.normal.textColor = Color.white;
+
+        GUI.Label(new Rect(legendX + legendW + 4, legendY - 8, 80, 20),
+            $"{heatMapMax:F1} (hot)", legendLabel);
+        GUI.Label(new Rect(legendX + legendW + 4, legendY + legendH * 0.5f - 8, 80, 20),
+            $"{(heatMapMin + heatMapMax) * 0.5f:F1}", legendLabel);
+        GUI.Label(new Rect(legendX + legendW + 4, legendY + legendH - 12, 80, 20),
+            $"{heatMapMin:F1} (cold)", legendLabel);
+    }
+
+    void DrawDiffusivityHoverInfo(float imgX, float imgY, float imgW, float imgH)
+    {
+        Vector2 mouse = Event.current.mousePosition;
+        if (mouse.x < imgX || mouse.x > imgX + imgW ||
+            mouse.y < imgY || mouse.y > imgY + imgH) return;
+
+        float u01 = (mouse.x - imgX) / imgW;
+        float v01 = 1f - (mouse.y - imgY) / imgH;
+
+        int u = Mathf.Clamp(Mathf.FloorToInt(u01 * _texW), 0, _texW - 1);
+        int v = Mathf.Clamp(Mathf.FloorToInt(v01 * _texH), 0, _texH - 1);
+
+        int x, y, z;
+        switch (axis)
+        {
+            case SliceAxis.X: x = _sliceIdx; y = v; z = u; break;
+            case SliceAxis.Y: x = u; y = _sliceIdx; z = v; break;
+            default: x = u; y = v; z = _sliceIdx; break;
+        }
+
+        float diff = GetDiffusivity(x, y, z);
+        float fill = GetFill(x, y, z);
+
+        string label = $"Voxel [{x},{y},{z}]  Diffusivity: {diff:F4}  Fill: {(fill > 0.5f ? "solid" : "empty")}";
+
+        var tooltipStyle = new GUIStyle(GUI.skin.label)
+        {
+            fontSize = 16,
+            fontStyle = FontStyle.Bold,
+            alignment = TextAnchor.MiddleLeft
+        };
+        tooltipStyle.normal.textColor = Color.white;
+
+        float tw = tooltipStyle.CalcSize(new GUIContent(label)).x + 16f;
+        float th = 28f;
+        float tx = Mathf.Min(mouse.x + 20f, Screen.width - tw - 10f);
+        float ty = mouse.y - th - 5f;
+
+        GUI.color = new Color(0, 0, 0, 0.85f);
+        GUI.DrawTexture(new Rect(tx - 4, ty - 2, tw + 8, th + 4), Texture2D.whiteTexture);
+        GUI.color = Color.white;
+        GUI.Label(new Rect(tx, ty, tw, th), label, tooltipStyle);
+    }
+
+    void DrawDiffusivityLegend(float imgX, float imgY, float imgH)
+    {
+        float legendW = 20f;
+        float legendH = Mathf.Min(imgH * 0.6f, 300f);
+        float legendX = imgX + _imgW + 15f;
+        float legendY = imgY + (imgH - legendH) * 0.5f;
+
+        if (legendX + legendW + 60f > Screen.width)
+            legendX = imgX - legendW - 70f;
+
+        int steps = (int)legendH;
+        for (int i = 0; i < steps; i++)
+        {
+            float t01 = 1f - (float)i / (steps - 1); // top = high, bottom = low
+            float diff = diffusivityMax * t01;
+            GUI.color = DiffusivityToColor(diff);
+            GUI.DrawTexture(new Rect(legendX, legendY + i, legendW, 1), Texture2D.whiteTexture);
+        }
+        GUI.color = Color.white;
+
+        var legendLabel = new GUIStyle(GUI.skin.label)
+        {
+            fontSize = 12,
+            alignment = TextAnchor.MiddleLeft
+        };
+        legendLabel.normal.textColor = Color.white;
+
+        GUI.Label(new Rect(legendX + legendW + 4, legendY - 8, 80, 20),
+            $"{diffusivityMax:F2} (high)", legendLabel);
+        GUI.Label(new Rect(legendX + legendW + 4, legendY + legendH * 0.5f - 8, 80, 20),
+            $"{diffusivityMax * 0.5f:F2}", legendLabel);
+        GUI.Label(new Rect(legendX + legendW + 4, legendY + legendH - 12, 80, 20),
+            "0.00 (low)", legendLabel);
     }
 }

@@ -130,6 +130,7 @@ GameObject:
   - component: {fileID: 114078539}
   - component: {fileID: 114078538}
   - component: {fileID: 114078537}
+  - component: {fileID: 114078540}
   m_Layer: 0
   m_Name: Terrain
   m_TagString: Untagged
@@ -212,6 +213,24 @@ Transform:
   m_Children: []
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &114078540
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 114078536}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 7193c26c385088b48869367ff217e876, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::VoxelSolidMaterial
+  temperature: 70
+  thermalDiffusivity: 0.1
+  coolingRate: 0.01
+  density: 2500
+  mass: 0
+  phase: 0
 --- !u!1 &864310115
 GameObject:
   m_ObjectHideFlags: 0
@@ -437,6 +456,8 @@ MonoBehaviour:
   surfaceColor: {r: 0.2, g: 0.8, b: 0.2, a: 1}
   highlightSurface: 1
   sdfDisplayRange: 5
+  heatMapMin: 0
+  heatMapMax: 100
   toggleKey: 32
 --- !u!114 &987774562
 MonoBehaviour:
@@ -806,6 +827,7 @@ MonoBehaviour:
   includeTerrains: 1
   terrainSampleStep: 1
   defaultSolidTemperature: 25
+  defaultSolidDiffusivity: 0.1
   maxVoxelsPerAxis: 512
   maxVoxelCountMillions: 32
 --- !u!4 &1603268499
