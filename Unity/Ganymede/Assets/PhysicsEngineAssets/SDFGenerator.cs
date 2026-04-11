@@ -6,7 +6,7 @@ using System.Collections.Generic;
 /// Outputs a flat float[] array indexed as sdf[z * dimY * dimX + y * dimX + x].
 /// Negative values = inside solid.
 /// </summary>
-public static class SDFGenerator
+public static class FluidSDFGenerator
 {
     /// <summary>
     /// Compute a flat SDF grid from the given boundaries.

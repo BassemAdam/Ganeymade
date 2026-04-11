@@ -679,7 +679,7 @@ public class UseComputePlugin : MonoBehaviour
         }
 
         GetBoundsWS(out Vector3 bMin, out Vector3 bMax);
-        SDFGenerator.ComputeGridDims(bMin, bMax, sdfVoxelSize, out _sdfDimX, out _sdfDimY, out _sdfDimZ);
+        FluidSDFGenerator.ComputeGridDims(bMin, bMax, sdfVoxelSize, out _sdfDimX, out _sdfDimY, out _sdfDimZ);
 
         int totalVoxels = _sdfDimX * _sdfDimY * _sdfDimZ;
         if (totalVoxels <= 0 || totalVoxels > 4 * 1024 * 1024)
@@ -690,7 +690,7 @@ public class UseComputePlugin : MonoBehaviour
             return;
         }
 
-        _sdfData = SDFGenerator.Generate(_cachedBoundaries, bMin, sdfVoxelSize, _sdfDimX, _sdfDimY, _sdfDimZ);
+        _sdfData = FluidSDFGenerator.Generate(_cachedBoundaries, bMin, sdfVoxelSize, _sdfDimX, _sdfDimY, _sdfDimZ);
         SetSDFData(_sdfData, _sdfData.Length);
         _sdfUploaded = true;
 
