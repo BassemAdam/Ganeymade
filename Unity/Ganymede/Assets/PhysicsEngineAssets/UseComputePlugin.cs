@@ -56,8 +56,8 @@ public class UseComputePlugin : MonoBehaviour
     [DllImport(PluginName)]
     private static extern void SetDrainZones([In] DrainZoneNative[] zones, int count);
 
-    [DllImport(PluginName)]
-    private static extern void EmitParticles([In] Particle[] particles, [In] int[] indices, int count);
+    [DllImport(PluginName, EntryPoint = "EmitParticles")]
+    private static extern void NativeEmitParticles([In] Particle[] particles, [In] int[] indices, int count);
 
     // --------------------------------------------------------------------
     // Public controls (read by other scripts)
@@ -805,7 +805,7 @@ public class UseComputePlugin : MonoBehaviour
         }
 
         if (emitted > 0)
-            EmitParticles(_emitBatch, _emitIndices, emitted);
+            NativeEmitParticles(_emitBatch, _emitIndices, emitted);
     }
 
     // ── Phase 3: Dead Particle Reclamation ─────────────────────────────
