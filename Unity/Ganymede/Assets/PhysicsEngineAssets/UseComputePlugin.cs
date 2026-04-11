@@ -1,6 +1,7 @@
 using System;
 using System.Runtime.InteropServices;
 using UnityEngine;
+using UnityEngine.Rendering;
 
 /// <summary>
 /// Minimal C# wrapper for the native Vulkan compute plugin (RenderingPlugin.dll).
@@ -149,11 +150,19 @@ public class UseComputePlugin : MonoBehaviour
     [Tooltip("Print debug logs")]
     public bool verbose = true;
 
+    public enum SDFSource { Analytic, VoxelTracer }
+
     [Header("SDF Collision")]
-    [Tooltip("Enable SDF-based collision from FluidBoundary objects")]
+    [Tooltip("Enable SDF-based collision")]
     public bool enableSDF = true;
 
-    [Tooltip("SDF grid cell size in world units. Smaller = more precise but more memory.")]
+    [Tooltip("Where to get SDF data from")]
+    public SDFSource sdfSource = SDFSource.VoxelTracer;
+
+    [Tooltip("Reference to the VoxelTracerSystem in the scene (auto-found if null)")]
+    public VoxelTracerSystem voxelTracerRef;
+
+    [Tooltip("SDF grid cell size in world units (used only for Analytic mode).")]
     [Range(0.05f, 1.0f)]
     public float sdfVoxelSize = 0.2f;
 
@@ -181,8 +190,11 @@ public class UseComputePlugin : MonoBehaviour
     private DrainZoneNative[] _drainNatives = new DrainZoneNative[MAX_DRAIN_ZONES];
     private float[] _sdfData;
     private int _sdfDimX, _sdfDimY, _sdfDimZ;
+    private Vector3 _sdfOrigin; // world-space origin of the SDF grid
+    private float _sdfCellSize; // actual cell size in use (may come from VoxelTracer)
     private int _sdfDynamicFrameCounter;
     private bool _sdfUploaded;
+    private bool _voxelTracerReadbackPending;
 
 
     // --------------------------------------------------------------------
@@ -243,6 +255,14 @@ public class UseComputePlugin : MonoBehaviour
         SetSubStepCount(subStepCount);
         SetThermalEnabled(enableThermal);
         CacheHeatSources();
+
+        // Auto-find VoxelTracerSystem if not assigned
+        if (sdfSource == SDFSource.VoxelTracer && voxelTracerRef == null)
+            voxelTracerRef = FindObjectOfType<VoxelTracerSystem>();
+
+        // Default cell size until SDF is uploaded (VoxelTracer readback is async)
+        _sdfCellSize = sdfVoxelSize;
+
         CacheBoundariesAndDrains();
         GenerateAndUploadSDF();
         UploadDrainZones();
@@ -314,24 +334,33 @@ public class UseComputePlugin : MonoBehaviour
         if (thermalThisFrame)
             UpdateHeatSources();
 
-        // Dynamic SDF regeneration for moving boundaries
-        if (enableSDF && sdfDynamicUpdateInterval > 0 && _cachedBoundaries != null)
+        // Dynamic SDF regeneration
+        if (enableSDF && sdfDynamicUpdateInterval > 0)
         {
             _sdfDynamicFrameCounter++;
-            if (_sdfDynamicFrameCounter >= sdfDynamicUpdateInterval)
+            if (_sdfDynamicFrameCounter >= sdfDynamicUpdateInterval && !_voxelTracerReadbackPending)
             {
                 _sdfDynamicFrameCounter = 0;
-                bool hasDynamic = false;
-                for (int i = 0; i < _cachedBoundaries.Length; i++)
+
+                if (sdfSource == SDFSource.VoxelTracer)
                 {
-                    if (_cachedBoundaries[i] != null && _cachedBoundaries[i].isDynamic)
-                    {
-                        hasDynamic = true;
-                        break;
-                    }
-                }
-                if (hasDynamic)
+                    // VoxelTracer updates every frame anyway; re-read its SDF periodically
                     GenerateAndUploadSDF();
+                }
+                else if (_cachedBoundaries != null)
+                {
+                    bool hasDynamic = false;
+                    for (int i = 0; i < _cachedBoundaries.Length; i++)
+                    {
+                        if (_cachedBoundaries[i] != null && _cachedBoundaries[i].isDynamic)
+                        {
+                            hasDynamic = true;
+                            break;
+                        }
+                    }
+                    if (hasDynamic)
+                        GenerateAndUploadSDF();
+                }
             }
         }
 
@@ -435,7 +464,7 @@ public class UseComputePlugin : MonoBehaviour
         p.gasStiffness = gasStiffness;
         p.viscosity = viscosity;
         p.smoothingRadius = h;
-        p.sdfVoxelSize = enableSDF ? sdfVoxelSize : 0f;
+        p.sdfVoxelSize = enableSDF ? _sdfCellSize : 0f;
         p._pad1 = 0f;
         p.gravity = gravity;
         p.particleMass = particleMass;
@@ -672,7 +701,20 @@ public class UseComputePlugin : MonoBehaviour
 
     void GenerateAndUploadSDF()
     {
-        if (!enableSDF || _cachedBoundaries == null || _cachedBoundaries.Length == 0)
+        if (!enableSDF)
+        {
+            _sdfDimX = _sdfDimY = _sdfDimZ = 0;
+            return;
+        }
+
+        if (sdfSource == SDFSource.VoxelTracer)
+        {
+            GenerateSDFFromVoxelTracer();
+            return;
+        }
+
+        // Analytic mode: generate from FluidBoundary objects
+        if (_cachedBoundaries == null || _cachedBoundaries.Length == 0)
         {
             _sdfDimX = _sdfDimY = _sdfDimZ = 0;
             return;
@@ -690,12 +732,98 @@ public class UseComputePlugin : MonoBehaviour
             return;
         }
 
-        _sdfData = FluidSDFGenerator.Generate(_cachedBoundaries, bMin, sdfVoxelSize, _sdfDimX, _sdfDimY, _sdfDimZ);
+        _sdfOrigin = bMin;
+        _sdfCellSize = sdfVoxelSize;
+
+        float[] rawSdf = FluidSDFGenerator.Generate(_cachedBoundaries, bMin, sdfVoxelSize, _sdfDimX, _sdfDimY, _sdfDimZ);
+        UploadSDFWithHeader(rawSdf);
+    }
+
+    void GenerateSDFFromVoxelTracer()
+    {
+        if (voxelTracerRef == null || !voxelTracerRef.IsReady)
+        {
+            if (verbose)
+                Debug.LogWarning("[UseComputePlugin] VoxelTracerSystem not ready or not assigned. SDF disabled.");
+            _sdfDimX = _sdfDimY = _sdfDimZ = 0;
+            return;
+        }
+
+        if (!voxelTracerRef.computeSDF)
+        {
+            if (verbose)
+                Debug.LogWarning("[UseComputePlugin] VoxelTracerSystem.computeSDF is OFF. Enable it to generate SDF.");
+            _sdfDimX = _sdfDimY = _sdfDimZ = 0;
+            return;
+        }
+
+        RenderTexture sdfTex = voxelTracerRef.SDFTexture;
+        if (sdfTex == null)
+        {
+            if (verbose)
+                Debug.LogWarning("[UseComputePlugin] VoxelTracerSystem SDFTexture is null.");
+            _sdfDimX = _sdfDimY = _sdfDimZ = 0;
+            return;
+        }
+
+        int nx = voxelTracerRef.Nx;
+        int ny = voxelTracerRef.Ny;
+        int nz = voxelTracerRef.Nz;
+        int totalVoxels = nx * ny * nz;
+
+        if (totalVoxels <= 0 || totalVoxels > 4 * 1024 * 1024)
+        {
+            if (verbose)
+                Debug.LogWarning($"[UseComputePlugin] VoxelTracer SDF grid too large: {nx}x{ny}x{nz} = {totalVoxels}. Skipping.");
+            _sdfDimX = _sdfDimY = _sdfDimZ = 0;
+            return;
+        }
+
+        _sdfDimX = nx;
+        _sdfDimY = ny;
+        _sdfDimZ = nz;
+        _sdfOrigin = voxelTracerRef.ActiveGridMin;
+        _sdfCellSize = voxelTracerRef.ActiveVoxelSize;
+
+        // Async GPU readback of the 3D SDF texture
+        _voxelTracerReadbackPending = true;
+        AsyncGPUReadback.Request(sdfTex, 0, TextureFormat.RFloat, (AsyncGPUReadbackRequest req) =>
+        {
+            _voxelTracerReadbackPending = false;
+            if (req.hasError)
+            {
+                Debug.LogError("[UseComputePlugin] VoxelTracer SDF readback failed.");
+                return;
+            }
+
+            var raw = req.GetData<float>();
+            float[] rawSdf = new float[raw.Length];
+            raw.CopyTo(rawSdf);
+            UploadSDFWithHeader(rawSdf);
+
+            if (verbose)
+                Debug.Log($"[UseComputePlugin] VoxelTracer SDF uploaded: {_sdfDimX}x{_sdfDimY}x{_sdfDimZ}, " +
+                          $"origin={_sdfOrigin}, voxelSize={_sdfCellSize:F3}");
+        });
+    }
+
+    void UploadSDFWithHeader(float[] rawSdf)
+    {
+        // Prepend 4-float header: [originX, originY, originZ, 0]
+        const int HEADER = 4;
+        _sdfData = new float[HEADER + rawSdf.Length];
+        _sdfData[0] = _sdfOrigin.x;
+        _sdfData[1] = _sdfOrigin.y;
+        _sdfData[2] = _sdfOrigin.z;
+        _sdfData[3] = 0f;
+        Array.Copy(rawSdf, 0, _sdfData, HEADER, rawSdf.Length);
+
         SetSDFData(_sdfData, _sdfData.Length);
         _sdfUploaded = true;
 
-        if (verbose)
-            Debug.Log($"[UseComputePlugin] SDF generated: {_sdfDimX}x{_sdfDimY}x{_sdfDimZ} = {totalVoxels} voxels, voxelSize={sdfVoxelSize}");
+        if (verbose && sdfSource == SDFSource.Analytic)
+            Debug.Log($"[UseComputePlugin] Analytic SDF uploaded: {_sdfDimX}x{_sdfDimY}x{_sdfDimZ} = {rawSdf.Length} voxels, voxelSize={_sdfCellSize}");
+    }
     }
 
     void UploadDrainZones()
