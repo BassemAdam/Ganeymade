@@ -49,6 +49,12 @@ public class UseComputePlugin : MonoBehaviour
     [DllImport(PluginName)]
     private static extern void GetComputeResult([Out] Particle[] data, int count);
 
+    [DllImport(PluginName)]
+    private static extern void SetSDFData([In] float[] data, int count);
+
+    [DllImport(PluginName)]
+    private static extern void SetDrainZones([In] DrainZoneNative[] zones, int count);
+
     // --------------------------------------------------------------------
     // Public controls (read by other scripts)
 
@@ -143,6 +149,21 @@ public class UseComputePlugin : MonoBehaviour
     [Tooltip("Print debug logs")]
     public bool verbose = true;
 
+    [Header("SDF Collision")]
+    [Tooltip("Enable SDF-based collision from FluidBoundary objects")]
+    public bool enableSDF = true;
+
+    [Tooltip("SDF grid cell size in world units. Smaller = more precise but more memory.")]
+    [Range(0.05f, 1.0f)]
+    public float sdfVoxelSize = 0.2f;
+
+    [Tooltip("Regenerate SDF every N frames for dynamic boundaries (0 = static only)")]
+    [Range(0, 60)]
+    public int sdfDynamicUpdateInterval = 10;
+
+    [Header("Drains")]
+    private const int MAX_DRAIN_ZONES = 16;
+
     [Header("Heat Sources")]
     [Tooltip("Maximum number of heat sources supported")]
     private const int MAX_HEAT_SOURCES = 16;
@@ -153,6 +174,15 @@ public class UseComputePlugin : MonoBehaviour
     private Collider[] _cachedSourceColliders;
     private Vector3[] _lastSourcePositions;
     private float[] _lastSourceTemps;
+
+    // Cached SDF boundary + drain references
+    private FluidBoundary[] _cachedBoundaries;
+    private WaterDrain[] _cachedDrains;
+    private DrainZoneNative[] _drainNatives = new DrainZoneNative[MAX_DRAIN_ZONES];
+    private float[] _sdfData;
+    private int _sdfDimX, _sdfDimY, _sdfDimZ;
+    private int _sdfDynamicFrameCounter;
+    private bool _sdfUploaded;
 
 
     // --------------------------------------------------------------------
@@ -213,6 +243,9 @@ public class UseComputePlugin : MonoBehaviour
         SetSubStepCount(subStepCount);
         SetThermalEnabled(enableThermal);
         CacheHeatSources();
+        CacheBoundariesAndDrains();
+        GenerateAndUploadSDF();
+        UploadDrainZones();
 
         // Push params once immediately
         PushParams(Time.deltaTime);
@@ -280,6 +313,31 @@ public class UseComputePlugin : MonoBehaviour
         PushParams(dtForStep);
         if (thermalThisFrame)
             UpdateHeatSources();
+
+        // Dynamic SDF regeneration for moving boundaries
+        if (enableSDF && sdfDynamicUpdateInterval > 0 && _cachedBoundaries != null)
+        {
+            _sdfDynamicFrameCounter++;
+            if (_sdfDynamicFrameCounter >= sdfDynamicUpdateInterval)
+            {
+                _sdfDynamicFrameCounter = 0;
+                bool hasDynamic = false;
+                for (int i = 0; i < _cachedBoundaries.Length; i++)
+                {
+                    if (_cachedBoundaries[i] != null && _cachedBoundaries[i].isDynamic)
+                    {
+                        hasDynamic = true;
+                        break;
+                    }
+                }
+                if (hasDynamic)
+                    GenerateAndUploadSDF();
+            }
+        }
+
+        // Update drain positions each frame (drains may move)
+        if (_cachedDrains != null && _cachedDrains.Length > 0)
+            UploadDrainZones();
 
         // Trigger native compute dispatch on the render thread.
         // With execution order attributes, this runs after camera interaction writes.
@@ -377,7 +435,7 @@ public class UseComputePlugin : MonoBehaviour
         p.gasStiffness = gasStiffness;
         p.viscosity = viscosity;
         p.smoothingRadius = h;
-        p._pad0 = 0f;
+        p.sdfVoxelSize = enableSDF ? sdfVoxelSize : 0f;
         p._pad1 = 0f;
         p.gravity = gravity;
         p.particleMass = particleMass;
@@ -385,12 +443,10 @@ public class UseComputePlugin : MonoBehaviour
         p.poly6Const = poly6Const;
         p.boundsMax = boundsMaxWS;
         p.spikyGradConst = spikyGradConst;
-        // Unused by the current shaders (hash uses particleCount as table size),
-        // but kept for binary compatibility with the native SimParams struct.
-        p.gridDims = new UInt3(0, 0, 0);
+        p.sdfDims = enableSDF ? new UInt3((uint)_sdfDimX, (uint)_sdfDimY, (uint)_sdfDimZ) : new UInt3(0, 0, 0);
         p.viscLapConst = viscLapConst;
         p.gridOrigin = boundsMinWS;
-        p.maxCells = 0;
+        p.sdfEnabled = enableSDF ? 1u : 0u;
 
         p.damping = damping;
         p.bitonicK = 0;
@@ -603,6 +659,67 @@ public class UseComputePlugin : MonoBehaviour
         SetFluidHeatSources(_heatSources, MAX_HEAT_SOURCES);
     }
 
+    void CacheBoundariesAndDrains()
+    {
+        _cachedBoundaries = FindObjectsByType<FluidBoundary>(FindObjectsSortMode.None);
+        _cachedDrains = FindObjectsByType<WaterDrain>(FindObjectsSortMode.None);
+        _sdfDynamicFrameCounter = 0;
+        _sdfUploaded = false;
+
+        if (verbose && _cachedBoundaries.Length > 0)
+            Debug.Log($"[UseComputePlugin] Found {_cachedBoundaries.Length} FluidBoundary objects, {_cachedDrains.Length} WaterDrain objects.");
+    }
+
+    void GenerateAndUploadSDF()
+    {
+        if (!enableSDF || _cachedBoundaries == null || _cachedBoundaries.Length == 0)
+        {
+            _sdfDimX = _sdfDimY = _sdfDimZ = 0;
+            return;
+        }
+
+        GetBoundsWS(out Vector3 bMin, out Vector3 bMax);
+        FluidSDFGenerator.ComputeGridDims(bMin, bMax, sdfVoxelSize, out _sdfDimX, out _sdfDimY, out _sdfDimZ);
+
+        int totalVoxels = _sdfDimX * _sdfDimY * _sdfDimZ;
+        if (totalVoxels <= 0 || totalVoxels > 4 * 1024 * 1024)
+        {
+            if (verbose)
+                Debug.LogWarning($"[UseComputePlugin] SDF grid too large or invalid: {_sdfDimX}x{_sdfDimY}x{_sdfDimZ} = {totalVoxels} voxels. Skipping.");
+            _sdfDimX = _sdfDimY = _sdfDimZ = 0;
+            return;
+        }
+
+        _sdfData = FluidSDFGenerator.Generate(_cachedBoundaries, bMin, sdfVoxelSize, _sdfDimX, _sdfDimY, _sdfDimZ);
+        SetSDFData(_sdfData, _sdfData.Length);
+        _sdfUploaded = true;
+
+        if (verbose)
+            Debug.Log($"[UseComputePlugin] SDF generated: {_sdfDimX}x{_sdfDimY}x{_sdfDimZ} = {totalVoxels} voxels, voxelSize={sdfVoxelSize}");
+    }
+
+    void UploadDrainZones()
+    {
+        if (_cachedDrains == null || _cachedDrains.Length == 0) return;
+
+        for (int i = 0; i < MAX_DRAIN_ZONES; i++)
+            _drainNatives[i] = default;
+
+        int count = Mathf.Min(_cachedDrains.Length, MAX_DRAIN_ZONES);
+        for (int i = 0; i < count; i++)
+        {
+            if (!_cachedDrains[i].isActive) continue;
+            Vector3 pos = _cachedDrains[i].transform.position;
+            _drainNatives[i].posX = pos.x;
+            _drainNatives[i].posY = pos.y;
+            _drainNatives[i].posZ = pos.z;
+            _drainNatives[i].radius = _cachedDrains[i].drainRadius;
+            _drainNatives[i].active = 1u;
+        }
+
+        SetDrainZones(_drainNatives, MAX_DRAIN_ZONES);
+    }
+
     private static string FormatParticles(Particle[] arr, int maxShow)
     {
         int show = Mathf.Min(arr.Length, maxShow);
@@ -645,7 +762,7 @@ public class UseComputePlugin : MonoBehaviour
         public float gasStiffness;
         public float viscosity;
         public float smoothingRadius;
-        public float _pad0;
+        public float sdfVoxelSize;
         public float _pad1;
         public Vector3 gravity;
         public float particleMass;
@@ -653,10 +770,10 @@ public class UseComputePlugin : MonoBehaviour
         public float poly6Const;
         public Vector3 boundsMax;
         public float spikyGradConst;
-        public UInt3 gridDims;
+        public UInt3 sdfDims;
         public float viscLapConst;
         public Vector3 gridOrigin;
-        public uint maxCells;
+        public uint sdfEnabled;
         public float damping;
         public uint bitonicK;
         public uint bitonicJ;
@@ -678,5 +795,16 @@ public class UseComputePlugin : MonoBehaviour
         public uint  active;            // 1 = active, 0 = inactive slot
         public uint  _pad0;
         public uint  _pad1;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct DrainZoneNative
+    {
+        public float posX, posY, posZ;
+        public float radius;
+        public uint  active;
+        public uint  _pad0;
+        public uint  _pad1;
+        public uint  _pad2;
     }
 }
