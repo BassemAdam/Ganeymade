@@ -56,7 +56,7 @@ public class UseComputePlugin : MonoBehaviour
     [DllImport(PluginName)]
     private static extern void SetDrainZones([In] DrainZoneNative[] zones, int count);
 
-    [DllImport(PluginName, EntryPoint = "EmitParticles")]
+    [DllImport(PluginName, CallingConvention = CallingConvention.StdCall, EntryPoint = "EmitParticles")]
     private static extern void NativeEmitParticles([In] Particle[] particles, [In] int[] indices, int count);
 
     // --------------------------------------------------------------------

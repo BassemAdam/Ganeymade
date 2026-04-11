@@ -924,7 +924,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 4161998456328252244, guid: 18cf1fa5220a198409fde72db8b3e2a5, type: 3}
       propertyPath: initialActiveCount
-      value: 0
+      value: 100
       objectReference: {fileID: 0}
     - target: {fileID: 4161998456328252244, guid: 18cf1fa5220a198409fde72db8b3e2a5, type: 3}
       propertyPath: boundsAreLocalToTransform
