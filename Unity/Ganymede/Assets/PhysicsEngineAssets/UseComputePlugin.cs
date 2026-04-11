@@ -148,6 +148,12 @@ public class UseComputePlugin : MonoBehaviour
     private const int MAX_HEAT_SOURCES = 16;
     private HeatSource[] _heatSources = new HeatSource[MAX_HEAT_SOURCES];
 
+    // Cached heat source references (avoid FindObjectsByType every frame)
+    private HeatSourceObj[] _cachedSources;
+    private Collider[] _cachedSourceColliders;
+    private Vector3[] _lastSourcePositions;
+    private float[] _lastSourceTemps;
+
 
     // --------------------------------------------------------------------
 
@@ -206,6 +212,7 @@ public class UseComputePlugin : MonoBehaviour
         SetPerfTestMode(perfTestMode);
         SetSubStepCount(subStepCount);
         SetThermalEnabled(enableThermal);
+        CacheHeatSources();
 
         // Push params once immediately
         PushParams(Time.deltaTime);
@@ -265,9 +272,14 @@ public class UseComputePlugin : MonoBehaviour
         }
 
         SetSubStepCount(stepsToRun);
-        SetThermalEnabled(enableThermal);
+
+        // Run temperature pass only every N frames to save GPU time
+        bool thermalThisFrame = enableThermal && (frameCount % thermalFrameInterval == 0);
+        SetThermalEnabled(thermalThisFrame);
+
         PushParams(dtForStep);
-        UpdateHeatSources();
+        if (thermalThisFrame)
+            UpdateHeatSources();
 
         // Trigger native compute dispatch on the render thread.
         // With execution order attributes, this runs after camera interaction writes.
@@ -281,13 +293,13 @@ public class UseComputePlugin : MonoBehaviour
             GetComputeResult(readbackData, particleCount);
             Debug.Log($"[ComputePlugin] Frame {frameCount} GPU state: {FormatParticles(readbackData, 4)}");
 
-            // Find the first active heat source position
-            HeatSourceObj[] sources = FindObjectsByType<HeatSourceObj>(FindObjectsSortMode.None);
-            if (sources.Length > 0)
+            // Use cached heat sources instead of FindObjectsByType
+            if (_cachedSources != null && _cachedSources.Length > 0 && _cachedSources[0] != null)
             {
-                Vector3 sourcePos = sources[0].transform.position;
-                float sourceRadius = sources[0].GetComponent<Collider>()?.bounds.extents.magnitude
-                                    ?? sources[0].transform.lossyScale.magnitude * 0.5f;
+                Vector3 sourcePos = _cachedSources[0].transform.position;
+                Collider col = _cachedSourceColliders != null && _cachedSourceColliders.Length > 0 ? _cachedSourceColliders[0] : null;
+                float sourceRadius = col != null ? col.bounds.extents.magnitude
+                                    : _cachedSources[0].transform.lossyScale.magnitude * 0.5f;
                 float maxTemp = 0f;
                 float avgTemp = 0f;
                 int nearCount = 0;
@@ -532,32 +544,61 @@ public class UseComputePlugin : MonoBehaviour
         }
     }
 
+    void CacheHeatSources()
+    {
+        _cachedSources = FindObjectsByType<HeatSourceObj>(FindObjectsSortMode.None);
+        int count = Mathf.Min(_cachedSources.Length, MAX_HEAT_SOURCES);
+        _cachedSourceColliders = new Collider[count];
+        _lastSourcePositions = new Vector3[count];
+        _lastSourceTemps = new float[count];
+        for (int i = 0; i < count; i++)
+        {
+            _cachedSourceColliders[i] = _cachedSources[i].GetComponent<Collider>();
+            _lastSourcePositions[i] = Vector3.one * float.MaxValue; // force first upload
+        }
+    }
+
     void UpdateHeatSources()
     {
-        HeatSourceObj[] sources = FindObjectsByType<HeatSourceObj>(FindObjectsSortMode.None);
+        // Re-cache if sources were destroyed or new ones added
+        if (_cachedSources == null || _cachedSources.Length == 0 ||
+            (_cachedSources.Length > 0 && _cachedSources[0] == null))
+        {
+            CacheHeatSources();
+        }
 
-        // Clear all slots first
+        int count = Mathf.Min(_cachedSources.Length, MAX_HEAT_SOURCES);
+
+        bool dirty = false;
+        for (int i = 0; i < count; i++)
+        {
+            Vector3 pos = _cachedSources[i].transform.position;
+            float temp = _cachedSources[i].GetTemperature();
+            if (pos != _lastSourcePositions[i] || temp != _lastSourceTemps[i])
+            {
+                dirty = true;
+                _lastSourcePositions[i] = pos;
+                _lastSourceTemps[i] = temp;
+            }
+        }
+
+        if (!dirty) return;
+
         for (int i = 0; i < MAX_HEAT_SOURCES; i++)
             _heatSources[i] = default;
 
-        int count = Mathf.Min(sources.Length, MAX_HEAT_SOURCES);
         for (int i = 0; i < count; i++)
         {
-            Vector3 pos = sources[i].transform.position;
-            Collider col = sources[i].GetComponent<Collider>();
-            float radius = col != null? col.bounds.extents.magnitude : sources[i].transform.lossyScale.magnitude * 0.5f;
+            Vector3 pos = _lastSourcePositions[i];
+            Collider col = _cachedSourceColliders[i];
+            float radius = col != null ? col.bounds.extents.magnitude : _cachedSources[i].transform.lossyScale.magnitude * 0.5f;
             _heatSources[i].posX = pos.x;
             _heatSources[i].posY = pos.y;
             _heatSources[i].posZ = pos.z;
             _heatSources[i].radius = radius;
-            _heatSources[i].temperature = sources[i].GetTemperature();
-            _heatSources[i].active= 1u;
-
-            //if (frameCount % 60 == 0)
-            //    Debug.Log($"[HeatSource {i}] pos=({pos.x:F2},{pos.y:F2},{pos.z:F2}) " + $"radius={radius:F2} temp={sources[i].GetTemperature():F1}");
+            _heatSources[i].temperature = _lastSourceTemps[i];
+            _heatSources[i].active = 1u;
         }
-        //if (count == 0 && frameCount % 60 == 0)
-        //    Debug.LogWarning("[HeatSources] No HeatSource components found in scene.");
 
         SetFluidHeatSources(_heatSources, MAX_HEAT_SOURCES);
     }
