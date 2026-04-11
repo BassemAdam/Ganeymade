@@ -1,6 +1,7 @@
 using System;
 using System.Runtime.InteropServices;
 using UnityEngine;
+using UnityEngine.Rendering;
 
 /// <summary>
 /// Minimal C# wrapper for the native Vulkan compute plugin (RenderingPlugin.dll).
@@ -54,6 +55,9 @@ public class UseComputePlugin : MonoBehaviour
 
     [DllImport(PluginName)]
     private static extern void SetDrainZones([In] DrainZoneNative[] zones, int count);
+
+    [DllImport(PluginName)]
+    private static extern void EmitParticles([In] Particle[] particles, [In] int[] indices, int count);
 
     // --------------------------------------------------------------------
     // Public controls (read by other scripts)
@@ -161,6 +165,18 @@ public class UseComputePlugin : MonoBehaviour
     [Range(0, 60)]
     public int sdfDynamicUpdateInterval = 10;
 
+    [Tooltip("Distance + rotation threshold to trigger SDF rebuild for dynamic boundaries")]
+    [Range(0.001f, 1f)]
+    public float sdfDirtyThreshold = 0.05f;
+
+    [Header("Water Sources")]
+    [Tooltip("How many particles start active at initialization. Rest are pooled for emission.")]
+    [Min(0)]
+    public int initialActiveCount = 0;
+
+    [Tooltip("Maximum particles emitted per frame across all sources")]
+    private const int MAX_EMIT_PER_FRAME = 256;
+
     [Header("Drains")]
     private const int MAX_DRAIN_ZONES = 16;
 
@@ -175,14 +191,26 @@ public class UseComputePlugin : MonoBehaviour
     private Vector3[] _lastSourcePositions;
     private float[] _lastSourceTemps;
 
-    // Cached SDF boundary + drain references
+    // Cached SDF boundary + drain + water source references
     private FluidBoundary[] _cachedBoundaries;
     private WaterDrain[] _cachedDrains;
+    private WaterSource[] _cachedWaterSources;
     private DrainZoneNative[] _drainNatives = new DrainZoneNative[MAX_DRAIN_ZONES];
     private float[] _sdfData;
     private int _sdfDimX, _sdfDimY, _sdfDimZ;
     private int _sdfDynamicFrameCounter;
     private bool _sdfUploaded;
+
+    // Dynamic boundary transform tracking (Phase 5)
+    private Vector3[] _boundaryLastPos;
+    private Quaternion[] _boundaryLastRot;
+
+    // Particle pool for emission/reclamation
+    private System.Collections.Generic.Stack<int> _freeList;
+    private bool[] _isFree; // tracks which indices are in the free list
+    private Particle[] _emitBatch;
+    private int[] _emitIndices;
+    private float _emitAccumulator; // fractional particle carry-over
 
 
     // --------------------------------------------------------------------
@@ -221,22 +249,33 @@ public class UseComputePlugin : MonoBehaviour
         // Cache function pointer once
         renderEventFunc = GetRenderEventFunc();
 
-        // Create initial particle distribution (simple lattice in bounds)
-        Particle[] particles = CreateInitialParticles(particleCount);
+        // Clamp initial active count
+        int activeCount = Mathf.Clamp(initialActiveCount, 0, particleCount);
+        if (initialActiveCount <= 0) activeCount = particleCount; // 0 means all active (legacy behaviour)
+
+        // Create initial particle distribution (active particles in lattice, rest dormant)
+        Particle[] particles = CreateInitialParticles(particleCount, activeCount);
         readbackData = new Particle[particleCount];
 
         // Upload to native plugin once
         SetComputeData(particles, particles.Length);
 
-        // TEMP DEBUG
-        GetBoundsWS(out Vector3 dbgMin, out Vector3 dbgMax);
-        Debug.Log($"[DEBUG Init] transform.position={transform.position}, boundsMin={boundsMin}, boundsMax={boundsMax}");
-        Debug.Log($"[DEBUG Init] GetBoundsWS → min={dbgMin}, max={dbgMax}");
-        Debug.Log($"[DEBUG Init] First 4 particles: " +
-            $"p[0]={particles[0].position} " +
-            $"p[1]={particles[1].position} " +
-            $"p[2]={particles[2].position} " +
-            $"p[3]={particles[3].position}");
+        // Initialize particle pool (free list for emission/reclamation)
+        _freeList = new System.Collections.Generic.Stack<int>(particleCount - activeCount);
+        _isFree = new bool[particleCount];
+        _emitBatch = new Particle[MAX_EMIT_PER_FRAME];
+        _emitIndices = new int[MAX_EMIT_PER_FRAME];
+        _emitAccumulator = 0f;
+
+        // Push dormant indices onto free list (high-to-low so low indices emit first)
+        for (int i = particleCount - 1; i >= activeCount; i--)
+        {
+            _freeList.Push(i);
+            _isFree[i] = true;
+        }
+
+        if (verbose)
+            Debug.Log($"[UseComputePlugin] Particle pool: {activeCount} active, {_freeList.Count} pooled for emission.");
 
         // Configure plugin
         SetPerfTestMode(perfTestMode);
@@ -272,9 +311,6 @@ public class UseComputePlugin : MonoBehaviour
         if (!initialized)
             return;
 
-        // Keep native-side toggles in sync (cheap calls)
-        //SetPerfTestMode(perfTestMode);
-
         int stepsToRun = Mathf.Max(1, subStepCount);
         float dtForStep = Mathf.Max(Time.deltaTime, 0.0001f);
 
@@ -291,7 +327,6 @@ public class UseComputePlugin : MonoBehaviour
                 return;
 
             // Adaptive throttle: when frame time exceeds budget, scale down sub-steps
-            // to prevent the "spiral of death" (slow frame → more steps → slower frame → …).
             if (!perfTestMode && stepsToRun > 1 && Time.deltaTime > 1f / 55f)
             {
                 float scale = (1f / 60f) / Time.deltaTime;
@@ -299,7 +334,6 @@ public class UseComputePlugin : MonoBehaviour
             }
 
             timeAccumulator -= stepsToRun * simDt;
-            // Prevent runaway accumulation when framerate tanks.
             timeAccumulator = Mathf.Min(timeAccumulator, simDt);
             dtForStep = simDt;
         }
@@ -314,23 +348,20 @@ public class UseComputePlugin : MonoBehaviour
         if (thermalThisFrame)
             UpdateHeatSources();
 
-        // Dynamic SDF regeneration for moving boundaries
+        // ── Reclaim dead particles from last frame's readback ────────────
+        ReclaimDeadParticles();
+
+        // ── Emit particles from water sources ────────────────────────────
+        EmitFromWaterSources(dtForStep);
+
+        // ── Dynamic SDF regeneration (Phase 5 — transform tracking) ─────
         if (enableSDF && sdfDynamicUpdateInterval > 0 && _cachedBoundaries != null)
         {
             _sdfDynamicFrameCounter++;
             if (_sdfDynamicFrameCounter >= sdfDynamicUpdateInterval)
             {
                 _sdfDynamicFrameCounter = 0;
-                bool hasDynamic = false;
-                for (int i = 0; i < _cachedBoundaries.Length; i++)
-                {
-                    if (_cachedBoundaries[i] != null && _cachedBoundaries[i].isDynamic)
-                    {
-                        hasDynamic = true;
-                        break;
-                    }
-                }
-                if (hasDynamic)
+                if (CheckDynamicBoundariesDirty())
                     GenerateAndUploadSDF();
             }
         }
@@ -340,53 +371,20 @@ public class UseComputePlugin : MonoBehaviour
             UploadDrainZones();
 
         // Trigger native compute dispatch on the render thread.
-        // With execution order attributes, this runs after camera interaction writes.
         if (renderEventFunc != IntPtr.Zero)
             GL.IssuePluginEvent(renderEventFunc, 3);
         frameCount++;
 
+#if UNITY_EDITOR
         if (verbose && frameCount % 300 == 0)
         {
-#if UNITY_EDITOR
             GetComputeResult(readbackData, particleCount);
-            Debug.Log($"[ComputePlugin] Frame {frameCount} GPU state: {FormatParticles(readbackData, 4)}");
-
-            // Use cached heat sources instead of FindObjectsByType
-            if (_cachedSources != null && _cachedSources.Length > 0 && _cachedSources[0] != null)
-            {
-                Vector3 sourcePos = _cachedSources[0].transform.position;
-                Collider col = _cachedSourceColliders != null && _cachedSourceColliders.Length > 0 ? _cachedSourceColliders[0] : null;
-                float sourceRadius = col != null ? col.bounds.extents.magnitude
-                                    : _cachedSources[0].transform.lossyScale.magnitude * 0.5f;
-                float maxTemp = 0f;
-                float avgTemp = 0f;
-                int nearCount = 0;
-                int hotCount = 0;   // particles actually receiving heat
-                for (int i = 0; i < particleCount; i++)
-                {
-                    avgTemp += readbackData[i].temperature;
-                    if (readbackData[i].temperature > ambientTemperature + 1f)
-                        hotCount++;
-                    float dist = Vector3.Distance(readbackData[i].position, sourcePos);
-                    if (dist < sourceRadius * 2f)  // check twice the radius for spreading
-                    {
-                        nearCount++;
-                        maxTemp = Mathf.Max(maxTemp, readbackData[i].temperature);
-                    }
-                }
-                avgTemp /= particleCount;
-                Debug.Log($"[Frame {frameCount}] " +
-                        $"Particles near source: {nearCount} | " +
-                        $"Max temp near source: {maxTemp:F1}° | " +
-                        $"Global avg temp: {avgTemp:F2}° | " +
-                        $"Hot particles (>{ambientTemperature+1f:F0}°): {hotCount}");
-            }
-            else
-            {
-                Debug.Log($"[Frame {frameCount}] GPU state: {FormatParticles(readbackData, 4)}");
-            }
-#endif
+            int active = 0;
+            for (int i = 0; i < particleCount; i++)
+                if (readbackData[i].phase >= 0) active++;
+            Debug.Log($"[ComputePlugin] Frame {frameCount}: {active}/{particleCount} active, {_freeList.Count} pooled");
         }
+#endif
     }
 
     /// <summary>
@@ -463,13 +461,15 @@ public class UseComputePlugin : MonoBehaviour
         SetSimParams(p);
     }
 
-    private Particle[] CreateInitialParticles(int count)
+    private Particle[] CreateInitialParticles(int count, int activeCount)
     {
         GetBoundsWS(out Vector3 min, out Vector3 max);
         Vector3 size = max - min;
 
+        // Grid layout only for active particles
+        int gridCount = Mathf.Max(1, activeCount);
         int nx, ny, nz;
-        FindBestFactorGrid(count, size, out nx, out ny, out nz);
+        FindBestFactorGrid(gridCount, size, out nx, out ny, out nz);
 
         Vector3 safeSize = new Vector3(
             Mathf.Max(size.x, 0.001f),
@@ -486,24 +486,28 @@ public class UseComputePlugin : MonoBehaviour
         Vector3 start = min + spacing * 0.5f;
 
         Particle[] particles = new Particle[count];
+
+        // Place active particles on a lattice
         int idx = 0;
-        for (int z = 0; z < nz && idx < count; z++)
+        for (int z = 0; z < nz && idx < activeCount; z++)
         {
-            for (int y = 0; y < ny && idx < count; y++)
+            for (int y = 0; y < ny && idx < activeCount; y++)
             {
-                for (int x = 0; x < nx && idx < count; x++)
+                for (int x = 0; x < nx && idx < activeCount; x++)
                 {
                     Vector3 pos = start + new Vector3(x * spacing.x, y * spacing.y, z * spacing.z);
-
                     particles[idx++] = Particle.Create(pos, Vector3.zero, particleMass);
                 }
             }
         }
 
+        // Mark remaining particles as dormant (far away, phase = -1)
+        Vector3 farPos = new Vector3(1e10f, 1e10f, 1e10f);
+        for (int i = activeCount; i < count; i++)
+            particles[i] = Particle.Create(farPos, Vector3.zero, particleMass, phase: -1);
+
         if (verbose)
-        {
-            Debug.Log($"[UseComputePlugin] Initial particle grid: {nx} x {ny} x {nz} (= {nx * ny * nz}), spacing=({spacing.x:F4}, {spacing.y:F4}, {spacing.z:F4})");
-        }
+            Debug.Log($"[UseComputePlugin] Initial grid: {nx}x{ny}x{nz} ({activeCount} active), {count - activeCount} dormant");
 
         return particles;
     }
@@ -663,11 +667,13 @@ public class UseComputePlugin : MonoBehaviour
     {
         _cachedBoundaries = FindObjectsByType<FluidBoundary>(FindObjectsSortMode.None);
         _cachedDrains = FindObjectsByType<WaterDrain>(FindObjectsSortMode.None);
+        _cachedWaterSources = FindObjectsByType<WaterSource>(FindObjectsSortMode.None);
         _sdfDynamicFrameCounter = 0;
         _sdfUploaded = false;
+        _boundaryLastPos = null; // reset tracking arrays
 
-        if (verbose && _cachedBoundaries.Length > 0)
-            Debug.Log($"[UseComputePlugin] Found {_cachedBoundaries.Length} FluidBoundary objects, {_cachedDrains.Length} WaterDrain objects.");
+        if (verbose)
+            Debug.Log($"[UseComputePlugin] Found {_cachedBoundaries.Length} boundaries, {_cachedDrains.Length} drains, {_cachedWaterSources.Length} water sources.");
     }
 
     void GenerateAndUploadSDF()
@@ -676,6 +682,19 @@ public class UseComputePlugin : MonoBehaviour
         {
             _sdfDimX = _sdfDimY = _sdfDimZ = 0;
             return;
+        }
+
+        // Check if any boundary needs mesh SDF (Phase 4 — VoxelTracerSystem)
+        bool hasMesh = false;
+        for (int i = 0; i < _cachedBoundaries.Length; i++)
+            if (_cachedBoundaries[i] != null && _cachedBoundaries[i].shape == FluidBoundary.BoundaryShape.Mesh)
+                { hasMesh = true; break; }
+
+        if (hasMesh)
+        {
+            TryMeshSDFFromVoxelTracer();
+            // If VoxelTracer handled the SDF, we still generate analytic for non-mesh boundaries
+            // but the mesh SDF from VoxelTracer takes priority (overwrites)
         }
 
         GetBoundsWS(out Vector3 bMin, out Vector3 bMax);
@@ -718,6 +737,201 @@ public class UseComputePlugin : MonoBehaviour
         }
 
         SetDrainZones(_drainNatives, MAX_DRAIN_ZONES);
+    }
+
+    // ── Phase 2: Water Source Emission ──────────────────────────────────
+
+    void EmitFromWaterSources(float dt)
+    {
+        if (_cachedWaterSources == null || _cachedWaterSources.Length == 0 || _freeList.Count == 0)
+            return;
+
+        int totalToEmit = 0;
+
+        // Accumulate fractional emission across all sources
+        for (int s = 0; s < _cachedWaterSources.Length; s++)
+        {
+            var src = _cachedWaterSources[s];
+            if (src == null || !src.isActive) continue;
+
+            _emitAccumulator += src.emissionRate * dt;
+        }
+
+        totalToEmit = Mathf.FloorToInt(_emitAccumulator);
+        if (totalToEmit <= 0) return;
+
+        _emitAccumulator -= totalToEmit;
+
+        // Cap by available pool and per-frame max
+        totalToEmit = Mathf.Min(totalToEmit, _freeList.Count);
+        totalToEmit = Mathf.Min(totalToEmit, MAX_EMIT_PER_FRAME);
+
+        if (totalToEmit <= 0) return;
+
+        // Distribute emitted particles round-robin across active sources
+        int emitted = 0;
+        int sourceIdx = 0;
+        int activeSources = 0;
+        for (int s = 0; s < _cachedWaterSources.Length; s++)
+            if (_cachedWaterSources[s] != null && _cachedWaterSources[s].isActive) activeSources++;
+
+        if (activeSources == 0) return;
+
+        while (emitted < totalToEmit)
+        {
+            var src = _cachedWaterSources[sourceIdx % _cachedWaterSources.Length];
+            sourceIdx++;
+            if (src == null || !src.isActive) continue;
+
+            int idx = _freeList.Pop();
+            _isFree[idx] = false;
+
+            // Random offset within emission radius
+            Vector2 rndCircle = UnityEngine.Random.insideUnitCircle * src.emissionRadius;
+            Vector3 offset = new Vector3(rndCircle.x, 0f, rndCircle.y);
+
+            // Align offset perpendicular to emission direction
+            Vector3 dir = src.emissionDirection.normalized;
+            if (dir == Vector3.zero) dir = Vector3.down;
+            Quaternion rot = Quaternion.FromToRotation(Vector3.down, dir);
+            offset = rot * offset;
+
+            Vector3 pos = src.transform.position + offset;
+            Vector3 vel = dir * src.emissionSpeed;
+
+            _emitBatch[emitted] = Particle.Create(pos, vel, particleMass, phase: 0, temperature: src.initialTemperature);
+            _emitIndices[emitted] = idx;
+            emitted++;
+        }
+
+        if (emitted > 0)
+            EmitParticles(_emitBatch, _emitIndices, emitted);
+    }
+
+    // ── Phase 3: Dead Particle Reclamation ─────────────────────────────
+
+    void ReclaimDeadParticles()
+    {
+        if (_freeList == null || readbackData == null) return;
+
+        // Only do readback every few frames to avoid stalling
+        if (frameCount % 4 != 0) return;
+
+        if (!perfTestMode)
+        {
+            GetComputeResult(readbackData, particleCount);
+
+            for (int i = 0; i < particleCount; i++)
+            {
+                if (readbackData[i].phase < 0 && !_isFree[i])
+                {
+                    _freeList.Push(i);
+                    _isFree[i] = true;
+                }
+            }
+        }
+    }
+
+    // ── Phase 5: Dynamic Boundary Transform Tracking ───────────────────
+
+    bool CheckDynamicBoundariesDirty()
+    {
+        if (_cachedBoundaries == null) return false;
+
+        // Initialize tracking arrays on first call
+        if (_boundaryLastPos == null || _boundaryLastPos.Length != _cachedBoundaries.Length)
+        {
+            _boundaryLastPos = new Vector3[_cachedBoundaries.Length];
+            _boundaryLastRot = new Quaternion[_cachedBoundaries.Length];
+            for (int i = 0; i < _cachedBoundaries.Length; i++)
+            {
+                if (_cachedBoundaries[i] == null) continue;
+                _boundaryLastPos[i] = _cachedBoundaries[i].transform.position;
+                _boundaryLastRot[i] = _cachedBoundaries[i].transform.rotation;
+            }
+            // Force first SDF gen if we have any dynamic boundaries
+            for (int i = 0; i < _cachedBoundaries.Length; i++)
+                if (_cachedBoundaries[i] != null && _cachedBoundaries[i].isDynamic) return true;
+            return false;
+        }
+
+        bool dirty = false;
+        for (int i = 0; i < _cachedBoundaries.Length; i++)
+        {
+            if (_cachedBoundaries[i] == null || !_cachedBoundaries[i].isDynamic) continue;
+
+            Vector3 pos = _cachedBoundaries[i].transform.position;
+            Quaternion rot = _cachedBoundaries[i].transform.rotation;
+
+            float posDelta = (pos - _boundaryLastPos[i]).sqrMagnitude;
+            float rotDelta = Quaternion.Angle(_boundaryLastRot[i], rot);
+
+            if (posDelta > sdfDirtyThreshold * sdfDirtyThreshold || rotDelta > sdfDirtyThreshold * 10f)
+            {
+                dirty = true;
+                _boundaryLastPos[i] = pos;
+                _boundaryLastRot[i] = rot;
+            }
+        }
+        return dirty;
+    }
+
+    // ── Phase 4: Mesh SDF via VoxelTracerSystem ────────────────────────
+
+    /// <summary>
+    /// If any FluidBoundary uses Mesh shape and VoxelTracerSystem is available,
+    /// read back the JFA-generated SDF texture and upload it to the SPH plugin.
+    /// Call after VoxelTracerSystem has completed its voxelization pass.
+    /// </summary>
+    void TryMeshSDFFromVoxelTracer()
+    {
+        if (!enableSDF) return;
+
+        bool needsMesh = false;
+        if (_cachedBoundaries != null)
+            for (int i = 0; i < _cachedBoundaries.Length; i++)
+                if (_cachedBoundaries[i] != null && _cachedBoundaries[i].shape == FluidBoundary.BoundaryShape.Mesh)
+                    { needsMesh = true; break; }
+        if (!needsMesh) return;
+
+        var vts = FindFirstObjectByType<VoxelTracerSystem>();
+        if (vts == null || !vts.IsReady || vts.SDFTexture == null)
+        {
+            if (verbose) Debug.LogWarning("[UseComputePlugin] Mesh boundary found but VoxelTracerSystem not ready.");
+            return;
+        }
+
+        // Map VoxelTracer grid to our SDF parameters
+        _sdfDimX = vts.Nx;
+        _sdfDimY = vts.Ny;
+        _sdfDimZ = vts.Nz;
+
+        int totalVoxels = _sdfDimX * _sdfDimY * _sdfDimZ;
+        if (totalVoxels <= 0 || totalVoxels > 4 * 1024 * 1024)
+        {
+            if (verbose) Debug.LogWarning($"[UseComputePlugin] VoxelTracer SDF too large: {totalVoxels} voxels.");
+            return;
+        }
+
+        // Override SDF grid origin and voxel size from VoxelTracer
+        sdfVoxelSize = vts.ActiveVoxelSize;
+
+        // Async readback of the 3D SDF texture
+        AsyncGPUReadback.Request(vts.SDFTexture, 0, TextureFormat.RFloat, (req) =>
+        {
+            if (req.hasError) { Debug.LogError("[UseComputePlugin] SDF readback failed."); return; }
+
+            var data = req.GetData<float>();
+            if (_sdfData == null || _sdfData.Length != data.Length)
+                _sdfData = new float[data.Length];
+            data.CopyTo(_sdfData);
+
+            SetSDFData(_sdfData, _sdfData.Length);
+            _sdfUploaded = true;
+
+            if (verbose)
+                Debug.Log($"[UseComputePlugin] Mesh SDF from VoxelTracer: {_sdfDimX}x{_sdfDimY}x{_sdfDimZ}, voxelSize={sdfVoxelSize}");
+        });
     }
 
     private static string FormatParticles(Particle[] arr, int maxShow)

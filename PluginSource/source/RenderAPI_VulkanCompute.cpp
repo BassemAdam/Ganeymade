@@ -2462,6 +2462,13 @@ static DrainZone g_DrainZones[MAX_DRAIN_ZONES] = {};
 static int  g_DrainZoneCount = 0;
 static bool g_DrainNeedsUpload = false;
 
+// Particle emission
+static const int MAX_EMIT_PER_FRAME = 256;
+static Particle g_EmitParticles[MAX_EMIT_PER_FRAME] = {};
+static int      g_EmitIndices[MAX_EMIT_PER_FRAME] = {};
+static int      g_EmitCount = 0;
+static bool     g_EmitNeedsUpload = false;
+
 static float* g_SolidTempInput = nullptr;
 static float* g_SolidTempOutput = nullptr;
 static uint32_t* g_SolidMask = nullptr;
@@ -2596,6 +2603,19 @@ SetDrainZones(DrainZone* zones, int count)
     g_DrainNeedsUpload = true;
 }
 
+// Upload a batch of emitted particles.  `particles` contains the state for
+// each new particle, `indices` tells us WHERE in the GPU buffer to place them.
+extern "C" void UNITY_INTERFACE_EXPORT UNITY_INTERFACE_API
+EmitParticles(Particle* particles, int* indices, int count)
+{
+    if (particles == nullptr || indices == nullptr || count <= 0) return;
+    int clamped = (count > MAX_EMIT_PER_FRAME) ? MAX_EMIT_PER_FRAME : count;
+    memcpy(g_EmitParticles, particles, clamped * sizeof(Particle));
+    memcpy(g_EmitIndices,   indices,   clamped * sizeof(int));
+    g_EmitCount = clamped;
+    g_EmitNeedsUpload = true;
+}
+
 
 extern "C" void UNITY_INTERFACE_EXPORT UNITY_INTERFACE_API
 SetSolidComputeData(float* data, int count)
@@ -2705,6 +2725,7 @@ private:
     ComputeBuffer m_SdfStagingBuffer;         // SDF staging (HOST_VISIBLE)
     ComputeBuffer m_DrainBuffer;              // drain zones (DEVICE_LOCAL)
     ComputeBuffer m_DrainStagingBuffer;       // drain staging (HOST_VISIBLE)
+    ComputeBuffer m_EmitStagingBuffer;        // emission staging (HOST_VISIBLE)
 
     int  m_CurrentInput   = 0;
     bool m_Initialized    = false;
@@ -3304,6 +3325,12 @@ void VulkanComputePlugin::CreateBuffers(int count)
     CreateComputeBuffer(device, m_Instance.physicalDevice, drainBufSize, drainStagingUsage,
         VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, m_DrainStagingBuffer);
 
+    // Emission staging buffer — small, HOST_VISIBLE for scattered particle writes
+    VkDeviceSize emitBufSize = MAX_EMIT_PER_FRAME * sizeof(Particle);
+    CreateComputeBuffer(device, m_Instance.physicalDevice, emitBufSize,
+        VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, m_EmitStagingBuffer);
+
 
     // ── Descriptor pool: 2 sets × 7 bindings + 2 temp sets × 6 = 26, with margin
     VkDescriptorPoolSize poolSize = {};
@@ -3537,6 +3564,35 @@ void VulkanComputePlugin::DispatchCompute()
                              VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
                              0, 1, &drainBarrier, 0, nullptr, 0, nullptr);
         g_DrainNeedsUpload = false;
+    }
+
+    // ── Particle emission: scattered writes into current input buffer ────
+    if (g_EmitNeedsUpload && g_EmitCount > 0 && m_EmitStagingBuffer.mapped)
+    {
+        // Pack emitted particles contiguously into staging buffer
+        memcpy(m_EmitStagingBuffer.mapped, g_EmitParticles, g_EmitCount * sizeof(Particle));
+
+        // Build copy regions: staging[i] → gpu[indices[i]]
+        VkBufferCopy emitRegions[MAX_EMIT_PER_FRAME];
+        for (int i = 0; i < g_EmitCount; i++)
+        {
+            emitRegions[i].srcOffset = i * sizeof(Particle);
+            emitRegions[i].dstOffset = g_EmitIndices[i] * sizeof(Particle);
+            emitRegions[i].size      = sizeof(Particle);
+        }
+        vkCmdCopyBuffer(cmd, m_EmitStagingBuffer.buffer,
+                        m_GpuBuffers[m_CurrentInput].buffer,
+                        g_EmitCount, emitRegions);
+
+        VkMemoryBarrier emitBarrier = {};
+        emitBarrier.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
+        emitBarrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+        emitBarrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+        vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT,
+                             VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                             0, 1, &emitBarrier, 0, nullptr, 0, nullptr);
+        g_EmitNeedsUpload = false;
+        g_EmitCount = 0;
     }
 
     g_SimParams.particleCount = (uint32_t)g_ElementCount;
@@ -3971,6 +4027,7 @@ void VulkanComputePlugin::DestroyBuffers()
     DestroyComputeBuffer(device, m_SdfStagingBuffer);
     DestroyComputeBuffer(device, m_DrainBuffer);
     DestroyComputeBuffer(device, m_DrainStagingBuffer);
+    DestroyComputeBuffer(device, m_EmitStagingBuffer);
     m_BuffersReady = false;
     m_AllocatedCount = 0;
 }
