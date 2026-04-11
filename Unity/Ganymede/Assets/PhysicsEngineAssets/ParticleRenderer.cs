@@ -117,27 +117,12 @@ public class ParticleRenderer : MonoBehaviour
         if (computePlugin != null && computePlugin.perfTestMode)
             return;
 
-        // Re-bake gradient texture every frame so Inspector edits are reflected live
-        BakeGradientTexture();
-
         // Read from plugin (non-blocking, 1-frame latency)
         GetComputeResult(readbackData, readbackData.Length);
-        
-        // Debug: Check particle temperatures
-        if (readbackData.Length > 0 && readbackData[0].temperature > 0)
-        {
-            float minTempSeen = readbackData[0].temperature;
-            float maxTempSeen = readbackData[0].temperature;
-            for (int i = 1; i < readbackData.Length; i++)
-            {
-                minTempSeen = Mathf.Min(minTempSeen, readbackData[i].temperature);
-                maxTempSeen = Mathf.Max(maxTempSeen, readbackData[i].temperature);
-            }
-            if (Time.frameCount % 120 == 0) // Log every 2 seconds at 60fps
-                Debug.Log($"[ParticleRenderer] Particle temp range: {minTempSeen:F1}°-{maxTempSeen:F1}° (mapped {minTemp}-{maxTemp})");
-        }
-        
         particleBuffer.SetData(readbackData);
+
+        // Rebake gradient only when it has changed
+        BakeGradientTexture();
 
         // Bind resources per-draw to avoid Vulkan "missing binding" warnings.
         // (Also prevents modifying the shared material asset at runtime.)
@@ -158,10 +143,22 @@ public class ParticleRenderer : MonoBehaviour
         if (gradientTexture != null) Destroy(gradientTexture);
     }
 
+    void OnValidate()
+    {
+        gradientDirty = true;
+    }
+
+    private bool gradientDirty = true;
+
+    /// <summary>Call when the gradient is changed at runtime (e.g. from Inspector).</summary>
+    public void MarkGradientDirty() => gradientDirty = true;
+
     private void BakeGradientTexture()
     {
+        if (!gradientDirty) return;
         for (int i = 0; i < 256; i++)
             gradientTexture.SetPixel(i, 0, temperatureGradient.Evaluate(i / 255f));
         gradientTexture.Apply();
+        gradientDirty = false;
     }
 }

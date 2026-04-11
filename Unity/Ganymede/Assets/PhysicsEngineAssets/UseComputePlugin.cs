@@ -35,6 +35,9 @@ public class UseComputePlugin : MonoBehaviour
     private static extern void SetSubStepCount(int count);
 
     [DllImport(PluginName)]
+    private static extern void SetThermalEnabled([MarshalAs(UnmanagedType.I1)] bool enabled);
+
+    [DllImport(PluginName)]
     private static extern void SetSimParams(SimParams param);
 
     [DllImport(PluginName)]
@@ -114,6 +117,13 @@ public class UseComputePlugin : MonoBehaviour
     public float interactionRadius = 3f;
 
     [Header("Thermal properties")]
+    [Tooltip("Enable/disable the per-frame temperature compute pass on the GPU")]
+    public bool enableThermal = true;
+
+    [Tooltip("Run temperature pass every N frames (1 = every frame, 3 = every 3rd). Higher = faster but less responsive heat")]
+    [Range(1, 8)]
+    public int thermalFrameInterval = 2;
+
     [Tooltip("How fast heat spreads between particles")]
     [Range(0.001f, 1)]
     public float thermalDiffusivity = 0.1f;
@@ -195,6 +205,7 @@ public class UseComputePlugin : MonoBehaviour
         // Configure plugin
         SetPerfTestMode(perfTestMode);
         SetSubStepCount(subStepCount);
+        SetThermalEnabled(enableThermal);
 
         // Push params once immediately
         PushParams(Time.deltaTime);
@@ -239,6 +250,14 @@ public class UseComputePlugin : MonoBehaviour
             if (stepsToRun <= 0)
                 return;
 
+            // Adaptive throttle: when frame time exceeds budget, scale down sub-steps
+            // to prevent the "spiral of death" (slow frame → more steps → slower frame → …).
+            if (!perfTestMode && stepsToRun > 1 && Time.deltaTime > 1f / 55f)
+            {
+                float scale = (1f / 60f) / Time.deltaTime;
+                stepsToRun = Mathf.Max(1, Mathf.RoundToInt(stepsToRun * scale));
+            }
+
             timeAccumulator -= stepsToRun * simDt;
             // Prevent runaway accumulation when framerate tanks.
             timeAccumulator = Mathf.Min(timeAccumulator, simDt);
@@ -246,6 +265,7 @@ public class UseComputePlugin : MonoBehaviour
         }
 
         SetSubStepCount(stepsToRun);
+        SetThermalEnabled(enableThermal);
         PushParams(dtForStep);
         UpdateHeatSources();
 
@@ -255,10 +275,10 @@ public class UseComputePlugin : MonoBehaviour
             GL.IssuePluginEvent(renderEventFunc, 3);
         frameCount++;
 
-        if (verbose && frameCount % 60 == 0)
+        if (verbose && frameCount % 300 == 0)
         {
+#if UNITY_EDITOR
             GetComputeResult(readbackData, particleCount);
-            // After N iterations of multiply-by-2: values = initial * 2^N
             Debug.Log($"[ComputePlugin] Frame {frameCount} GPU state: {FormatParticles(readbackData, 4)}");
 
             // Find the first active heat source position
@@ -295,6 +315,7 @@ public class UseComputePlugin : MonoBehaviour
             {
                 Debug.Log($"[Frame {frameCount}] GPU state: {FormatParticles(readbackData, 4)}");
             }
+#endif
         }
     }
 
@@ -532,11 +553,11 @@ public class UseComputePlugin : MonoBehaviour
             _heatSources[i].temperature = sources[i].GetTemperature();
             _heatSources[i].active= 1u;
 
-            if (frameCount % 60 == 0)
-                Debug.Log($"[HeatSource {i}] pos=({pos.x:F2},{pos.y:F2},{pos.z:F2}) " + $"radius={radius:F2} temp={sources[i].GetTemperature():F1}");
+            //if (frameCount % 60 == 0)
+            //    Debug.Log($"[HeatSource {i}] pos=({pos.x:F2},{pos.y:F2},{pos.z:F2}) " + $"radius={radius:F2} temp={sources[i].GetTemperature():F1}");
         }
-        if (count == 0 && frameCount % 60 == 0)
-            Debug.LogWarning("[HeatSources] No HeatSource components found in scene.");
+        //if (count == 0 && frameCount % 60 == 0)
+        //    Debug.LogWarning("[HeatSources] No HeatSource components found in scene.");
 
         SetFluidHeatSources(_heatSources, MAX_HEAT_SOURCES);
     }

@@ -1998,6 +1998,7 @@ static bool g_NeedsUpload = false; // true only when new data arrives from CPU
 static bool g_StagingReady = false; // true when staging buffer has valid output to read
 static bool g_PerfTestMode = false; // skip GPU→CPU staging copies for perf testing
 static int  g_SubStepCount = 1;    // sub-steps batched into a single dispatch call
+static bool g_ThermalEnabled = true; // enable/disable per-frame temperature pass
 static bool g_MaskUpload = false;   // true when the user sets a continuous heat source
 static bool g_NeedsHeatSourceUpload = false;
 
@@ -2052,6 +2053,13 @@ extern "C" void UNITY_INTERFACE_EXPORT UNITY_INTERFACE_API
 SetSubStepCount(int count)
 {
     g_SubStepCount = (count < 1) ? 1 : count;
+}
+
+// Enable/disable the per-frame temperature compute pass
+extern "C" void UNITY_INTERFACE_EXPORT UNITY_INTERFACE_API
+SetThermalEnabled(bool enabled)
+{
+    g_ThermalEnabled = enabled;
 }
 
 // Provide a Unity ComputeBuffer/GraphicsBuffer native pointer (ComputeBuffer.GetNativeBufferPtr).
@@ -3089,18 +3097,10 @@ void VulkanComputePlugin::DispatchCompute()
 
         computeBarrier(VK_ACCESS_SHADER_WRITE_BIT, VK_ACCESS_SHADER_READ_BIT);
 
-        // -- Pass 5: Temperature ----------------------------------------
-        vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, m_TemperaturePipeline);
-        vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, m_TempPipelineLayout,          
-                                0, 1, &m_TempDescSets[densityOutput], 0, nullptr);
-        vkCmdPushConstants(cmd, m_TempPipelineLayout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(SimParams), &g_SimParams);
-        vkCmdDispatch(cmd, numGroups, 1, 1);
-        computeBarrier(VK_ACCESS_SHADER_WRITE_BIT, VK_ACCESS_SHADER_READ_BIT);
-
-        // ── Pass 6: Force + Integrate ───────────────────────────────────
+        // ── Pass 5: Force + Integrate ───────────────────────────────────
         vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, m_IntegratePipeline);
         vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, m_PipelineLayout,
-                                0, 1, &m_DescSets[m_CurrentInput], 0, nullptr);
+                                0, 1, &m_DescSets[densityOutput], 0, nullptr);
         vkCmdDispatch(cmd, numGroups, 1, 1);
 
         // Barrier: compute write → next sub-step or staging transfer
@@ -3119,6 +3119,33 @@ void VulkanComputePlugin::DispatchCompute()
     // 2 passes per sub-step: input → density → buffer[densityOutput] → integrate → buffer[m_CurrentInput]
     // Output ends up back in buffer[m_CurrentInput]
     int outputIdx = m_CurrentInput;
+
+    // ── Temperature pass — once per frame, AFTER substep loop ───────────
+    // Temperature diffusion is a slow physical process; per-substep resolution
+    // is unnecessary and was causing 50% more GPU dispatches (3 passes vs 2).
+    if (g_ThermalEnabled && m_TemperaturePipeline != VK_NULL_HANDLE)
+    {
+        vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, m_TemperaturePipeline);
+        vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, m_TempPipelineLayout,
+                                0, 1, &m_TempDescSets[m_CurrentInput], 0, nullptr);
+        vkCmdPushConstants(cmd, m_TempPipelineLayout, VK_SHADER_STAGE_COMPUTE_BIT,
+                           0, sizeof(SimParams), &g_SimParams);
+        vkCmdDispatch(cmd, numGroups, 1, 1);
+
+        // Temperature reads from buffer[m_CurrentInput], writes to buffer[1-m_CurrentInput]
+        outputIdx = 1 - m_CurrentInput;
+        // Flip so next frame's spatial hash reads the temperature-updated buffer
+        m_CurrentInput = outputIdx;
+
+        VkMemoryBarrier tempBar = {};
+        tempBar.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
+        tempBar.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
+        tempBar.dstAccessMask = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_TRANSFER_READ_BIT;
+        vkCmdPipelineBarrier(cmd,
+                             VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                             VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_TRANSFER_BIT,
+                             0, 1, &tempBar, 0, nullptr, 0, nullptr);
+    }
 
     // ── Copy output → staging for CPU readback next frame ───────────────
     if (!g_PerfTestMode)

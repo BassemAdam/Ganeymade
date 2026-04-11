@@ -206,6 +206,7 @@ MeshRenderer:
   m_SortingLayerID: 0
   m_SortingLayer: 0
   m_SortingOrder: 0
+  m_MaskInteraction: 0
   m_AdditionalVertexStreams: {fileID: 0}
 --- !u!33 &70139185
 MeshFilter:
@@ -317,6 +318,7 @@ MeshRenderer:
   m_SortingLayerID: 0
   m_SortingLayer: 0
   m_SortingOrder: 0
+  m_MaskInteraction: 0
   m_AdditionalVertexStreams: {fileID: 0}
 --- !u!33 &141577949
 MeshFilter:
@@ -396,14 +398,14 @@ Light:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 308150037}
   m_Enabled: 1
-  serializedVersion: 11
+  serializedVersion: 13
   m_Type: 2
   m_Color: {r: 1, g: 0, b: 0, a: 1}
   m_Intensity: 79.4
   m_Range: 18.71
   m_SpotAngle: 30
   m_InnerSpotAngle: 21.80208
-  m_CookieSize: 10
+  m_CookieSize2D: {x: 10, y: 10}
   m_Shadows:
     m_Type: 1
     m_Resolution: -1
@@ -448,7 +450,7 @@ Light:
   m_UseBoundingSphereOverride: 0
   m_UseViewFrustumForShadowCasterCull: 1
   m_ForceVisible: 0
-  m_ShadowRadius: 0
+  m_ShapeRadius: 0
   m_ShadowAngle: 0
   m_LightUnit: 1
   m_LuxAtDistance: 1
@@ -555,6 +557,7 @@ MeshRenderer:
   m_SortingLayerID: 0
   m_SortingLayer: 0
   m_SortingOrder: 0
+  m_MaskInteraction: 0
   m_AdditionalVertexStreams: {fileID: 0}
 --- !u!33 &396472128
 MeshFilter:
@@ -634,14 +637,14 @@ Light:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 447863748}
   m_Enabled: 1
-  serializedVersion: 11
+  serializedVersion: 13
   m_Type: 0
   m_Color: {r: 0, g: 1, b: 0.089374304, a: 1}
   m_Intensity: 442.7
   m_Range: 19.91
   m_SpotAngle: 26.490509
   m_InnerSpotAngle: 9.839347
-  m_CookieSize: 10
+  m_CookieSize2D: {x: 10, y: 10}
   m_Shadows:
     m_Type: 2
     m_Resolution: -1
@@ -686,7 +689,7 @@ Light:
   m_UseBoundingSphereOverride: 0
   m_UseViewFrustumForShadowCasterCull: 1
   m_ForceVisible: 0
-  m_ShadowRadius: 0
+  m_ShapeRadius: 0
   m_ShadowAngle: 0
   m_LightUnit: 1
   m_LuxAtDistance: 1
@@ -793,6 +796,7 @@ MeshRenderer:
   m_SortingLayerID: 0
   m_SortingLayer: 0
   m_SortingOrder: 0
+  m_MaskInteraction: 0
   m_AdditionalVertexStreams: {fileID: 0}
 --- !u!33 &477815924
 MeshFilter:
@@ -872,14 +876,14 @@ Light:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 573527632}
   m_Enabled: 1
-  serializedVersion: 11
+  serializedVersion: 13
   m_Type: 1
   m_Color: {r: 1, g: 1, b: 1, a: 1}
   m_Intensity: 1
   m_Range: 10
   m_SpotAngle: 30
   m_InnerSpotAngle: 21.80208
-  m_CookieSize: 10
+  m_CookieSize2D: {x: 10, y: 10}
   m_Shadows:
     m_Type: 2
     m_Resolution: -1
@@ -924,7 +928,7 @@ Light:
   m_UseBoundingSphereOverride: 0
   m_UseViewFrustumForShadowCasterCull: 1
   m_ForceVisible: 0
-  m_ShadowRadius: 0
+  m_ShapeRadius: 0
   m_ShadowAngle: 0
   m_LightUnit: 1
   m_LuxAtDistance: 1
@@ -1032,6 +1036,7 @@ MeshRenderer:
   m_SortingLayerID: 0
   m_SortingLayer: 0
   m_SortingOrder: 0
+  m_MaskInteraction: 0
   m_AdditionalVertexStreams: {fileID: 0}
 --- !u!33 &632912820
 MeshFilter:
@@ -1234,7 +1239,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 1
+  m_IsActive: 0
 --- !u!65 &934502000
 BoxCollider:
   m_ObjectHideFlags: 0
@@ -1303,6 +1308,7 @@ MeshRenderer:
   m_SortingLayerID: 0
   m_SortingLayer: 0
   m_SortingOrder: 0
+  m_MaskInteraction: 0
   m_AdditionalVertexStreams: {fileID: 0}
 --- !u!33 &934502002
 MeshFilter:
@@ -1414,6 +1420,7 @@ MeshRenderer:
   m_SortingLayerID: 0
   m_SortingLayer: 0
   m_SortingOrder: 0
+  m_MaskInteraction: 0
   m_AdditionalVertexStreams: {fileID: 0}
 --- !u!33 &1181358470
 MeshFilter:
@@ -1450,7 +1457,7 @@ MonoBehaviour:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 1188592644}
-  m_Enabled: 1
+  m_Enabled: 0
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: e9eb36d79300fe7428f1000517630b74, type: 3}
   m_Name: 
@@ -1463,8 +1470,8 @@ MonoBehaviour:
   maxParticlesPerVoxel: 12
   smoothingRadiusWS: -1
   kernelRadiusVoxels: 1
-  forcePerfTestMode: 1
-  disableParticleRenderer: 1
+  forcePerfTestMode: 0
+  disableParticleRenderer: 0
   autoFitWaterVolumeTransform: 1
   forcePhysicsBlend: 1
 --- !u!1 &1280677357
@@ -1537,14 +1544,14 @@ Light:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 1280677357}
   m_Enabled: 1
-  serializedVersion: 11
+  serializedVersion: 13
   m_Type: 0
   m_Color: {r: 1, g: 0, b: 0.91272163, a: 1}
   m_Intensity: 442.7
   m_Range: 19.91
   m_SpotAngle: 21.674412
   m_InnerSpotAngle: 16.651186
-  m_CookieSize: 10
+  m_CookieSize2D: {x: 10, y: 10}
   m_Shadows:
     m_Type: 2
     m_Resolution: -1
@@ -1589,7 +1596,7 @@ Light:
   m_UseBoundingSphereOverride: 0
   m_UseViewFrustumForShadowCasterCull: 1
   m_ForceVisible: 0
-  m_ShadowRadius: 0
+  m_ShapeRadius: 0
   m_ShadowAngle: 0
   m_LightUnit: 1
   m_LuxAtDistance: 1
@@ -1609,7 +1616,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 1
+  m_IsActive: 0
 --- !u!4 &1441158580
 Transform:
   m_ObjectHideFlags: 0
@@ -1721,6 +1728,7 @@ MeshRenderer:
   m_SortingLayerID: 0
   m_SortingLayer: 0
   m_SortingOrder: 0
+  m_MaskInteraction: 0
   m_AdditionalVertexStreams: {fileID: 0}
 --- !u!33 &1479892783
 MeshFilter:
@@ -1852,14 +1860,14 @@ Light:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 1960302374}
   m_Enabled: 1
-  serializedVersion: 11
+  serializedVersion: 13
   m_Type: 2
   m_Color: {r: 1, g: 0, b: 0, a: 1}
   m_Intensity: 88.9
   m_Range: 18.71
   m_SpotAngle: 30
   m_InnerSpotAngle: 21.80208
-  m_CookieSize: 10
+  m_CookieSize2D: {x: 10, y: 10}
   m_Shadows:
     m_Type: 1
     m_Resolution: -1
@@ -1904,7 +1912,7 @@ Light:
   m_UseBoundingSphereOverride: 0
   m_UseViewFrustumForShadowCasterCull: 1
   m_ForceVisible: 0
-  m_ShadowRadius: 0
+  m_ShapeRadius: 0
   m_ShadowAngle: 0
   m_LightUnit: 1
   m_LuxAtDistance: 1
@@ -1996,6 +2004,7 @@ MeshRenderer:
   m_SortingLayerID: 0
   m_SortingLayer: 0
   m_SortingOrder: 0
+  m_MaskInteraction: 0
   m_AdditionalVertexStreams: {fileID: 0}
 --- !u!33 &1986320480
 MeshFilter:
@@ -2075,14 +2084,14 @@ Light:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 2060394239}
   m_Enabled: 1
-  serializedVersion: 11
+  serializedVersion: 13
   m_Type: 0
   m_Color: {r: 1, g: 1, b: 1, a: 1}
   m_Intensity: 1
   m_Range: 13.95
   m_SpotAngle: 30
   m_InnerSpotAngle: 21.80208
-  m_CookieSize: 10
+  m_CookieSize2D: {x: 10, y: 10}
   m_Shadows:
     m_Type: 2
     m_Resolution: -1
@@ -2127,7 +2136,7 @@ Light:
   m_UseBoundingSphereOverride: 0
   m_UseViewFrustumForShadowCasterCull: 1
   m_ForceVisible: 0
-  m_ShadowRadius: 0
+  m_ShapeRadius: 0
   m_ShadowAngle: 0
   m_LightUnit: 1
   m_LuxAtDistance: 1
@@ -2248,6 +2257,7 @@ MeshRenderer:
   m_SortingLayerID: 0
   m_SortingLayer: 0
   m_SortingOrder: 0
+  m_MaskInteraction: 0
   m_AdditionalVertexStreams: {fileID: 0}
 --- !u!33 &2144885734
 MeshFilter:
@@ -2282,27 +2292,87 @@ PrefabInstance:
     m_Modifications:
     - target: {fileID: 920208063865847605, guid: 18cf1fa5220a198409fde72db8b3e2a5, type: 3}
       propertyPath: m_Enabled
-      value: 0
+      value: 1
       objectReference: {fileID: 0}
     - target: {fileID: 920208063865847605, guid: 18cf1fa5220a198409fde72db8b3e2a5, type: 3}
       propertyPath: particleMaterial
       value: 
       objectReference: {fileID: 2100000, guid: 6940acfd23abbfb419c637991f9d6755, type: 2}
+    - target: {fileID: 920208063865847605, guid: 18cf1fa5220a198409fde72db8b3e2a5, type: 3}
+      propertyPath: temperatureGradient.ctime1
+      value: 31033
+      objectReference: {fileID: 0}
+    - target: {fileID: 920208063865847605, guid: 18cf1fa5220a198409fde72db8b3e2a5, type: 3}
+      propertyPath: temperatureGradient.ctime2
+      value: 48573
+      objectReference: {fileID: 0}
+    - target: {fileID: 920208063865847605, guid: 18cf1fa5220a198409fde72db8b3e2a5, type: 3}
+      propertyPath: temperatureGradient.ctime3
+      value: 65535
+      objectReference: {fileID: 0}
+    - target: {fileID: 920208063865847605, guid: 18cf1fa5220a198409fde72db8b3e2a5, type: 3}
+      propertyPath: temperatureGradient.key0.g
+      value: 0.2
+      objectReference: {fileID: 0}
+    - target: {fileID: 920208063865847605, guid: 18cf1fa5220a198409fde72db8b3e2a5, type: 3}
+      propertyPath: temperatureGradient.key0.r
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 920208063865847605, guid: 18cf1fa5220a198409fde72db8b3e2a5, type: 3}
+      propertyPath: temperatureGradient.key1.b
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 920208063865847605, guid: 18cf1fa5220a198409fde72db8b3e2a5, type: 3}
+      propertyPath: temperatureGradient.key1.r
+      value: 0.35686275
+      objectReference: {fileID: 0}
+    - target: {fileID: 920208063865847605, guid: 18cf1fa5220a198409fde72db8b3e2a5, type: 3}
+      propertyPath: temperatureGradient.key2.g
+      value: 0.7607843
+      objectReference: {fileID: 0}
+    - target: {fileID: 920208063865847605, guid: 18cf1fa5220a198409fde72db8b3e2a5, type: 3}
+      propertyPath: temperatureGradient.key2.r
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 920208063865847605, guid: 18cf1fa5220a198409fde72db8b3e2a5, type: 3}
+      propertyPath: temperatureGradient.key3.b
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 920208063865847605, guid: 18cf1fa5220a198409fde72db8b3e2a5, type: 3}
+      propertyPath: temperatureGradient.key3.g
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 920208063865847605, guid: 18cf1fa5220a198409fde72db8b3e2a5, type: 3}
+      propertyPath: temperatureGradient.key3.r
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 920208063865847605, guid: 18cf1fa5220a198409fde72db8b3e2a5, type: 3}
+      propertyPath: temperatureGradient.m_NumColorKeys
+      value: 4
+      objectReference: {fileID: 0}
     - target: {fileID: 1340585115186609873, guid: 18cf1fa5220a198409fde72db8b3e2a5, type: 3}
       propertyPath: m_Name
       value: Physics
+      objectReference: {fileID: 0}
+    - target: {fileID: 4161998456328252244, guid: 18cf1fa5220a198409fde72db8b3e2a5, type: 3}
+      propertyPath: verbose
+      value: 0
       objectReference: {fileID: 0}
     - target: {fileID: 4161998456328252244, guid: 18cf1fa5220a198409fde72db8b3e2a5, type: 3}
       propertyPath: perfTestMode
       value: 0
       objectReference: {fileID: 0}
     - target: {fileID: 4161998456328252244, guid: 18cf1fa5220a198409fde72db8b3e2a5, type: 3}
-      propertyPath: boundsAreLocalToTransform
+      propertyPath: enableThermal
       value: 1
       objectReference: {fileID: 0}
     - target: {fileID: 4161998456328252244, guid: 18cf1fa5220a198409fde72db8b3e2a5, type: 3}
       propertyPath: particleCount
       value: 65536
+      objectReference: {fileID: 0}
+    - target: {fileID: 4161998456328252244, guid: 18cf1fa5220a198409fde72db8b3e2a5, type: 3}
+      propertyPath: boundsAreLocalToTransform
+      value: 1
       objectReference: {fileID: 0}
     - target: {fileID: 5891988049623486879, guid: 18cf1fa5220a198409fde72db8b3e2a5, type: 3}
       propertyPath: m_LocalPosition.x
