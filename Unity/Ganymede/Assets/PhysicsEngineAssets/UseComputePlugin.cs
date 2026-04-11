@@ -824,7 +824,6 @@ public class UseComputePlugin : MonoBehaviour
         if (verbose && sdfSource == SDFSource.Analytic)
             Debug.Log($"[UseComputePlugin] Analytic SDF uploaded: {_sdfDimX}x{_sdfDimY}x{_sdfDimZ} = {rawSdf.Length} voxels, voxelSize={_sdfCellSize}");
     }
-    }
 
     void UploadDrainZones()
     {
