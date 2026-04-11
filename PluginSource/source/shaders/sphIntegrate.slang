@@ -13,6 +13,64 @@ StructuredBuffer<uint> hashKeys;
 StructuredBuffer<uint> indices;
 [[vk::binding(4, 0)]]
 StructuredBuffer<uint> startIndices;
+[[vk::binding(5, 0)]]
+StructuredBuffer<float> sdfGrid;
+[[vk::binding(6, 0)]]
+StructuredBuffer<DrainZone> drains;
+
+// ── SDF sampling helpers ────────────────────────────────────────────────
+
+float sampleSDF(float3 worldPos)
+{
+    float3 local = (worldPos - params.gridOrigin) / params.sdfVoxelSize;
+    int3 dims = int3(params.sdfDims);
+
+    // Floor index and fractional part for trilinear interpolation
+    int3 i0 = int3(floor(local));
+    float3 f = local - float3(i0);
+
+    // Clamp to valid range
+    int3 i1 = i0 + int3(1, 1, 1);
+    i0 = clamp(i0, int3(0, 0, 0), dims - int3(1, 1, 1));
+    i1 = clamp(i1, int3(0, 0, 0), dims - int3(1, 1, 1));
+
+    int dX = 1;
+    int dY = dims.x;
+    int dZ = dims.x * dims.y;
+
+    // 8 corner samples
+    float c000 = sdfGrid[i0.z * dZ + i0.y * dY + i0.x * dX];
+    float c100 = sdfGrid[i0.z * dZ + i0.y * dY + i1.x * dX];
+    float c010 = sdfGrid[i0.z * dZ + i1.y * dY + i0.x * dX];
+    float c110 = sdfGrid[i0.z * dZ + i1.y * dY + i1.x * dX];
+    float c001 = sdfGrid[i1.z * dZ + i0.y * dY + i0.x * dX];
+    float c101 = sdfGrid[i1.z * dZ + i0.y * dY + i1.x * dX];
+    float c011 = sdfGrid[i1.z * dZ + i1.y * dY + i0.x * dX];
+    float c111 = sdfGrid[i1.z * dZ + i1.y * dY + i1.x * dX];
+
+    // Trilinear blend
+    float c00 = lerp(c000, c100, f.x);
+    float c10 = lerp(c010, c110, f.x);
+    float c01 = lerp(c001, c101, f.x);
+    float c11 = lerp(c011, c111, f.x);
+    float c0 = lerp(c00, c10, f.y);
+    float c1 = lerp(c01, c11, f.y);
+    return lerp(c0, c1, f.z);
+}
+
+float3 sdfGradient(float3 worldPos)
+{
+    float eps = params.sdfVoxelSize;
+    float3 grad = float3(
+        sampleSDF(worldPos + float3(eps, 0, 0)) - sampleSDF(worldPos - float3(eps, 0, 0)),
+        sampleSDF(worldPos + float3(0, eps, 0)) - sampleSDF(worldPos - float3(0, eps, 0)),
+        sampleSDF(worldPos + float3(0, 0, eps)) - sampleSDF(worldPos - float3(0, 0, eps))
+    );
+    float len = length(grad);
+    return len > 1e-8 ? grad / len : float3(0, 1, 0);
+}
+
+// ── Main compute kernel ─────────────────────────────────────────────────
 
 [shader("compute")]
 [numthreads(256, 1, 1)]
@@ -86,11 +144,39 @@ void computeMain(uint3 threadId: SV_DispatchThreadID)
    p.position += p.velocity * params.dt;
 
    // Velocity magnitude clamp — prevents explosions from density spikes
-   // (e.g., sudden boundary changes packing many particles into one spot)
    float maxVel = 30.0;
    float vel2 = dot(p.velocity, p.velocity);
    if (vel2 > maxVel * maxVel)
       p.velocity *= maxVel / sqrt(vel2);
+
+   // ── SDF collision: push out of solids along gradient normal ──────
+   if (params.sdfEnabled != 0 && params.sdfVoxelSize > 0.0)
+   {
+      float dist = sampleSDF(p.position);
+      if (dist < 0.0)
+      {
+         float3 normal = sdfGradient(p.position);
+         p.position -= normal * dist;  // push to surface
+         float vn = dot(p.velocity, normal);
+         if (vn < 0.0)
+            p.velocity -= (1.0 + 0.05) * vn * normal;  // reflect with slight damping
+      }
+   }
+
+   // ── Drain zones: deactivate particles inside any active drain ────
+   for (uint d = 0; d < 16; d++)
+   {
+      if (drains[d].active == 0) continue;
+      float3 drainPos = float3(drains[d].position[0], drains[d].position[1], drains[d].position[2]);
+      float drainDist = length(p.position - drainPos);
+      if (drainDist < drains[d].radius)
+      {
+         p.position = float3(1e10, 1e10, 1e10);
+         p.velocity = float3(0, 0, 0);
+         p.phase = -1;
+         break;
+      }
+   }
 
    // Boundary collision: clamp position and zero out velocity component.
    // Zero restitution is appropriate for fluid against walls — prevents
