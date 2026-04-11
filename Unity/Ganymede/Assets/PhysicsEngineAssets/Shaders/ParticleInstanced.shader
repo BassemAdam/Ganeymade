@@ -48,7 +48,10 @@ Shader "Custom/ParticleInstanced"
             v2f vert(appdata_base v, uint instanceID : SV_InstanceID)
             {
                 Particle p = _ParticleBuffer[instanceID];
-                float3 worldPos = p.position + v.vertex.xyz * _Size;
+
+                // Dormant particles (phase < 0) get zero size so they're invisible
+                float scale = (p.phase >= 0) ? _Size : 0.0;
+                float3 worldPos = p.position + v.vertex.xyz * scale;
 
                 v2f o;
                 o.pos = mul(UNITY_MATRIX_VP, float4(worldPos, 1.0));
