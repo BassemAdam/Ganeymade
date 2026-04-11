@@ -1,7 +1,6 @@
 using System;
 using System.Runtime.InteropServices;
 using UnityEngine;
-using UnityEngine.Rendering;
 
 /// <summary>
 /// Minimal C# wrapper for the native Vulkan compute plugin (RenderingPlugin.dll).
@@ -194,7 +193,6 @@ public class UseComputePlugin : MonoBehaviour
     private float _sdfCellSize; // actual cell size in use (may come from VoxelTracer)
     private int _sdfDynamicFrameCounter;
     private bool _sdfUploaded;
-    private bool _voxelTracerReadbackPending;
 
 
     // --------------------------------------------------------------------
@@ -338,7 +336,7 @@ public class UseComputePlugin : MonoBehaviour
         if (enableSDF && sdfDynamicUpdateInterval > 0)
         {
             _sdfDynamicFrameCounter++;
-            if (_sdfDynamicFrameCounter >= sdfDynamicUpdateInterval && !_voxelTracerReadbackPending)
+            if (_sdfDynamicFrameCounter >= sdfDynamicUpdateInterval)
             {
                 _sdfDynamicFrameCounter = 0;
 
@@ -785,26 +783,38 @@ public class UseComputePlugin : MonoBehaviour
         _sdfOrigin = voxelTracerRef.ActiveGridMin;
         _sdfCellSize = voxelTracerRef.ActiveVoxelSize;
 
-        // Async GPU readback of the 3D SDF texture
-        _voxelTracerReadbackPending = true;
-        AsyncGPUReadback.Request(sdfTex, 0, TextureFormat.RFloat, (AsyncGPUReadbackRequest req) =>
+        // Synchronous slice-by-slice readback of the 3D SDF texture
+        float[] rawSdf = ReadBack3DTexture(sdfTex, nx, ny, nz);
+        UploadSDFWithHeader(rawSdf);
+
+        if (verbose)
+            Debug.Log($"[UseComputePlugin] VoxelTracer SDF uploaded: {_sdfDimX}x{_sdfDimY}x{_sdfDimZ}, " +
+                      $"origin={_sdfOrigin}, voxelSize={_sdfCellSize:F3}");
+    }
+
+    static float[] ReadBack3DTexture(RenderTexture rt, int nx, int ny, int nz)
+    {
+        float[] data = new float[nx * ny * nz];
+        var tempRT = RenderTexture.GetTemporary(nx, ny, 0, RenderTextureFormat.RFloat);
+        var tempTex = new Texture2D(nx, ny, TextureFormat.RFloat, false);
+
+        for (int z = 0; z < nz; z++)
         {
-            _voxelTracerReadbackPending = false;
-            if (req.hasError)
-            {
-                Debug.LogError("[UseComputePlugin] VoxelTracer SDF readback failed.");
-                return;
-            }
+            Graphics.CopyTexture(rt, z, 0, tempRT, 0, 0);
+            var prev = RenderTexture.active;
+            RenderTexture.active = tempRT;
+            tempTex.ReadPixels(new Rect(0, 0, nx, ny), 0, 0, false);
+            tempTex.Apply(false);
+            RenderTexture.active = prev;
 
-            var raw = req.GetData<float>();
-            float[] rawSdf = new float[raw.Length];
-            raw.CopyTo(rawSdf);
-            UploadSDFWithHeader(rawSdf);
+            var raw = tempTex.GetRawTextureData<float>();
+            for (int i = 0; i < nx * ny; i++)
+                data[z * (nx * ny) + i] = raw[i];
+        }
 
-            if (verbose)
-                Debug.Log($"[UseComputePlugin] VoxelTracer SDF uploaded: {_sdfDimX}x{_sdfDimY}x{_sdfDimZ}, " +
-                          $"origin={_sdfOrigin}, voxelSize={_sdfCellSize:F3}");
-        });
+        RenderTexture.ReleaseTemporary(tempRT);
+        Destroy(tempTex);
+        return data;
     }
 
     void UploadSDFWithHeader(float[] rawSdf)

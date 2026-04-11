@@ -2498,6 +2498,10 @@ PrefabInstance:
       value: 65536
       objectReference: {fileID: 0}
     - target: {fileID: 4161998456328252244, guid: 18cf1fa5220a198409fde72db8b3e2a5, type: 3}
+      propertyPath: voxelTracerRef
+      value: 
+      objectReference: {fileID: 1137525689}
+    - target: {fileID: 4161998456328252244, guid: 18cf1fa5220a198409fde72db8b3e2a5, type: 3}
       propertyPath: smoothingRadius
       value: 0.2
       objectReference: {fileID: 0}
