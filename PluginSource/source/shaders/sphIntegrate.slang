@@ -19,10 +19,14 @@ StructuredBuffer<float> sdfGrid;
 StructuredBuffer<DrainZone> drains;
 
 // ── SDF sampling helpers ────────────────────────────────────────────────
+// Buffer layout: [0]=originX [1]=originY [2]=originZ [3]=pad, then SDF data at index 4+
+
+static const int SDF_HEADER = 4; // floats before actual SDF data
 
 float sampleSDF(float3 worldPos)
 {
-    float3 local = (worldPos - params.gridOrigin) / params.sdfVoxelSize;
+    float3 origin = float3(sdfGrid[0], sdfGrid[1], sdfGrid[2]);
+    float3 local = (worldPos - origin) / params.sdfVoxelSize;
     int3 dims = int3(params.sdfDims);
 
     // Floor index and fractional part for trilinear interpolation
@@ -38,15 +42,15 @@ float sampleSDF(float3 worldPos)
     int dY = dims.x;
     int dZ = dims.x * dims.y;
 
-    // 8 corner samples
-    float c000 = sdfGrid[i0.z * dZ + i0.y * dY + i0.x * dX];
-    float c100 = sdfGrid[i0.z * dZ + i0.y * dY + i1.x * dX];
-    float c010 = sdfGrid[i0.z * dZ + i1.y * dY + i0.x * dX];
-    float c110 = sdfGrid[i0.z * dZ + i1.y * dY + i1.x * dX];
-    float c001 = sdfGrid[i1.z * dZ + i0.y * dY + i0.x * dX];
-    float c101 = sdfGrid[i1.z * dZ + i0.y * dY + i1.x * dX];
-    float c011 = sdfGrid[i1.z * dZ + i1.y * dY + i0.x * dX];
-    float c111 = sdfGrid[i1.z * dZ + i1.y * dY + i1.x * dX];
+    // 8 corner samples (offset by SDF_HEADER)
+    float c000 = sdfGrid[SDF_HEADER + i0.z * dZ + i0.y * dY + i0.x * dX];
+    float c100 = sdfGrid[SDF_HEADER + i0.z * dZ + i0.y * dY + i1.x * dX];
+    float c010 = sdfGrid[SDF_HEADER + i0.z * dZ + i1.y * dY + i0.x * dX];
+    float c110 = sdfGrid[SDF_HEADER + i0.z * dZ + i1.y * dY + i1.x * dX];
+    float c001 = sdfGrid[SDF_HEADER + i1.z * dZ + i0.y * dY + i0.x * dX];
+    float c101 = sdfGrid[SDF_HEADER + i1.z * dZ + i0.y * dY + i1.x * dX];
+    float c011 = sdfGrid[SDF_HEADER + i1.z * dZ + i1.y * dY + i0.x * dX];
+    float c111 = sdfGrid[SDF_HEADER + i1.z * dZ + i1.y * dY + i1.x * dX];
 
     // Trilinear blend
     float c00 = lerp(c000, c100, f.x);

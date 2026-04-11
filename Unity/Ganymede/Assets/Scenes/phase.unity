@@ -1074,6 +1074,9 @@ GameObject:
   - component: {fileID: 781581038}
   - component: {fileID: 781581041}
   - component: {fileID: 781581042}
+  - component: {fileID: 781581044}
+  - component: {fileID: 781581043}
+  - component: {fileID: 781581045}
   m_Layer: 0
   m_Name: Main Camera
   m_TagString: MainCamera
@@ -1221,6 +1224,68 @@ MonoBehaviour:
   attractStrength: 900
   repulseStrength: 900
   snapInteractionToSimBounds: 1
+--- !u!114 &781581043
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 781581037}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 4ca2acbb03c1a08439fd35842cc07253, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::VoxelNormalGizmos
+  voxelSystem: {fileID: 0}
+  normalLength: 0.5
+  normalColor: {r: 0, g: 1, b: 0, a: 1}
+  surfaceOnly: 1
+  maxLines: 10000
+  refreshInterval: 0.2
+--- !u!114 &781581044
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 781581037}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 1535b2b2a32c1f449ab8d68f071124f2, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::VoxelTracerCamera
+  voxelSystem: {fileID: 0}
+  rayMarchCS: {fileID: 0}
+  visMode: 0
+  surfaceColor: {r: 0.85, g: 0.85, b: 0.85, a: 1}
+  lightDirection: {x: 0.5, y: 1, z: 0.3}
+  lightColor: {r: 1, g: 1, b: 1, a: 1}
+  ambientColor: {r: 0.12, g: 0.12, b: 0.18, a: 1}
+  maxSteps: 1024
+--- !u!114 &781581045
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 781581037}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: eaa5497c8fbb6464481d9f729ab13601, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::VoxelSliceViewer
+  voxelSystem: {fileID: 0}
+  axis: 1
+  slicePosition: 0.5
+  filledColor: {r: 1, g: 1, b: 1, a: 1}
+  emptyColor: {r: 0, g: 0, b: 0, a: 0.85}
+  surfaceColor: {r: 0.2, g: 0.8, b: 0.2, a: 1}
+  highlightSurface: 1
+  sdfDisplayRange: 5
+  heatMapMin: 0
+  heatMapMax: 100
+  diffusivityMax: 1
+  toggleKey: 283
 --- !u!1 &934501999
 GameObject:
   m_ObjectHideFlags: 0
@@ -1329,6 +1394,68 @@ Transform:
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
   m_LocalPosition: {x: -0.4, y: -71.45, z: -30.16}
   m_LocalScale: {x: 37.797157, y: 16.669672, z: 32.810886}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!1 &1137525688
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 1137525690}
+  - component: {fileID: 1137525689}
+  m_Layer: 0
+  m_Name: VoxelSystem
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!114 &1137525689
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1137525688}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 2060e5e20b7459a4b8e922b67bfc1d81, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  coreCS: {fileID: 7200000, guid: 111909096b133de4c8f344603decff44, type: 3}
+  boundsMode: 1
+  gridMin: {x: -10, y: -10, z: -10}
+  gridMax: {x: 10, y: 10, z: 10}
+  voxelSize: 0.12
+  autoFitPadding: 1
+  fillVolume: 1
+  fillSweepRounds: 2
+  computeNormals: 1
+  computeSDF: 1
+  includeMeshRenderers: 1
+  includeSkinnedMeshRenderers: 1
+  includeTerrains: 1
+  terrainSampleStep: 1
+  defaultSolidTemperature: 25
+  defaultSolidDiffusivity: 0.1
+  maxVoxelsPerAxis: 512
+  maxVoxelCountMillions: 32
+--- !u!4 &1137525690
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1137525688}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
   m_Father: {fileID: 0}
@@ -2371,6 +2498,10 @@ PrefabInstance:
       value: 65536
       objectReference: {fileID: 0}
     - target: {fileID: 4161998456328252244, guid: 18cf1fa5220a198409fde72db8b3e2a5, type: 3}
+      propertyPath: voxelTracerRef
+      value: 
+      objectReference: {fileID: 1137525689}
+    - target: {fileID: 4161998456328252244, guid: 18cf1fa5220a198409fde72db8b3e2a5, type: 3}
       propertyPath: smoothingRadius
       value: 0.2
       objectReference: {fileID: 0}
@@ -2435,3 +2566,4 @@ SceneRoots:
   - {fileID: 934502003}
   - {fileID: 1441158580}
   - {fileID: 2144885735}
+  - {fileID: 1137525690}
