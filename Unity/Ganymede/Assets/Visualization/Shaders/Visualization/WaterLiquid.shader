@@ -53,7 +53,7 @@ Shader "Custom/WaterLiquid"
             #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Lighting.hlsl"          
             #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/DeclareOpaqueTexture.hlsl" // gives us SampleSceneColor(screenUV)
             #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/DeclareDepthTexture.hlsl"
-            #include "Assets/Art/Shaders/Includes/WaterHelpers.hlsl"
+            #include "Assets/Visualization/Shaders/Includes/WaterHelpers.hlsl"
             
              // STRUCTS
             struct MeshInput
