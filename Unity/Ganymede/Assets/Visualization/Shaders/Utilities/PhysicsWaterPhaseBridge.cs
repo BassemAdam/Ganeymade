@@ -90,6 +90,12 @@ public class PhysicsWaterPhaseBridge : MonoBehaviour
     // Per-renderer binding
     private MaterialPropertyBlock mpb;
 
+    // Cached stride (Marshal.SizeOf is relatively expensive; also helps avoid per-frame reflection)
+    private int _particleStride;
+
+    // Init guard (Start might not have executed yet if the component is enabled mid-frame)
+    private bool _kernelsInitialized;
+
     // Cached IDs
     private static readonly int ID_PhysicsDensityGrid = Shader.PropertyToID("_PhysicsDensityGrid");
     private static readonly int ID_PhysicsBoundsMinWS = Shader.PropertyToID("_PhysicsBoundsMinWS");
@@ -112,6 +118,7 @@ public class PhysicsWaterPhaseBridge : MonoBehaviour
         computePlugin = GetComponent<UseComputePlugin>();
         waterRenderer = GetComponent<Renderer>();
         mpb = new MaterialPropertyBlock();
+        _particleStride = Marshal.SizeOf<Particle>();
 
         if (disableParticleRenderer)
         {
@@ -129,35 +136,67 @@ public class PhysicsWaterPhaseBridge : MonoBehaviour
         }
     }
 
+    private void OnEnable()
+    {
+        // Non-serialized fields (like MaterialPropertyBlock) can be null in some Editor/play-mode
+        // configurations or after enable/disable cycles. Make sure we're safe before LateUpdate.
+        if (mpb == null)
+            mpb = new MaterialPropertyBlock();
+        if (_particleStride <= 0)
+            _particleStride = Marshal.SizeOf<Particle>();
+    }
+
     private void Start()
     {
-        if (particlesToDensityCompute == null)
+        if (!TryInitializeKernelsAndMaterials())
         {
-            Debug.LogError("[PhysicsWaterPhaseBridge] Missing particlesToDensityCompute reference.");
             enabled = false;
             return;
         }
-
-        if (rayMarchingMaterial == null || marchingCubesMaterial == null)
-        {
-            Debug.LogError("[PhysicsWaterPhaseBridge] Please assign both Ray Marching and Marching Cubes materials in the Inspector.");
-            enabled = false;
-            return;
-        }
-
-        kClear = particlesToDensityCompute.FindKernel("ClearGrid");
-        kSplat = particlesToDensityCompute.FindKernel("SplatParticles");
-
-        _lastUseMarchingCubes = useMarchingCubes;
-        UpdateMaterial();
 
         EnsureBuffers();
         RegisterOutputBufferWithPlugin();
     }
 
+    private bool TryInitializeKernelsAndMaterials()
+    {
+        if (particlesToDensityCompute == null)
+        {
+            Debug.LogError("[PhysicsWaterPhaseBridge] Missing particlesToDensityCompute reference.");
+            return false;
+        }
+
+        if (rayMarchingMaterial == null || marchingCubesMaterial == null)
+        {
+            Debug.LogError("[PhysicsWaterPhaseBridge] Please assign both Ray Marching and Marching Cubes materials in the Inspector.");
+            return false;
+        }
+
+        if (!_kernelsInitialized)
+        {
+            kClear = particlesToDensityCompute.FindKernel("ClearGrid");
+            kSplat = particlesToDensityCompute.FindKernel("SplatParticles");
+            _kernelsInitialized = true;
+        }
+
+        _lastUseMarchingCubes = useMarchingCubes;
+        UpdateMaterial();
+        return true;
+    }
+
     private void UpdateMaterial()
     {
-        waterRenderer.sharedMaterial = useMarchingCubes ? marchingCubesMaterial : rayMarchingMaterial;
+        if (waterRenderer == null)
+            waterRenderer = GetComponent<Renderer>();
+        if (waterRenderer == null)
+            return;
+
+        // Important: replace the whole material array, not just element 0.
+        // Otherwise a leftover second material can keep rendering and trigger missing-buffer warnings.
+        waterRenderer.sharedMaterials = new Material[]
+        {
+            useMarchingCubes ? marchingCubesMaterial : rayMarchingMaterial
+        };
         
         // Enable the physics density grid shader variant on this renderer only.
         var instancedMat = waterRenderer.material;
@@ -174,7 +213,7 @@ public class PhysicsWaterPhaseBridge : MonoBehaviour
 
         int gridCount = volumeDims.x * volumeDims.y * volumeDims.z;
 
-        int particleStride = Marshal.SizeOf<Particle>();
+        int particleStride = _particleStride > 0 ? _particleStride : Marshal.SizeOf<Particle>();
 
         if (particleOutputBuffer == null || particleOutputBuffer.count != particleCount || particleOutputBuffer.stride != particleStride)
         {
@@ -196,7 +235,9 @@ public class PhysicsWaterPhaseBridge : MonoBehaviour
         particlesToDensityCompute.SetBuffer(kSplat, "_ParticleBuffer", particleOutputBuffer);
 
         // If we recreated the particle output buffer at runtime, re-register with the native plugin.
-        if (SystemInfo.graphicsDeviceType == UnityEngine.Rendering.GraphicsDeviceType.Vulkan && particleOutputBuffer != null)
+        if (SystemInfo.graphicsDeviceType == UnityEngine.Rendering.GraphicsDeviceType.Vulkan &&
+            particleOutputBuffer != null &&
+            registeredParticleOutputNativePtr == IntPtr.Zero)
         {
             IntPtr nativePtr = particleOutputBuffer.GetNativeBufferPtr();
             if (nativePtr != IntPtr.Zero && nativePtr != registeredParticleOutputNativePtr)
@@ -225,7 +266,24 @@ public class PhysicsWaterPhaseBridge : MonoBehaviour
 
     private void LateUpdate()
     {
-        if (computePlugin == null || !isActiveAndEnabled)
+        if (!isActiveAndEnabled)
+            return;
+
+        // Unity lifecycle safety: these are non-serialized and can become null in some editor/play-mode setups.
+        if (computePlugin == null)
+            computePlugin = GetComponent<UseComputePlugin>();
+        if (waterRenderer == null)
+            waterRenderer = GetComponent<Renderer>();
+        if (mpb == null)
+            mpb = new MaterialPropertyBlock();
+        if (!_kernelsInitialized)
+        {
+            // If Start hasn't executed yet (e.g., enabled mid-frame), make sure kernels/material are ready.
+            if (!TryInitializeKernelsAndMaterials())
+                return;
+        }
+
+        if (computePlugin == null || particlesToDensityCompute == null || waterRenderer == null)
             return;
 
         if (forcePerfTestMode)
