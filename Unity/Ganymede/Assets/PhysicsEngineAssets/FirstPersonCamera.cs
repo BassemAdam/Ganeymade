@@ -68,8 +68,7 @@ public class FirstPersonCamera : MonoBehaviour
 
         if (computePlugin == null)
             Debug.LogError("[FirstPersonCamera] No UseComputePlugin found in scene!");
-        else
-            Debug.Log("[FirstPersonCamera] Linked to UseComputePlugin");
+
 
         Cursor.lockState = CursorLockMode.Locked;
         Cursor.visible = false;

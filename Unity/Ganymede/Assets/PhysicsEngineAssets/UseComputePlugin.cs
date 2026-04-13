@@ -217,16 +217,19 @@ public class UseComputePlugin : MonoBehaviour
         {
             requestedCount = 1;
             if (verbose)
-                Debug.LogWarning("[UseComputePlugin] particleCount must be >= 1. Auto-adjusted to 1.");
+                // Debug.LogWarning("[UseComputePlugin] particleCount must be >= 1. Auto-adjusted to 1.");
+                ;
         }
         particleCount = requestedCount;
 
         int particleStride = Marshal.SizeOf<Particle>();
         int simParamsStride = Marshal.SizeOf<SimParams>();
         if (particleStride != 64)
-            Debug.LogError($"[UseComputePlugin] Particle stride mismatch. Expected 64, got {particleStride}. Check struct layout.");
+            // Debug.LogError($"[UseComputePlugin] Particle stride mismatch. Expected 64, got {particleStride}. Check struct layout.");
+            ;
         if (simParamsStride != 156)
-            Debug.LogError($"[UseComputePlugin] SimParams stride mismatch. Expected 156, got {simParamsStride}. Check struct layout.");
+            // Debug.LogError($"[UseComputePlugin] SimParams stride mismatch. Expected 156, got {simParamsStride}. Check struct layout.");
+            ;
 
         // Cache function pointer once
         renderEventFunc = GetRenderEventFunc();
@@ -240,6 +243,7 @@ public class UseComputePlugin : MonoBehaviour
 
         // TEMP DEBUG
         GetBoundsWS(out Vector3 dbgMin, out Vector3 dbgMax);
+        /*
         Debug.Log($"[DEBUG Init] transform.position={transform.position}, boundsMin={boundsMin}, boundsMax={boundsMax}");
         Debug.Log($"[DEBUG Init] GetBoundsWS → min={dbgMin}, max={dbgMax}");
         Debug.Log($"[DEBUG Init] First 4 particles: " +
@@ -247,6 +251,7 @@ public class UseComputePlugin : MonoBehaviour
             $"p[1]={particles[1].position} " +
             $"p[2]={particles[2].position} " +
             $"p[3]={particles[3].position}");
+        */
 
         // Configure plugin
         SetPerfTestMode(perfTestMode);
@@ -273,15 +278,15 @@ public class UseComputePlugin : MonoBehaviour
 
         if (verbose)
         {
-            Debug.Log($"[UseComputePlugin] Initialized. count={particleCount}, ParticleStride={particleStride} bytes, renderEventFunc=0x{renderEventFunc.ToInt64():X}");
+            // Debug.Log($"[UseComputePlugin] Initialized. count={particleCount}, ParticleStride={particleStride} bytes, renderEventFunc=0x{renderEventFunc.ToInt64():X}");
         }
 
         // Helpful hint: this plugin only runs when Unity is using Vulkan.
         // (On other graphics APIs it will early-out and appear frozen.)
         if (verbose && SystemInfo.graphicsDeviceType != UnityEngine.Rendering.GraphicsDeviceType.Vulkan)
         {
-            Debug.LogWarning("[UseComputePlugin] Graphics API is not Vulkan. The native compute dispatch will no-op. " +
-                             "Enable Vulkan in Project Settings > Player > Other Settings > Graphics APIs.");
+            // Debug.LogWarning("[UseComputePlugin] Graphics API is not Vulkan. The native compute dispatch will no-op. " +
+            //                 "Enable Vulkan in Project Settings > Player > Other Settings > Graphics APIs.");
         }
     }
     //
@@ -376,7 +381,7 @@ public class UseComputePlugin : MonoBehaviour
         {
 #if UNITY_EDITOR
             GetComputeResult(readbackData, particleCount);
-            Debug.Log($"[ComputePlugin] Frame {frameCount} GPU state: {FormatParticles(readbackData, 4)}");
+            // Debug.Log($"[ComputePlugin] Frame {frameCount} GPU state: {FormatParticles(readbackData, 4)}");
 
             // Use cached heat sources instead of FindObjectsByType
             if (_cachedSources != null && _cachedSources.Length > 0 && _cachedSources[0] != null)
@@ -402,15 +407,17 @@ public class UseComputePlugin : MonoBehaviour
                     }
                 }
                 avgTemp /= particleCount;
+                /*
                 Debug.Log($"[Frame {frameCount}] " +
                         $"Particles near source: {nearCount} | " +
                         $"Max temp near source: {maxTemp:F1}° | " +
                         $"Global avg temp: {avgTemp:F2}° | " +
                         $"Hot particles (>{ambientTemperature+1f:F0}°): {hotCount}");
+                */
             }
             else
             {
-                Debug.Log($"[Frame {frameCount}] GPU state: {FormatParticles(readbackData, 4)}");
+                // Debug.Log($"[Frame {frameCount}] GPU state: {FormatParticles(readbackData, 4)}");
             }
 #endif
         }
@@ -529,7 +536,7 @@ public class UseComputePlugin : MonoBehaviour
 
         if (verbose)
         {
-            Debug.Log($"[UseComputePlugin] Initial particle grid: {nx} x {ny} x {nz} (= {nx * ny * nz}), spacing=({spacing.x:F4}, {spacing.y:F4}, {spacing.z:F4})");
+            // Debug.Log($"[UseComputePlugin] Initial particle grid: {nx} x {ny} x {nz} (= {nx * ny * nz}), spacing=({spacing.x:F4}, {spacing.y:F4}, {spacing.z:F4})");
         }
 
         return particles;
@@ -694,7 +701,8 @@ public class UseComputePlugin : MonoBehaviour
         _sdfUploaded = false;
 
         if (verbose && _cachedBoundaries.Length > 0)
-            Debug.Log($"[UseComputePlugin] Found {_cachedBoundaries.Length} FluidBoundary objects, {_cachedDrains.Length} WaterDrain objects.");
+            // Debug.Log($"[UseComputePlugin] Found {_cachedBoundaries.Length} FluidBoundary objects, {_cachedDrains.Length} WaterDrain objects.");
+            ;
     }
 
     void GenerateAndUploadSDF()
@@ -725,7 +733,8 @@ public class UseComputePlugin : MonoBehaviour
         if (totalVoxels <= 0 || totalVoxels > 4 * 1024 * 1024)
         {
             if (verbose)
-                Debug.LogWarning($"[UseComputePlugin] SDF grid too large or invalid: {_sdfDimX}x{_sdfDimY}x{_sdfDimZ} = {totalVoxels} voxels. Skipping.");
+                // Debug.LogWarning($"[UseComputePlugin] SDF grid too large or invalid: {_sdfDimX}x{_sdfDimY}x{_sdfDimZ} = {totalVoxels} voxels. Skipping.");
+                ;
             _sdfDimX = _sdfDimY = _sdfDimZ = 0;
             return;
         }
@@ -742,7 +751,8 @@ public class UseComputePlugin : MonoBehaviour
         if (voxelTracerRef == null || !voxelTracerRef.IsReady)
         {
             if (verbose)
-                Debug.LogWarning("[UseComputePlugin] VoxelTracerSystem not ready or not assigned. SDF disabled.");
+                // Debug.LogWarning("[UseComputePlugin] VoxelTracerSystem not ready or not assigned. SDF disabled.");
+                ;
             _sdfDimX = _sdfDimY = _sdfDimZ = 0;
             return;
         }
@@ -750,7 +760,8 @@ public class UseComputePlugin : MonoBehaviour
         if (!voxelTracerRef.computeSDF)
         {
             if (verbose)
-                Debug.LogWarning("[UseComputePlugin] VoxelTracerSystem.computeSDF is OFF. Enable it to generate SDF.");
+                // Debug.LogWarning("[UseComputePlugin] VoxelTracerSystem.computeSDF is OFF. Enable it to generate SDF.");
+                ;
             _sdfDimX = _sdfDimY = _sdfDimZ = 0;
             return;
         }
@@ -759,7 +770,8 @@ public class UseComputePlugin : MonoBehaviour
         if (sdfTex == null)
         {
             if (verbose)
-                Debug.LogWarning("[UseComputePlugin] VoxelTracerSystem SDFTexture is null.");
+                // Debug.LogWarning("[UseComputePlugin] VoxelTracerSystem SDFTexture is null.");
+                ;
             _sdfDimX = _sdfDimY = _sdfDimZ = 0;
             return;
         }
@@ -772,7 +784,8 @@ public class UseComputePlugin : MonoBehaviour
         if (totalVoxels <= 0 || totalVoxels > 4 * 1024 * 1024)
         {
             if (verbose)
-                Debug.LogWarning($"[UseComputePlugin] VoxelTracer SDF grid too large: {nx}x{ny}x{nz} = {totalVoxels}. Skipping.");
+                // Debug.LogWarning($"[UseComputePlugin] VoxelTracer SDF grid too large: {nx}x{ny}x{nz} = {totalVoxels}. Skipping.");
+                ;
             _sdfDimX = _sdfDimY = _sdfDimZ = 0;
             return;
         }
@@ -788,8 +801,10 @@ public class UseComputePlugin : MonoBehaviour
         UploadSDFWithHeader(rawSdf);
 
         if (verbose)
-            Debug.Log($"[UseComputePlugin] VoxelTracer SDF uploaded: {_sdfDimX}x{_sdfDimY}x{_sdfDimZ}, " +
-                      $"origin={_sdfOrigin}, voxelSize={_sdfCellSize:F3}");
+        {
+            // Debug.Log($"[UseComputePlugin] VoxelTracer SDF uploaded: {_sdfDimX}x{_sdfDimY}x{_sdfDimZ}, " +
+            //           $"origin={_sdfOrigin}, voxelSize={_sdfCellSize:F3}");
+        }
     }
 
     static float[] ReadBack3DTexture(RenderTexture rt, int nx, int ny, int nz)
@@ -832,7 +847,8 @@ public class UseComputePlugin : MonoBehaviour
         _sdfUploaded = true;
 
         if (verbose && sdfSource == SDFSource.Analytic)
-            Debug.Log($"[UseComputePlugin] Analytic SDF uploaded: {_sdfDimX}x{_sdfDimY}x{_sdfDimZ} = {rawSdf.Length} voxels, voxelSize={_sdfCellSize}");
+            // Debug.Log($"[UseComputePlugin] Analytic SDF uploaded: {_sdfDimX}x{_sdfDimY}x{_sdfDimZ} = {rawSdf.Length} voxels, voxelSize={_sdfCellSize}");
+            ;
     }
 
     void UploadDrainZones()
