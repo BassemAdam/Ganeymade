@@ -62,8 +62,17 @@ public class PhysicsWaterPhaseBridge : MonoBehaviour
     [Tooltip("If enabled, automatically disables ParticleRenderer on the same GameObject")]
     public bool disableParticleRenderer = true;
 
-    [Tooltip("If enabled, overrides WaterPhase _PhysicsBlend to 1 (fully physics-driven density)")]
-    public bool forcePhysicsBlend = true;
+    [Header("Materials")]
+    [Tooltip("Material used for Ray Marching")]
+    public Material rayMarchingMaterial;
+    
+    [Tooltip("Material used for Marching Cubes")]
+    public Material marchingCubesMaterial;
+
+    [Tooltip("If enabled, uses the Marching Cubes material. Otherwise uses the Ray Marching material.")]
+    public bool useMarchingCubes = false;
+
+    private bool _lastUseMarchingCubes;
 
     private UseComputePlugin computePlugin;
     private Renderer waterRenderer;
@@ -86,7 +95,6 @@ public class PhysicsWaterPhaseBridge : MonoBehaviour
     private static readonly int ID_PhysicsBoundsMinWS = Shader.PropertyToID("_PhysicsBoundsMinWS");
     private static readonly int ID_PhysicsBoundsMaxWS = Shader.PropertyToID("_PhysicsBoundsMaxWS");
     private static readonly int ID_PhysicsVolumeDims = Shader.PropertyToID("_PhysicsVolumeDims");
-    private static readonly int ID_PhysicsBlend = Shader.PropertyToID("_PhysicsBlend");
 
     private const string KW_PhysicsDensityGrid = "_PHYSICS_DENSITY_GRID";
 
@@ -130,9 +138,9 @@ public class PhysicsWaterPhaseBridge : MonoBehaviour
             return;
         }
 
-        if (waterRenderer.sharedMaterial == null)
+        if (rayMarchingMaterial == null || marchingCubesMaterial == null)
         {
-            Debug.LogError("[PhysicsWaterPhaseBridge] Missing material on the MeshRenderer. Please assign the WaterPhase material manually in the Inspector.");
+            Debug.LogError("[PhysicsWaterPhaseBridge] Please assign both Ray Marching and Marching Cubes materials in the Inspector.");
             enabled = false;
             return;
         }
@@ -140,13 +148,20 @@ public class PhysicsWaterPhaseBridge : MonoBehaviour
         kClear = particlesToDensityCompute.FindKernel("ClearGrid");
         kSplat = particlesToDensityCompute.FindKernel("SplatParticles");
 
-        // Enable the physics density grid shader variant on this renderer only.
-        // Using Renderer.material intentionally instantiates a per-renderer material.
-        var instancedMat = waterRenderer.material;
-        instancedMat.EnableKeyword(KW_PhysicsDensityGrid);
+        _lastUseMarchingCubes = useMarchingCubes;
+        UpdateMaterial();
 
         EnsureBuffers();
         RegisterOutputBufferWithPlugin();
+    }
+
+    private void UpdateMaterial()
+    {
+        waterRenderer.sharedMaterial = useMarchingCubes ? marchingCubesMaterial : rayMarchingMaterial;
+        
+        // Enable the physics density grid shader variant on this renderer only.
+        var instancedMat = waterRenderer.material;
+        instancedMat.EnableKeyword(KW_PhysicsDensityGrid);
     }
 
     private void EnsureBuffers()
@@ -216,6 +231,12 @@ public class PhysicsWaterPhaseBridge : MonoBehaviour
         if (forcePerfTestMode)
             computePlugin.perfTestMode = true;
 
+        if (useMarchingCubes != _lastUseMarchingCubes)
+        {
+            _lastUseMarchingCubes = useMarchingCubes;
+            UpdateMaterial();
+        }
+
         // Handle live edits of particleCount / volumeDims.
         EnsureBuffers();
 
@@ -262,8 +283,6 @@ public class PhysicsWaterPhaseBridge : MonoBehaviour
         mpb.SetVector(ID_PhysicsBoundsMinWS, new Vector4(boundsMin.x, boundsMin.y, boundsMin.z, 0f));
         mpb.SetVector(ID_PhysicsBoundsMaxWS, new Vector4(boundsMax.x, boundsMax.y, boundsMax.z, 0f));
         mpb.SetVector(ID_PhysicsVolumeDims, new Vector4(volumeDims.x, volumeDims.y, volumeDims.z, invScale));
-        if (forcePhysicsBlend)
-            mpb.SetFloat(ID_PhysicsBlend, 1.0f);
 
         waterRenderer.SetPropertyBlock(mpb);
     }
