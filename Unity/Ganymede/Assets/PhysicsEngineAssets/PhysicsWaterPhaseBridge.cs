@@ -16,6 +16,7 @@ using UnityEngine;
 /// </summary>
 [DisallowMultipleComponent]
 [RequireComponent(typeof(UseComputePlugin))]
+[RequireComponent(typeof(MeshFilter), typeof(MeshRenderer))]
 public class PhysicsWaterPhaseBridge : MonoBehaviour
 {
 #if (UNITY_IOS || UNITY_TVOS || UNITY_SWITCH) && !UNITY_EDITOR
@@ -30,9 +31,6 @@ public class PhysicsWaterPhaseBridge : MonoBehaviour
     [Header("References")]
     [Tooltip("Compute shader that clears + splats particles into a density grid (ParticlesToDensityGrid.compute)")]
     public ComputeShader particlesToDensityCompute;
-
-    [Tooltip("Renderer using the Custom/WaterPhase material (the volumetric water object)")]
-    public Renderer waterRenderer;
 
     [Header("Density Grid")]
     public Vector3Int volumeDims = new Vector3Int(64, 64, 64);
@@ -64,13 +62,11 @@ public class PhysicsWaterPhaseBridge : MonoBehaviour
     [Tooltip("If enabled, automatically disables ParticleRenderer on the same GameObject")]
     public bool disableParticleRenderer = true;
 
-    [Tooltip("If enabled, fits the waterRenderer transform to the simulation bounds")]
-    public bool autoFitWaterVolumeTransform = false;
-
     [Tooltip("If enabled, overrides WaterPhase _PhysicsBlend to 1 (fully physics-driven density)")]
     public bool forcePhysicsBlend = true;
 
     private UseComputePlugin computePlugin;
+    private Renderer waterRenderer;
 
     // GPU buffers
     private ComputeBuffer particleOutputBuffer;
@@ -106,6 +102,7 @@ public class PhysicsWaterPhaseBridge : MonoBehaviour
     private void Awake()
     {
         computePlugin = GetComponent<UseComputePlugin>();
+        waterRenderer = GetComponent<Renderer>();
         mpb = new MaterialPropertyBlock();
 
         if (disableParticleRenderer)
@@ -113,6 +110,14 @@ public class PhysicsWaterPhaseBridge : MonoBehaviour
             var pr = GetComponent<ParticleRenderer>();
             if (pr != null)
                 pr.enabled = false;
+        }
+
+        MeshFilter mf = GetComponent<MeshFilter>();
+        if (mf.sharedMesh == null)
+        {
+            GameObject tempCube = GameObject.CreatePrimitive(PrimitiveType.Cube);
+            mf.sharedMesh = tempCube.GetComponent<MeshFilter>().sharedMesh;
+            Destroy(tempCube);
         }
     }
 
@@ -125,9 +130,9 @@ public class PhysicsWaterPhaseBridge : MonoBehaviour
             return;
         }
 
-        if (waterRenderer == null)
+        if (waterRenderer.sharedMaterial == null)
         {
-            Debug.LogError("[PhysicsWaterPhaseBridge] Missing waterRenderer reference.");
+            Debug.LogError("[PhysicsWaterPhaseBridge] Missing material on the MeshRenderer. Please assign the WaterPhase material manually in the Inspector.");
             enabled = false;
             return;
         }
@@ -216,7 +221,7 @@ public class PhysicsWaterPhaseBridge : MonoBehaviour
 
         computePlugin.GetBoundsWS(out Vector3 boundsMin, out Vector3 boundsMax);
 
-        if (autoFitWaterVolumeTransform && waterRenderer != null)
+        if (waterRenderer != null)
         {
             Vector3 center = (boundsMin + boundsMax) * 0.5f;
             Vector3 size = (boundsMax - boundsMin);
