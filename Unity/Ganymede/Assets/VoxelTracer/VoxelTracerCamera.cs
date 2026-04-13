@@ -32,6 +32,11 @@ public sealed class VoxelTracerCamera : MonoBehaviour
     [Header("Quality")]
     [Range(256, 4096)] public int maxSteps = 1024;
 
+    [Header("Temperature Visualisation")]
+    public Texture3D tempTexture;      
+    public float minDisplayTemp = 0f;
+    public float maxDisplayTemp = 100f;
+
     public enum VisMode { Lit = 0, Normals = 1 }
 
     // ================================================================
@@ -50,7 +55,8 @@ public sealed class VoxelTracerCamera : MonoBehaviour
     // ================================================================
 
     public bool IsReadyToRender => enabled && voxelSystem != null && voxelSystem.IsReady
-                                   && rayMarchCS != null && _compositeMat != null;
+                                   && rayMarchCS != null && _compositeMat != null
+                                   && tempTexture != null;
     public Material CompositeMaterial => _compositeMat;
     public RenderTexture ColorRT => _colorRT;
 
@@ -146,6 +152,11 @@ public sealed class VoxelTracerCamera : MonoBehaviour
 
         // Output
         cmd.SetComputeTextureParam(rayMarchCS, _kernel, "_ColorOut", _colorRT);
+
+        if (tempTexture != null)
+        cmd.SetComputeTextureParam(rayMarchCS, _kernel, "_TempTex", tempTexture);
+        cmd.SetComputeFloatParam(rayMarchCS, "_MinTemp", minDisplayTemp);
+        cmd.SetComputeFloatParam(rayMarchCS, "_MaxTemp", maxDisplayTemp);
 
         // Dispatch
         cmd.DispatchCompute(rayMarchCS, _kernel, Mathf.CeilToInt(w / 8f), Mathf.CeilToInt(h / 8f), 1);

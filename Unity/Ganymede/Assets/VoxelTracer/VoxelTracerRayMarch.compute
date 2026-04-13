@@ -19,6 +19,12 @@ float  _Unit;
 // ---- Fill texture (read-only) ----
 Texture3D<float> _FillTex;
 
+// ---- Temperature ----
+Texture3D<float> _TempTex;
+SamplerState sampler_TempTex;
+float _MinTemp;
+float _MaxTemp;
+
 // ---- Shading ----
 int    _VisMode;        // 0 = lit, 1 = normals
 float3 _SurfaceColor;
@@ -43,6 +49,16 @@ float2 RayAABB(float3 ro, float3 rd, float3 bmin, float3 bmax)
     float3 mn = min(t0, t1);
     float3 mx = max(t0, t1);
     return float2(max(mn.x, max(mn.y, mn.z)), min(mx.x, min(mx.y, mx.z)));
+}
+
+float3 HeatColor(float t)
+{
+    t = saturate(t);
+    return float3(
+        saturate(t * 3.0),
+        saturate(t * 3.0 - 1.0),
+        saturate(t * 3.0 - 2.0)
+    );
 }
 
 // ========================= Main =========================
@@ -189,10 +205,17 @@ void RayMarch(uint3 id : SV_DispatchThreadID)
     }
     else
     {
-        // Lit shading
+        float temp = _TempTex.Load(int4(voxel, 0));
+        float normalized = saturate((temp - _MinTemp) / max(_MaxTemp - _MinTemp, 0.001));
+
+        float3 albedo = (temp <= 0.0)
+            ? _SurfaceColor
+            : lerp(_SurfaceColor, HeatColor(normalized), normalized);
+
         float3 L = normalize(_LightDir);
         float NdotL = max(0.0, dot(normal, L));
-        color = _SurfaceColor * _LightColor * NdotL + _AmbientColor;
+        float3 lighting = NdotL * _LightColor + _AmbientColor;
+        color = albedo * lighting;
     }
 
     _ColorOut[id.xy] = float4(color, 1.0);

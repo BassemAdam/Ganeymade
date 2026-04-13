@@ -24,6 +24,7 @@
 #pragma kernel SDFJumpFlood
 #pragma kernel SDFFinalize
 #pragma kernel ComputeSDFNormals
+#pragma kernel WriteHeatSources
 
 // ---- Grid ----
 int _Width, _Height, _Depth;
@@ -54,6 +55,7 @@ int _RegionMinX, _RegionMinY, _RegionMinZ;
 RWTexture3D<float>  _FillTex;
 RWTexture3D<float>  _BlurredFillTex;
 RWTexture3D<float4> _NormalTex;
+RWTexture3D<float> _HeatSourceTex;
 
 // ========================= Helpers =========================
 
@@ -608,4 +610,40 @@ void ComputeSDFNormals(uint3 id : SV_DispatchThreadID)
     // the outward-facing normal. Normalize it.
     float3 n = grad * rsqrt(len2);
     _NormalTex[p] = float4(n, 1);
+}
+[numthreads(8, 8, 8)]
+void WriteHeatSources(uint3 id : SV_DispatchThreadID)
+{
+    uint3 coord = id + uint3(_RegionMinX, _RegionMinY, _RegionMinZ);
+    if ((int)coord.x >= _Width || (int)coord.y >= _Height || (int)coord.z >= _Depth)
+        return;
+    _HeatSourceTex[coord] = 0.0;
+ 
+    if (_FillTex[coord] < 0.5)
+        return;
+
+    float3 worldPos = _Start + (float3(coord) + 0.5) * _Unit;
+ 
+    for (int i = 0; i < _MaterialSourceCount; i++)
+    {
+        MaterialSource src = _MaterialSources[i];
+ 
+        bool inside = false;
+        if (src.shape == 0u)   // AABB
+        {
+            float3 d = abs(worldPos - src.position) - src.extents;
+            inside = all(d <= 0.0);
+        }
+        else                   // sphere
+        {
+            float3 delta = worldPos - src.position;
+            inside = dot(delta, delta) <= src.extents.x * src.extents.x;
+        }
+ 
+        if (inside)
+        {
+            // Last source wins (matches WriteMaterialProperties priority)
+            _HeatSourceTex[coord] = max(_HeatSourceTex[coord], src.temperature);
+        }
+    }
 }
