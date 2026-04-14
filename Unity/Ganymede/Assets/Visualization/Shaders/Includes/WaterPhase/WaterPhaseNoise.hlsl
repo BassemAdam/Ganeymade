@@ -59,6 +59,8 @@
 
             return saturate(lerp(d0, d1, f.z));
         }
+    #else
+        float SamplePhysicsDensityGrid(float3 worldPos) { return 0.0; }
     #endif
 
     float Hash3D(float3 p)

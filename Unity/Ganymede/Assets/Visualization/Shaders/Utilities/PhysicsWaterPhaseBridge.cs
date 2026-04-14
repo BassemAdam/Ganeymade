@@ -1,6 +1,7 @@
 using System;
 using System.Runtime.InteropServices;
 using UnityEngine;
+using UnityEngine.Rendering;
 
 /// <summary>
 /// Bridges the native Vulkan SPH simulation (RenderingPlugin) into the volumetric
@@ -31,6 +32,12 @@ public class PhysicsWaterPhaseBridge : MonoBehaviour
     [Header("References")]
     [Tooltip("Compute shader that clears + splats particles into a density grid (ParticlesToDensityGrid.compute)")]
     public ComputeShader particlesToDensityCompute;
+
+    [Tooltip("Compute shader that runs marching cubes on the density grid (MarchingCubesCompute.compute)")]
+    public ComputeShader marchingCubesCompute;
+
+    [Tooltip("Flat LUT text file for marching cubes triangle table (MarchingCubesLUT.txt)")]
+    public TextAsset marchingCubesLUT;
 
     [Header("Density Grid")]
     public Vector3Int volumeDims = new Vector3Int(64, 64, 64);
@@ -72,6 +79,11 @@ public class PhysicsWaterPhaseBridge : MonoBehaviour
     [Tooltip("If enabled, uses the Marching Cubes material. Otherwise uses the Ray Marching material.")]
     public bool useMarchingCubes = false;
 
+    [Header("Marching Cubes Settings")]
+    [Tooltip("Iso threshold applied to normalized density (0..1-ish). Higher values make the surface shrink.")]
+    [Range(0f, 1f)]
+    public float marchingCubesIsoLevel = 0.2f;
+
     private bool _lastUseMarchingCubes;
 
     private UseComputePlugin computePlugin;
@@ -79,11 +91,13 @@ public class PhysicsWaterPhaseBridge : MonoBehaviour
 
     // GPU buffers
     private ComputeBuffer particleOutputBuffer;
-    private ComputeBuffer densityGrid;
+    private ComputeBuffer densityGrid; // SRV
+
+    // Marching cubes (delegated to MarchingCubesRenderer)
+    private MarchingCubesRenderer _mcRenderer;
 
     private IntPtr registeredParticleOutputNativePtr = IntPtr.Zero;
 
-    // Compute kernels
     private int kClear;
     private int kSplat;
 
@@ -95,6 +109,9 @@ public class PhysicsWaterPhaseBridge : MonoBehaviour
 
     // Init guard (Start might not have executed yet if the component is enabled mid-frame)
     private bool _kernelsInitialized;
+
+    // Runtime material instance for ray-marching path
+    private Material _rayMarchMatInstance;
 
     // Cached IDs
     private static readonly int ID_PhysicsDensityGrid = Shader.PropertyToID("_PhysicsDensityGrid");
@@ -191,17 +208,28 @@ public class PhysicsWaterPhaseBridge : MonoBehaviour
         if (waterRenderer == null)
             return;
 
-        // Important: replace the whole material array, not just element 0.
-        // Otherwise a leftover second material can keep rendering and trigger missing-buffer warnings.
-        waterRenderer.sharedMaterials = new Material[]
+        // Create ray-march material instance once so we can toggle keywords without mutating shared assets.
+        if (_rayMarchMatInstance == null && rayMarchingMaterial != null)
+            _rayMarchMatInstance = new Material(rayMarchingMaterial);
+
+        if (!useMarchingCubes)
         {
-            useMarchingCubes ? marchingCubesMaterial : rayMarchingMaterial
-        };
-        
-        // Enable the physics density grid shader variant on this renderer only.
-        var instancedMat = waterRenderer.material;
-        instancedMat.EnableKeyword(KW_PhysicsDensityGrid);
+            // Ray-marching path: render the proxy cube and bind the density grid via MPB.
+            waterRenderer.enabled = true;
+            waterRenderer.sharedMaterials = new Material[] { _rayMarchMatInstance != null ? _rayMarchMatInstance : rayMarchingMaterial };
+
+            if (_rayMarchMatInstance != null)
+            {
+                _rayMarchMatInstance.EnableKeyword(KW_PhysicsDensityGrid);
+            }
+        }
+        else
+        {
+            // Marching-cubes path: do NOT render the proxy cube; we render procedurally.
+            waterRenderer.enabled = false;
+        }
     }
+
 
     private void EnsureBuffers()
     {
@@ -231,6 +259,7 @@ public class PhysicsWaterPhaseBridge : MonoBehaviour
 
         // Bind buffers once (Unity will rebind internally as needed).
         particlesToDensityCompute.SetBuffer(kClear, "_DensityGrid", densityGrid);
+        particlesToDensityCompute.SetBuffer(kClear, "_ParticleBuffer", particleOutputBuffer); // bound for safety
         particlesToDensityCompute.SetBuffer(kSplat, "_DensityGrid", densityGrid);
         particlesToDensityCompute.SetBuffer(kSplat, "_ParticleBuffer", particleOutputBuffer);
 
@@ -300,14 +329,6 @@ public class PhysicsWaterPhaseBridge : MonoBehaviour
 
         computePlugin.GetBoundsWS(out Vector3 boundsMin, out Vector3 boundsMax);
 
-        if (waterRenderer != null)
-        {
-            Vector3 center = (boundsMin + boundsMax) * 0.5f;
-            Vector3 size = (boundsMax - boundsMin);
-            waterRenderer.transform.position = center;
-            waterRenderer.transform.localScale = size;
-        }
-
         // Compute params
         particlesToDensityCompute.SetInts(ID_VolumeDims, volumeDims.x, volumeDims.y, volumeDims.z);
         particlesToDensityCompute.SetInt(ID_ParticleCount, computePlugin.particleCount);
@@ -330,35 +351,74 @@ public class PhysicsWaterPhaseBridge : MonoBehaviour
         int groups = Mathf.CeilToInt(computePlugin.particleCount / 256.0f);
         particlesToDensityCompute.Dispatch(kSplat, Mathf.Max(1, groups), 1, 1);
 
-        // Bind to WaterPhase shader.
+        // Map the fixed-point uint density grid into a normalized float field.
         float invScale = 1.0f / Mathf.Max(
             1e-5f,
             fixedPointScale * Mathf.Max(1e-5f, particleContribution) * Mathf.Max(1e-5f, maxParticlesPerVoxel)
         );
 
-        mpb.Clear();
-        mpb.SetBuffer(ID_PhysicsDensityGrid, densityGrid);
-        mpb.SetVector(ID_PhysicsBoundsMinWS, new Vector4(boundsMin.x, boundsMin.y, boundsMin.z, 0f));
-        mpb.SetVector(ID_PhysicsBoundsMaxWS, new Vector4(boundsMax.x, boundsMax.y, boundsMax.z, 0f));
-        mpb.SetVector(ID_PhysicsVolumeDims, new Vector4(volumeDims.x, volumeDims.y, volumeDims.z, invScale));
+        if (!useMarchingCubes)
+        {
+            // ============================
+            // RAY MARCHING (proxy cube)
+            // ============================
+            if (waterRenderer != null)
+            {
+                Vector3 center = (boundsMin + boundsMax) * 0.5f;
+                Vector3 size = (boundsMax - boundsMin);
+                waterRenderer.transform.position = center;
+                waterRenderer.transform.localScale = size;
 
-        waterRenderer.SetPropertyBlock(mpb);
+                mpb.Clear();
+                mpb.SetBuffer(ID_PhysicsDensityGrid, densityGrid);
+                mpb.SetVector(ID_PhysicsBoundsMinWS, new Vector4(boundsMin.x, boundsMin.y, boundsMin.z, 0f));
+                mpb.SetVector(ID_PhysicsBoundsMaxWS, new Vector4(boundsMax.x, boundsMax.y, boundsMax.z, 0f));
+                mpb.SetVector(ID_PhysicsVolumeDims, new Vector4(volumeDims.x, volumeDims.y, volumeDims.z, invScale));
+                waterRenderer.SetPropertyBlock(mpb);
+            }
+        }
+        else
+        {
+            // ============================
+            // MARCHING CUBES (procedural)
+            // ============================
+            if (_mcRenderer == null)
+            {
+                if (marchingCubesCompute == null || marchingCubesLUT == null || marchingCubesMaterial == null)
+                {
+                    Debug.LogError("[PhysicsWaterPhaseBridge] Marching cubes requires: marchingCubesCompute, marchingCubesLUT, and marchingCubesMaterial.");
+                    return;
+                }
+                _mcRenderer = new MarchingCubesRenderer(marchingCubesCompute, marchingCubesLUT, marchingCubesMaterial);
+            }
+
+            _mcRenderer.Render(
+                densityGrid,
+                volumeDims,
+                boundsMin,
+                boundsMax,
+                invScale,
+                Mathf.Clamp01(marchingCubesIsoLevel),
+                gameObject.layer);
+        }
     }
 
     private void OnDestroy()
     {
         try
         {
-            // Prevent the plugin from holding onto a destroyed Unity buffer pointer.
             SetUnityParticleOutputBuffer(IntPtr.Zero);
             registeredParticleOutputNativePtr = IntPtr.Zero;
         }
         catch (Exception)
         {
-            // Ignore shutdown order issues (domain reload, plugin not loaded, etc.)
+            // Ignore shutdown order issues
         }
 
         particleOutputBuffer?.Release();
         densityGrid?.Release();
+        _mcRenderer?.Release();
+
+        if (_rayMarchMatInstance != null) Destroy(_rayMarchMatInstance);
     }
 }
