@@ -10,26 +10,26 @@ public class ThermalReceiver : MonoBehaviour
 {
     // ─── Native plugin imports ──────────────────────────────────────────
 
-[DllImport("RenderingPlugin")]
-private static extern void SetSolidComputeData(float[] data, int count);
+    [DllImport("RenderingPlugin")]
+    private static extern void SetSolidComputeData(float[] data, int count);
 
-[DllImport("RenderingPlugin")]
-private static extern void SetMaskData(uint[] mask, int count);
+    [DllImport("RenderingPlugin")]
+    private static extern void SetMaskData(uint[] mask, int count);
 
-[DllImport("RenderingPlugin")]
-private static extern void SetSolidSimParams(float dt, uint gridWidth, uint gridHeight, uint gridDepth);
+    [DllImport("RenderingPlugin")]
+    private static extern void SetSolidSimParams(float dt, uint gridWidth, uint gridHeight, uint gridDepth);
 
-[DllImport("RenderingPlugin")]
-private static extern void GetSolidComputeResult(float[] outData, int count);
+    [DllImport("RenderingPlugin")]
+    private static extern void GetSolidComputeResult(float[] outData, int count);
 
-[DllImport("RenderingPlugin")]
-private static extern IntPtr GetRenderEventFunc();
+    [DllImport("RenderingPlugin")]
+    private static extern IntPtr GetRenderEventFunc();
 
-[DllImport("RenderingPlugin")]
-private static extern void SetDiffusivityData(float[] data, int count);
+    [DllImport("RenderingPlugin")]
+    private static extern void SetDiffusivityData(float[] data, int count);
 
-[DllImport("RenderingPlugin")]
-private static extern void SetHeatSourceData(float[] pinTemperatures, int count);
+    [DllImport("RenderingPlugin")]
+    private static extern void SetHeatSourceData(float[] pinTemperatures, int count);
 
     // ─── Configuration ──────────────────────────────────────────────────
 
@@ -57,8 +57,12 @@ private static extern void SetHeatSourceData(float[] pinTemperatures, int count)
     private float[] readbackData;
     private float[] diffusivityData;
     private float[] heatSourceData;
-    private int frameCount  = 0;
+    private int frameCount = 0;
     private bool initialized = false;
+
+    /// <summary>Live diffused temperature array (read-only). Null until initialised.</summary>
+    public float[] LiveTemperatureData => initialized ? readbackData : null;
+    public bool IsInitialized => initialized;
 
     private Texture3D _tempTexture;
 
@@ -67,7 +71,7 @@ private static extern void SetHeatSourceData(float[] pinTemperatures, int count)
     private float _prevMinTemp = float.PositiveInfinity;
     private float _prevAvgTemp = float.NegativeInfinity;
     private bool _refreshingHeatSources = false;
-   
+
     private int gridWidth, gridHeight, gridDepth;
 
     // Tracks the set of sources baked into heatSourceData so we can detect changes and re-upload only when necessary.
@@ -225,13 +229,13 @@ private static extern void SetHeatSourceData(float[] pinTemperatures, int count)
                 Graphics.CopyTexture(voxelTracer.HeatSourceTexture, z, 0, tmp2D, 0, 0);
                 var req = AsyncGPUReadback.Request(tmp2D);
                 yield return new WaitUntil(() => req.done);
- 
+
                 if (req.hasError)
                 {
                     Debug.LogError($"[ThermalReceiver] HeatSourceTexture readback error at z={z}");
                     continue;
                 }
- 
+
                 var data = req.GetData<float>();
                 for (int i = 0; i < data.Length; i++)
                     heatSourceData[z * gx * gy + i] = data[i];
@@ -261,9 +265,9 @@ private static extern void SetHeatSourceData(float[] pinTemperatures, int count)
         int gx = voxelTracer.Nx;
         int gy = voxelTracer.Ny;
         int gz = voxelTracer.Nz;
- 
+
         if (voxelTracer.HeatSourceTexture == null) yield break;
- 
+
         RenderTexture tmp2D = new RenderTexture(gx, gy, 0, RenderTextureFormat.RFloat)
         {
             enableRandomWrite = false,
@@ -271,35 +275,35 @@ private static extern void SetHeatSourceData(float[] pinTemperatures, int count)
             dimension = UnityEngine.Rendering.TextureDimension.Tex2D
         };
         tmp2D.Create();
- 
+
         for (int z = 0; z < gz; z++)
         {
             Graphics.CopyTexture(voxelTracer.HeatSourceTexture, z, 0, tmp2D, 0, 0);
             var req = AsyncGPUReadback.Request(tmp2D);
             yield return new WaitUntil(() => req.done);
- 
+
             if (req.hasError) continue;
- 
+
             var data = req.GetData<float>();
             for (int i = 0; i < data.Length; i++)
                 heatSourceData[z * gx * gy + i] = data[i];
         }
- 
+
         tmp2D.Release();
         Destroy(tmp2D);
- 
+
         SetHeatSourceData(heatSourceData, gx * gy * gz);
- 
+
         SnapshotCurrentSources();
         _refreshingHeatSources = false;
- 
+
         int pinnedCount = 0;
         foreach (float v in heatSourceData) if (v > 0f) pinnedCount++;
         Debug.Log($"[ThermalReceiver] Heat sources refreshed — {pinnedCount} pinned voxels.");
     }
- 
+
     // ─── Change detection ────────────────────────────────────────────────
- 
+
     /// <summary>
     /// Returns true if the registered heat sources differ from the last snapshot.
     /// Checks: count, instance IDs, temperatures, active state, positions, radii.
@@ -325,7 +329,7 @@ private static extern void SetHeatSourceData(float[] pinTemperatures, int count)
         }
         return false;
     }
- 
+
     private void SnapshotCurrentSources()
     {
         _trackedSourceSnapshots.Clear();
@@ -347,9 +351,9 @@ private static extern void SetHeatSourceData(float[] pinTemperatures, int count)
     {
         initialized = false;
 
-        gridWidth  = voxelTracer.Nx;
+        gridWidth = voxelTracer.Nx;
         gridHeight = voxelTracer.Ny;
-        gridDepth  = voxelTracer.Nz;
+        gridDepth = voxelTracer.Nz;
 
         int totalCells = gridWidth * gridHeight * gridDepth;
         gridData = new float[totalCells];
@@ -424,69 +428,69 @@ private static extern void SetHeatSourceData(float[] pinTemperatures, int count)
 
             if (hs.radius > 0f)
             {
-                srcPos     = hs.transform.position;
+                srcPos = hs.transform.position;
                 srcExtents = Vector3.one * hs.radius;
-                isSphere   = true;
+                isSphere = true;
             }
             else
             {
                 var r = hs.GetComponent<Renderer>();
                 if (r != null)
                 {
-                    srcPos     = r.bounds.center;
+                    srcPos = r.bounds.center;
                     srcExtents = r.bounds.extents + Vector3.one * (voxelTracer.ActiveVoxelSize * 0.5f);
                 }
                 else
                 {
-                    srcPos     = hs.transform.position;
+                    srcPos = hs.transform.position;
                     srcExtents = Vector3.one * 0.5f;
                 }
                 isSphere = false;
             }
 
-            int   pinnedBySource = 0;
+            int pinnedBySource = 0;
             float srcMinT = float.MaxValue;
             float srcMaxT = float.MinValue;
             double srcSumT = 0;
-            int   srcSolidCount = 0;
+            int srcSolidCount = 0;
 
             for (int z = 0; z < gridDepth; z++)
-            for (int y = 0; y < gridHeight; y++)
-            for (int x = 0; x < gridWidth; x++)
-            {
-                int i = z * gridWidth * gridHeight + y * gridWidth + x;
-                if (maskData[i] == 0) continue;
+                for (int y = 0; y < gridHeight; y++)
+                    for (int x = 0; x < gridWidth; x++)
+                    {
+                        int i = z * gridWidth * gridHeight + y * gridWidth + x;
+                        if (maskData[i] == 0) continue;
 
-                // World position of voxel centre — mirrors the kernel's worldPos calculation
-                Vector3 worldPos = voxelTracer.ActiveGridMin +
-                                (new Vector3(x, y, z) + Vector3.one * 0.5f) * voxelTracer.ActiveVoxelSize;
+                        // World position of voxel centre — mirrors the kernel's worldPos calculation
+                        Vector3 worldPos = voxelTracer.ActiveGridMin +
+                                        (new Vector3(x, y, z) + Vector3.one * 0.5f) * voxelTracer.ActiveVoxelSize;
 
-                bool inside;
-                if (isSphere)
-                {
-                    Vector3 delta = worldPos - srcPos;
-                    inside = delta.sqrMagnitude <= srcExtents.x * srcExtents.x;
-                }
-                else
-                {
-                    Vector3 d = new Vector3(
-                        Mathf.Abs(worldPos.x - srcPos.x) - srcExtents.x,
-                        Mathf.Abs(worldPos.y - srcPos.y) - srcExtents.y,
-                        Mathf.Abs(worldPos.z - srcPos.z) - srcExtents.z);
-                    inside = d.x <= 0f && d.y <= 0f && d.z <= 0f;
-                }
+                        bool inside;
+                        if (isSphere)
+                        {
+                            Vector3 delta = worldPos - srcPos;
+                            inside = delta.sqrMagnitude <= srcExtents.x * srcExtents.x;
+                        }
+                        else
+                        {
+                            Vector3 d = new Vector3(
+                                Mathf.Abs(worldPos.x - srcPos.x) - srcExtents.x,
+                                Mathf.Abs(worldPos.y - srcPos.y) - srcExtents.y,
+                                Mathf.Abs(worldPos.z - srcPos.z) - srcExtents.z);
+                            inside = d.x <= 0f && d.y <= 0f && d.z <= 0f;
+                        }
 
-                if (!inside) continue;
+                        if (!inside) continue;
 
-                pinnedBySource++;
+                        pinnedBySource++;
 
-                // Neighbouring solid voxels that aren't pinned — these show diffusion effect
-                float t = readbackData[i];
-                srcSumT += t;
-                srcSolidCount++;
-                if (t < srcMinT) srcMinT = t;
-                if (t > srcMaxT) srcMaxT = t;
-            }
+                        // Neighbouring solid voxels that aren't pinned — these show diffusion effect
+                        float t = readbackData[i];
+                        srcSumT += t;
+                        srcSolidCount++;
+                        if (t < srcMinT) srcMinT = t;
+                        if (t > srcMaxT) srcMaxT = t;
+                    }
 
             // Measure diffusion spread: solid voxels adjacent to this source's pinned region
             // whose temperature is above ambient but not pinned (heat has diffused into them)
@@ -497,60 +501,60 @@ private static extern void SetHeatSourceData(float[] pinTemperatures, int count)
 
 
             for (int z = 0; z < gridDepth; z++)
-            for (int y = 0; y < gridHeight; y++)
-            for (int x = 0; x < gridWidth; x++)
-            {
-                int i = z * gridWidth * gridHeight + y * gridWidth + x;
-                if (maskData[i] == 0) continue;
-                if (heatSourceData[i] > 0f) continue;  // skip pinned voxels
-
-                float t = readbackData[i];
-                if (pinnedBySource == 0)
-                {
-                    sb.AppendLine($"  └ {hs.name} — WARNING: 0 pinned voxels found in heatSourceData. " +
-                                $"Source bounds may not overlap any solid voxel, or heatSourceData " +
-                                $"is stale. regionAvg={srcAvgT:F2}° (reading diffused temp, not pinned).");
-                    continue;
-                }
-                // Check if any face-neighbour of this voxel is pinned by this source
-                bool adjacentToSource = false;
-                int[] dx = { -1, 1, 0, 0, 0, 0 };
-                int[] dy = {  0, 0,-1, 1, 0, 0 };
-                int[] dz = {  0, 0, 0, 0,-1, 1 };
-                for (int n = 0; n < 6; n++)
-                {
-                    int nx = x + dx[n], ny = y + dy[n], nz = z + dz[n];
-                    if (nx < 0 || nx >= gridWidth ||
-                        ny < 0 || ny >= gridHeight ||
-                        nz < 0 || nz >= gridDepth) continue;
-
-                    int ni = nz * gridWidth * gridHeight + ny * gridWidth + nx;
-                    if (heatSourceData[ni] <= 0f) continue;
-
-                    // Check if that neighbour belongs to this source
-                    Vector3 nWorldPos = voxelTracer.ActiveGridMin +
-                                        (new Vector3(nx, ny, nz) + Vector3.one * 0.5f) * voxelTracer.ActiveVoxelSize;
-                    bool nInside;
-                    if (isSphere)
+                for (int y = 0; y < gridHeight; y++)
+                    for (int x = 0; x < gridWidth; x++)
                     {
-                        Vector3 delta = nWorldPos - srcPos;
-                        nInside = delta.sqrMagnitude <= srcExtents.x * srcExtents.x;
-                    }
-                    else
-                    {
-                        Vector3 d = new Vector3(
-                            Mathf.Abs(nWorldPos.x - srcPos.x) - srcExtents.x,
-                            Mathf.Abs(nWorldPos.y - srcPos.y) - srcExtents.y,
-                            Mathf.Abs(nWorldPos.z - srcPos.z) - srcExtents.z);
-                        nInside = d.x <= 0f && d.y <= 0f && d.z <= 0f;
-                    }
-                    if (nInside) { adjacentToSource = true; break; }
-                }
+                        int i = z * gridWidth * gridHeight + y * gridWidth + x;
+                        if (maskData[i] == 0) continue;
+                        if (heatSourceData[i] > 0f) continue;  // skip pinned voxels
 
-                if (!adjacentToSource) continue;
-                diffusedNeighbours++;
-                diffusedSum += t;
-            }
+                        float t = readbackData[i];
+                        if (pinnedBySource == 0)
+                        {
+                            sb.AppendLine($"  └ {hs.name} — WARNING: 0 pinned voxels found in heatSourceData. " +
+                                        $"Source bounds may not overlap any solid voxel, or heatSourceData " +
+                                        $"is stale. regionAvg={srcAvgT:F2}° (reading diffused temp, not pinned).");
+                            continue;
+                        }
+                        // Check if any face-neighbour of this voxel is pinned by this source
+                        bool adjacentToSource = false;
+                        int[] dx = { -1, 1, 0, 0, 0, 0 };
+                        int[] dy = { 0, 0, -1, 1, 0, 0 };
+                        int[] dz = { 0, 0, 0, 0, -1, 1 };
+                        for (int n = 0; n < 6; n++)
+                        {
+                            int nx = x + dx[n], ny = y + dy[n], nz = z + dz[n];
+                            if (nx < 0 || nx >= gridWidth ||
+                                ny < 0 || ny >= gridHeight ||
+                                nz < 0 || nz >= gridDepth) continue;
+
+                            int ni = nz * gridWidth * gridHeight + ny * gridWidth + nx;
+                            if (heatSourceData[ni] <= 0f) continue;
+
+                            // Check if that neighbour belongs to this source
+                            Vector3 nWorldPos = voxelTracer.ActiveGridMin +
+                                                (new Vector3(nx, ny, nz) + Vector3.one * 0.5f) * voxelTracer.ActiveVoxelSize;
+                            bool nInside;
+                            if (isSphere)
+                            {
+                                Vector3 delta = nWorldPos - srcPos;
+                                nInside = delta.sqrMagnitude <= srcExtents.x * srcExtents.x;
+                            }
+                            else
+                            {
+                                Vector3 d = new Vector3(
+                                    Mathf.Abs(nWorldPos.x - srcPos.x) - srcExtents.x,
+                                    Mathf.Abs(nWorldPos.y - srcPos.y) - srcExtents.y,
+                                    Mathf.Abs(nWorldPos.z - srcPos.z) - srcExtents.z);
+                                nInside = d.x <= 0f && d.y <= 0f && d.z <= 0f;
+                            }
+                            if (nInside) { adjacentToSource = true; break; }
+                        }
+
+                        if (!adjacentToSource) continue;
+                        diffusedNeighbours++;
+                        diffusedSum += t;
+                    }
 
             diffusedAvg = diffusedNeighbours > 0 ? (float)(diffusedSum / diffusedNeighbours) : 0f;
             sb.AppendLine($"  └ {hs.name} ({(isSphere ? "sphere" : "AABB")})  " +
@@ -567,33 +571,33 @@ private static extern void SetHeatSourceData(float[] pinTemperatures, int count)
     private void DebugTextureReadback()
     {
         int totalCells = gridWidth * gridHeight * gridDepth;
- 
+
         int filledVoxels = 0;
         int sourceVoxels = 0;
         int filledWithNonZeroDiff = 0;
         int filledWithZeroDiff = 0;
         int filledWithNonZeroTemp = 0;
         int filledWithZeroTemp = 0;
- 
+
         float minDiff = float.MaxValue, maxDiff = float.MinValue, sumDiff = 0f;
         float minTempFilled = float.MaxValue, maxTempFilled = float.MinValue;
         float minDiffFilled = float.MaxValue, maxDiffFilled = float.MinValue;
- 
+
         for (int i = 0; i < totalCells; i++)
         {
             float diff = diffusivityData[i];
             float temp = gridData[i];
-            float pin  = heatSourceData[i];
- 
+            float pin = heatSourceData[i];
+
             if (diff < minDiff) minDiff = diff;
             if (diff > maxDiff) maxDiff = diff;
             sumDiff += diff;
- 
+
             if (maskData[i] == 1u)
             {
                 filledVoxels++;
                 if (pin > 0f) sourceVoxels++;
- 
+
                 if (temp > 0f)
                 {
                     filledWithNonZeroTemp++;
@@ -601,7 +605,7 @@ private static extern void SetHeatSourceData(float[] pinTemperatures, int count)
                     if (temp > maxTempFilled) maxTempFilled = temp;
                 }
                 else { filledWithZeroTemp++; }
- 
+
                 if (diff > 0f)
                 {
                     filledWithNonZeroDiff++;
@@ -611,16 +615,16 @@ private static extern void SetHeatSourceData(float[] pinTemperatures, int count)
                 else { filledWithZeroDiff++; }
             }
         }
- 
+
         float avgDiff = sumDiff / totalCells;
- 
+
         Debug.Log($"[ThermalReceiver] === Texture Readback Debug ===");
         Debug.Log($"[ThermalReceiver] Grid: {gridWidth}x{gridHeight}x{gridDepth} = {totalCells} total cells");
         Debug.Log($"[ThermalReceiver] Mask  — filled: {filledVoxels}/{totalCells} " +
                   $"({100f * filledVoxels / totalCells:F1}%)  " +
                   $"of which are pinned sources: {sourceVoxels}");
         Debug.Log($"[ThermalReceiver] Diff  — all cells:   min={minDiff:F4}  max={maxDiff:F4}  avg={avgDiff:F4}");
- 
+
         if (filledVoxels > 0)
         {
             Debug.Log($"[ThermalReceiver] Diff  — filled only: " +
@@ -636,12 +640,12 @@ private static extern void SetHeatSourceData(float[] pinTemperatures, int count)
         {
             Debug.LogWarning("[ThermalReceiver] ⚠ No filled voxels found — mask is all zero.");
         }
- 
+
         if (sourceVoxels == 0)
             Debug.LogWarning("[ThermalReceiver] ⚠ No pinned source voxels found. " +
                              "Either no VoxelHeatSource components exist, or the " +
                              "HeatSourceTexture patch has not been applied.");
- 
+
         if (maxDiff == 0f)
             Debug.LogWarning("[ThermalReceiver] ⚠ Diffusivity buffer is entirely zero.");
     }
@@ -649,8 +653,8 @@ private static extern void SetHeatSourceData(float[] pinTemperatures, int count)
 
     private void InitVisualization()
     {
-        _tempTexture = new Texture3D(gridWidth, gridHeight, gridDepth,TextureFormat.RFloat, false);
-        _tempTexture.wrapMode   = TextureWrapMode.Clamp;
+        _tempTexture = new Texture3D(gridWidth, gridHeight, gridDepth, TextureFormat.RFloat, false);
+        _tempTexture.wrapMode = TextureWrapMode.Clamp;
         _tempTexture.filterMode = FilterMode.Bilinear;
 
         _tempTexture.SetPixelData(readbackData, 0);
@@ -679,10 +683,10 @@ private static extern void SetHeatSourceData(float[] pinTemperatures, int count)
     // ─── Structs ────────────────────────────────────────────────────────
     private struct HeatSourceSnapshot
     {
-        public int    instanceID;
-        public float  temperature;
-        public bool   active;
+        public int instanceID;
+        public float temperature;
+        public bool active;
         public Vector3 position;
-        public float  radius;
+        public float radius;
     }
 }

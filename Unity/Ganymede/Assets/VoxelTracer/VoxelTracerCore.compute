@@ -147,7 +147,13 @@ void Surface(uint3 id : SV_DispatchThreadID)
     gmin = clamp(gmin, 0, int3(_Width - 1, _Height - 1, _Depth - 1));
     gmax = clamp(gmax, 0, int3(_Width - 1, _Height - 1, _Depth - 1));
 
-    float3 ext = float3(_HalfUnit, _HalfUnit, _HalfUnit);
+    // Inflate half-extents by a tiny epsilon to prevent boundary-aligned
+    // triangles from being missed due to float32 rounding in the SAT test.
+    // Without this, a face that aligns exactly with a voxel boundary can
+    // fail the plane test (abs(s) <= r), leaving a gap in the surface shell
+    // that the flood fill leaks through — producing U-shaped hollow artifacts.
+    float surfaceEps = _HalfUnit * 1e-4;
+    float3 ext = float3(_HalfUnit + surfaceEps, _HalfUnit + surfaceEps, _HalfUnit + surfaceEps);
 
     for (int z = gmin.z; z <= gmax.z; z++)
     for (int y = gmin.y; y <= gmax.y; y++)
