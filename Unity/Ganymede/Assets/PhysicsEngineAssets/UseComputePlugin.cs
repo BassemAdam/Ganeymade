@@ -185,7 +185,6 @@ public class UseComputePlugin : MonoBehaviour
 
     // Cached SDF boundary + drain references
     private FluidBoundary[] _cachedBoundaries;
-    private WaterDrain[] _cachedDrains;
     private DrainZoneNative[] _drainNatives = new DrainZoneNative[MAX_DRAIN_ZONES];
     private float[] _sdfData;
     private int _sdfDimX, _sdfDimY, _sdfDimZ;
@@ -263,7 +262,6 @@ public class UseComputePlugin : MonoBehaviour
 
         CacheBoundariesAndDrains();
         GenerateAndUploadSDF();
-        UploadDrainZones();
 
         // Push params once immediately
         PushParams(Time.deltaTime);
@@ -361,10 +359,6 @@ public class UseComputePlugin : MonoBehaviour
                 }
             }
         }
-
-        // Update drain positions each frame (drains may move)
-        if (_cachedDrains != null && _cachedDrains.Length > 0)
-            UploadDrainZones();
 
         // Trigger native compute dispatch on the render thread.
         // With execution order attributes, this runs after camera interaction writes.
@@ -689,12 +683,11 @@ public class UseComputePlugin : MonoBehaviour
     void CacheBoundariesAndDrains()
     {
         _cachedBoundaries = FindObjectsByType<FluidBoundary>(FindObjectsSortMode.None);
-        _cachedDrains = FindObjectsByType<WaterDrain>(FindObjectsSortMode.None);
         _sdfDynamicFrameCounter = 0;
         _sdfUploaded = false;
 
         if (verbose && _cachedBoundaries.Length > 0)
-            Debug.Log($"[UseComputePlugin] Found {_cachedBoundaries.Length} FluidBoundary objects, {_cachedDrains.Length} WaterDrain objects.");
+            Debug.Log($"[UseComputePlugin] Found {_cachedBoundaries.Length} FluidBoundary objects");
     }
 
     void GenerateAndUploadSDF()
@@ -833,28 +826,6 @@ public class UseComputePlugin : MonoBehaviour
 
         if (verbose && sdfSource == SDFSource.Analytic)
             Debug.Log($"[UseComputePlugin] Analytic SDF uploaded: {_sdfDimX}x{_sdfDimY}x{_sdfDimZ} = {rawSdf.Length} voxels, voxelSize={_sdfCellSize}");
-    }
-
-    void UploadDrainZones()
-    {
-        if (_cachedDrains == null || _cachedDrains.Length == 0) return;
-
-        for (int i = 0; i < MAX_DRAIN_ZONES; i++)
-            _drainNatives[i] = default;
-
-        int count = Mathf.Min(_cachedDrains.Length, MAX_DRAIN_ZONES);
-        for (int i = 0; i < count; i++)
-        {
-            if (!_cachedDrains[i].isActive) continue;
-            Vector3 pos = _cachedDrains[i].transform.position;
-            _drainNatives[i].posX = pos.x;
-            _drainNatives[i].posY = pos.y;
-            _drainNatives[i].posZ = pos.z;
-            _drainNatives[i].radius = _cachedDrains[i].drainRadius;
-            _drainNatives[i].active = 1u;
-        }
-
-        SetDrainZones(_drainNatives, MAX_DRAIN_ZONES);
     }
 
     private static string FormatParticles(Particle[] arr, int maxShow)
