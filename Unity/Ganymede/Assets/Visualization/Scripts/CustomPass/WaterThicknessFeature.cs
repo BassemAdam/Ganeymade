@@ -6,6 +6,9 @@ using UnityEngine.Rendering.Universal;
 
 public class WaterThicknessFeature : ScriptableRendererFeature
 {
+    // Global event so procedural drawers (like Marching Cubes) can inject draw calls into this pass
+    public static event System.Action<RasterCommandBuffer, Material> OnDrawWaterProcedural;
+
     [System.Serializable]
     public class Settings
     {
@@ -86,6 +89,7 @@ public class WaterThicknessFeature : ScriptableRendererFeature
         private class PassData
         {
             public RendererListHandle rendererList;
+            public Material thicknessMaterial;
         }
 
         public override void RecordRenderGraph(RenderGraph renderGraph, ContextContainer frameData)
@@ -107,9 +111,12 @@ public class WaterThicknessFeature : ScriptableRendererFeature
             // 3. Begin adding our custom pass
             using (var builder = renderGraph.AddRasterRenderPass<PassData>("Calculate Water Thickness", out var passData))
             {
+                passData.thicknessMaterial = thicknessMaterial;
+
                 // Assign our new texture as the render target, and clear it to black
                 builder.SetRenderAttachment(thicknessTexture, 0, AccessFlags.Write);
                 builder.AllowPassCulling(false);
+                builder.AllowGlobalStateModification(true);
 
                 // Setup instructions for what to draw (our water voxels)
                 // Construct DrawingSettings directly (most reliable in Unity 6 RenderGraph)
@@ -138,6 +145,12 @@ public class WaterThicknessFeature : ScriptableRendererFeature
                     
                     // Draw all the actual water voxels using the list
                     context.cmd.DrawRendererList(data.rendererList);
+
+                    // Execute procedural draws (like Marching Cubes) using the thickness material
+                    if (WaterThicknessFeature.OnDrawWaterProcedural != null)
+                    {
+                        WaterThicknessFeature.OnDrawWaterProcedural.Invoke(context.cmd, data.thicknessMaterial);
+                    }
                 });
             }
         }

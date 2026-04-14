@@ -93,6 +93,9 @@ public class MarchingCubesRenderer : IDisposable
         _compute.SetBuffer(_kMarch, PID_Lut, _lutBuffer);
         _compute.SetBuffer(_kMarch, PID_Offsets, _offsetsBuffer);
         _compute.SetBuffer(_kMarch, PID_Lengths, _lengthsBuffer);
+
+        // Register to draw into the custom water depth rendering pass
+        WaterThicknessFeature.OnDrawWaterProcedural += DrawProceduralThickness;
     }
 
     /// <summary>
@@ -199,6 +202,8 @@ public class MarchingCubesRenderer : IDisposable
         if (_disposed) return;
         _disposed = true;
 
+        WaterThicknessFeature.OnDrawWaterProcedural -= DrawProceduralThickness;
+
         _lutBuffer?.Release();
         _offsetsBuffer?.Release();
         _lengthsBuffer?.Release();
@@ -207,6 +212,33 @@ public class MarchingCubesRenderer : IDisposable
 
         if (_matInstance != null)
             UnityEngine.Object.Destroy(_matInstance);
+    }
+
+    private void DrawProceduralThickness(RasterCommandBuffer cmd, Material thicknessMat)
+    {
+        if (_disposed || _drawArgsBuffer == null || _vertexBuffer == null || thicknessMat == null) return;
+        
+        // Ensure the thickness material natively has the keyword and buffer attached
+        thicknessMat.EnableKeyword(KW_Procedural);
+        thicknessMat.SetBuffer(PID_VertexBuffer, _vertexBuffer);
+        
+        // Also tell the command buffer explicitly
+        cmd.EnableShaderKeyword(KW_Procedural);
+        cmd.SetGlobalBuffer(PID_VertexBuffer, _vertexBuffer);
+        
+        // Issue the indirect draw using the thickness material
+        int passIndex = thicknessMat.FindPass("WaterThicknessGen");
+        if (passIndex < 0) passIndex = 0; // Fallback
+
+        cmd.DrawProceduralIndirect(
+            Matrix4x4.identity, 
+            thicknessMat, 
+            passIndex, 
+            MeshTopology.Triangles, 
+            _drawArgsBuffer, 
+            0);
+            
+        cmd.DisableShaderKeyword(KW_Procedural);
     }
 
     public void Dispose() => Release();

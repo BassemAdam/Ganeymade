@@ -24,7 +24,7 @@ Shader "Custom/WaterLiquid"
         Pass
         {
             Blend SrcAlpha OneMinusSrcAlpha
-            ZWrite On
+            ZWrite Off
             Cull Off
 
             HLSLPROGRAM
@@ -106,6 +106,7 @@ Shader "Custom/WaterLiquid"
                 float2 screenUV = IN.screenPos.xy / IN.screenPos.w;
 
                 float waterDepth = SAMPLE_TEXTURE2D(_WaterThicknessMap, sampler_WaterThicknessMap, screenUV).r;
+                waterDepth = max(waterDepth, 0.0); // Clamp to prevent negative depths exploding the Math
 
                 float fresnel = CalculateFresnel(IN.normalWS, IN.positionWS, _FresnelPower);
 
