@@ -18,6 +18,7 @@ public class MarchingCubesRenderer : IDisposable
     // ---- Compute shader + kernel ----
     private readonly ComputeShader _compute;
     private readonly int _kMarch;
+    private readonly int _kClear;
 
     // ---- Lookup table buffers (created once, never resized) ----
     private readonly ComputeBuffer _lutBuffer;
@@ -75,6 +76,7 @@ public class MarchingCubesRenderer : IDisposable
         _compute = compute;
         _sourceMaterial = material;
         _kMarch = compute.FindKernel("MarchDensity");
+        _kClear = compute.FindKernel("ClearArgs");
 
         // Parse flat LUT from text file
         int[] lutVals = lutAsset.text.Trim().Split(',').Select(x => int.Parse(x.Trim())).ToArray();
@@ -126,10 +128,12 @@ public class MarchingCubesRenderer : IDisposable
             sizeWS.y / Mathf.Max(1, dims.y - 1),
             sizeWS.z / Mathf.Max(1, dims.z - 1));
 
-        // Reset append counter
-        _vertexBuffer.SetCounterValue(0);
+        // Reset draw args
+        _compute.SetBuffer(_kClear, "drawArgs", _drawArgsBuffer);
+        _compute.Dispatch(_kClear, 1, 1, 1);
 
         // Bind per-frame data
+        _compute.SetBuffer(_kMarch, "drawArgs", _drawArgsBuffer);
         _compute.SetBuffer(_kMarch, PID_Vertices, _vertexBuffer);
         _compute.SetBuffer(_kMarch, PID_DensityGrid, densityGrid);
         _compute.SetInts(PID_GridSize, dims.x, dims.y, dims.z);
@@ -143,9 +147,6 @@ public class MarchingCubesRenderer : IDisposable
         int gy = Mathf.CeilToInt(dims.y / 8f);
         int gz = Mathf.CeilToInt(dims.z / 8f);
         _compute.Dispatch(_kMarch, gx, gy, gz);
-
-        // Copy vertex count into draw args — this is a GPU copy, not a UAV bind
-        ComputeBuffer.CopyCount(_vertexBuffer, _drawArgsBuffer, 0);
 
         // Ensure material instance
         if (_matInstance == null)
@@ -183,7 +184,7 @@ public class MarchingCubesRenderer : IDisposable
         if (_vertexBuffer == null || _vertexBuffer.count != vertCount)
         {
             _vertexBuffer?.Release();
-            _vertexBuffer = new ComputeBuffer(vertCount, VertexStride, ComputeBufferType.Append);
+            _vertexBuffer = new ComputeBuffer(vertCount, VertexStride, ComputeBufferType.Default);
             _lastVertexCount = vertCount;
         }
 

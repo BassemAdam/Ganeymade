@@ -3,6 +3,7 @@
 // arrays, guaranteed Vulkan/SPIR-V compatibility.
 
 #pragma kernel MarchDensity
+#pragma kernel ClearArgs
 
 // Tiny arrays (24 ints total) — well within Vulkan constant limits
 static const int cornerA[12] = {0, 1, 2, 3, 4, 5, 6, 7, 0, 1, 2, 3};
@@ -27,7 +28,17 @@ float  invDensityScale;
 float  isoLevel;
 
 // ---- Output ----
-AppendStructuredBuffer<Vertex> vertices;
+RWStructuredBuffer<Vertex> vertices;
+RWStructuredBuffer<uint> drawArgs;
+
+[numthreads(1,1,1)]
+void ClearArgs(uint3 id : SV_DispatchThreadID)
+{
+    drawArgs[0] = 0;
+    drawArgs[1] = 1;
+    drawArgs[2] = 0;
+    drawArgs[3] = 0;
+}
 
 // ---- Helpers ----
 uint GridIndex(int3 pos)
@@ -90,14 +101,17 @@ void MarchDensity(int3 id : SV_DispatchThreadID)
     int numIdx = lengths[cfg];
     int off    = offsets[cfg];
 
+    uint startIdx;
+    InterlockedAdd(drawArgs[0], numIdx, startIdx);
+
     for (int t = 0; t < numIdx; t += 3)
     {
         int e0 = lut[off + t];
         int e1 = lut[off + t + 1];
         int e2 = lut[off + t + 2];
 
-        vertices.Append(MakeVertex(c[cornerA[e2]], c[cornerB[e2]]));
-        vertices.Append(MakeVertex(c[cornerA[e1]], c[cornerB[e1]]));
-        vertices.Append(MakeVertex(c[cornerA[e0]], c[cornerB[e0]]));
+        vertices[startIdx + t]     = MakeVertex(c[cornerA[e2]], c[cornerB[e2]]);
+        vertices[startIdx + t + 1] = MakeVertex(c[cornerA[e1]], c[cornerB[e1]]);
+        vertices[startIdx + t + 2] = MakeVertex(c[cornerA[e0]], c[cornerB[e0]]);
     }
 }
