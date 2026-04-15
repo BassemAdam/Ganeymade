@@ -48,8 +48,10 @@ uint GridIndex(int3 pos)
 
 float SampleDensity(int3 pos)
 {
-    int3 c = clamp(pos, int3(0,0,0), GridSize - int3(1,1,1));
-    return (float)DensityGrid[GridIndex(c)] * invDensityScale;
+    bool isEdge = any(pos <= 0) || any(pos >= GridSize - 1);
+    if (isEdge) return isoLevel;
+
+    return -(float)DensityGrid[GridIndex(pos)] * invDensityScale;
 }
 
 float3 CalcNormal(int3 coord)
@@ -93,7 +95,7 @@ void MarchDensity(int3 id : SV_DispatchThreadID)
 
     int cfg = 0;
     for (int i = 0; i < 8; i++)
-        if (SampleDensity(c[i]) > isoLevel)
+        if (SampleDensity(c[i]) < isoLevel)
             cfg |= (1 << i);
 
     if (cfg == 0 || cfg == 255) return;
@@ -110,8 +112,9 @@ void MarchDensity(int3 id : SV_DispatchThreadID)
         int e1 = lut[off + t + 1];
         int e2 = lut[off + t + 2];
 
-        vertices[startIdx + t]     = MakeVertex(c[cornerA[e2]], c[cornerB[e2]]);
+        // Swapped e2, e1, e0 back to e0, e1, e2 to fix winding order
+        vertices[startIdx + t]     = MakeVertex(c[cornerA[e0]], c[cornerB[e0]]);
         vertices[startIdx + t + 1] = MakeVertex(c[cornerA[e1]], c[cornerB[e1]]);
-        vertices[startIdx + t + 2] = MakeVertex(c[cornerA[e0]], c[cornerB[e0]]);
+        vertices[startIdx + t + 2] = MakeVertex(c[cornerA[e2]], c[cornerB[e2]]);
     }
 }

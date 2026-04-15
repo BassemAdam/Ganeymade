@@ -39,7 +39,7 @@ Material:
     m_TexEnvs: []
     m_Ints: []
     m_Floats:
-    - _AbsorptionRate: 0.1
+    - _AbsorptionRate: 1.21
     - _BleedCompensation: 0.615
     - _BlurRadius: 0.0452
     - _BlurStrength: 0.0111
