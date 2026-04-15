@@ -55,7 +55,7 @@ float3 CalcNormal(int3 coord)
     float dx = SampleDensity(coord + int3(1,0,0)) - SampleDensity(coord - int3(1,0,0));
     float dy = SampleDensity(coord + int3(0,1,0)) - SampleDensity(coord - int3(0,1,0));
     float dz = SampleDensity(coord + int3(0,0,1)) - SampleDensity(coord - int3(0,0,1));
-    return normalize(-float3(dx, dy, dz));
+    return normalize(float3(dx, dy, dz));
 }
 
 Vertex MakeVertex(int3 ca, int3 cb)

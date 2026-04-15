@@ -58,11 +58,11 @@ public class PhysicsWaterPhaseBridge : MonoBehaviour
 
     [Header("Splat Kernel")]
     [Tooltip("If < 0, uses UseComputePlugin.smoothingRadius")]
-    public float smoothingRadiusWS = -1f;
+    public float smoothingRadiusWS = 1f;
 
     [Tooltip("0 = nearest voxel only, 1 = 27-voxel neighborhood, 2 = 125-voxel neighborhood")]
     [Range(0, 3)]
-    public int kernelRadiusVoxels = 1;
+    public int kernelRadiusVoxels = 2;
 
     [Header("Runtime Controls")]
     [Tooltip("Forces the native plugin into perfTestMode (skips staging readback to CPU)")]
@@ -324,6 +324,42 @@ public class PhysicsWaterPhaseBridge : MonoBehaviour
         SetUnityParticleOutputBuffer(registeredParticleOutputNativePtr);
     }
 
+    private Vector3 ComputeVoxelSizeWS(Vector3 boundsMin, Vector3 boundsMax)
+    {
+        return new Vector3(
+            (boundsMax.x - boundsMin.x) / Mathf.Max(1, volumeDims.x),
+            (boundsMax.y - boundsMin.y) / Mathf.Max(1, volumeDims.y),
+            (boundsMax.z - boundsMin.z) / Mathf.Max(1, volumeDims.z));
+    }
+
+    private float ComputeEffectiveSmoothingRadius(float requestedRadius, Vector3 voxelSizeWS)
+    {
+        float minRadius = Mathf.Max(voxelSizeWS.x, Mathf.Max(voxelSizeWS.y, voxelSizeWS.z)) * 2.0f;
+        return Mathf.Max(requestedRadius, minRadius);
+    }
+
+    private int ComputeAutoKernelRadius(float smoothingRadius, Vector3 voxelSizeWS)
+    {
+        float avgVoxelSize = voxelSizeWS.magnitude / Mathf.Sqrt(3.0f);
+        int autoKernelRadius = Mathf.Max(kernelRadiusVoxels, Mathf.CeilToInt(smoothingRadius / Mathf.Max(avgVoxelSize, 1e-5f)));
+        return Mathf.Clamp(autoKernelRadius, 1, 3); // cap for performance
+    }
+
+    private void ConfigureSplatKernelParams(Vector3 boundsMin, Vector3 boundsMax)
+    {
+        float requestedRadius = smoothingRadiusWS >= 0f ? smoothingRadiusWS : computePlugin.smoothingRadius;
+
+        // Ensure smoothing radius covers at least ~2 voxels of world space,
+        // otherwise each particle collapses into isolated spikes.
+        Vector3 voxelSizeWS = ComputeVoxelSizeWS(boundsMin, boundsMax);
+        float effectiveRadius = ComputeEffectiveSmoothingRadius(requestedRadius, voxelSizeWS);
+        particlesToDensityCompute.SetFloat(ID_SmoothingRadiusWS, Mathf.Max(0f, effectiveRadius));
+
+        // Auto-expand kernel radius based on smoothing radius and voxel scale.
+        int autoKernelRadius = ComputeAutoKernelRadius(effectiveRadius, voxelSizeWS);
+        particlesToDensityCompute.SetInt(ID_KernelRadiusVoxels, autoKernelRadius);
+    }
+
     private void LateUpdate()
     {
         if (!isActiveAndEnabled)
@@ -367,10 +403,7 @@ public class PhysicsWaterPhaseBridge : MonoBehaviour
         particlesToDensityCompute.SetVector(ID_BoundsMaxWS, new Vector4(boundsMax.x, boundsMax.y, boundsMax.z, 0f));
         particlesToDensityCompute.SetFloat(ID_ParticleContribution, particleContribution);
         particlesToDensityCompute.SetFloat(ID_FixedPointScale, fixedPointScale);
-
-        float h = smoothingRadiusWS >= 0f ? smoothingRadiusWS : computePlugin.smoothingRadius;
-        particlesToDensityCompute.SetFloat(ID_SmoothingRadiusWS, Mathf.Max(0f, h));
-        particlesToDensityCompute.SetInt(ID_KernelRadiusVoxels, kernelRadiusVoxels);
+        ConfigureSplatKernelParams(boundsMin, boundsMax);
 
         // Dispatch clear
         int gx = Mathf.CeilToInt(volumeDims.x / 8.0f);
