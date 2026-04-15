@@ -1,12 +1,8 @@
 struct SolidSimParams {
     float dt;
-    float alpha;         // temperature diffusivity factor
     uint  gridWidth;
     uint  gridHeight;
     uint  gridDepth;
-    uint  _pad0;         // to conform to the 16-byte of vulkan
-    uint  _pad1;
-    uint  _pad2;
 };
 
 [[vk::push_constant]] ConstantBuffer<SolidSimParams> params;
@@ -14,6 +10,8 @@ struct SolidSimParams {
 [[vk::binding(0)]] StructuredBuffer<float>   inputData;   // binding=0
 [[vk::binding(1)]] RWStructuredBuffer<float> outputData;  // binding=1
 [[vk::binding(2)]] StructuredBuffer<uint>     maskData;   // binding=2, where 0 = normal cell and 1 = source cell (temperature doesn't change)
+[[vk::binding(3)]] StructuredBuffer<float>   diffusivityData;// binding=3 
+[[vk::binding(4)]] StructuredBuffer<float>  heatSourcePins; //binding=4
 
 [shader("compute")]
 [numthreads(4, 4, 4)]  // 4×4×4 = 64 threads per group
@@ -31,30 +29,42 @@ void computeMain(uint3 threadId : SV_DispatchThreadID)
     uint sliceSize = params.gridWidth * params.gridHeight;
     uint idx = z * sliceSize + y * params.gridWidth + x;
 
-    // if it's a souce cell , keep the temperature constant and skip diffusion entirely
-    if (maskData[idx] == 1u) 
+    // if it's a non-solid cell , keep the temperature constant and skip diffusion entirely
+    if (maskData[idx] == 0u) 
     {
-        outputData[idx] = inputData[idx];
+        outputData[idx] = 0.0;
+        return;
+    }
+    // pin heat source voxels such that the neighbors read the pinned value next frame
+    float pin = heatSourcePins[idx];
+    if (pin > 0.0)
+    {
+        outputData[idx] = pin;
         return;
     }
 
     // 6 neighbors — clamp to boundary (zero-flux / Neumann condition)
-    uint xL = (x > 0)                     ? idx - 1          : idx;
-    uint xR = (x < params.gridWidth  - 1) ? idx + 1          : idx;
-    uint yU = (y > 0)                     ? idx - params.gridWidth : idx;
+    uint xL = (x > 0) ? idx - 1 : idx;
+    uint xR = (x < params.gridWidth  - 1) ? idx + 1 : idx;
+    uint yU = (y > 0) ? idx - params.gridWidth : idx;
     uint yD = (y < params.gridHeight - 1) ? idx + params.gridWidth : idx;
-    uint zF = (z > 0)                     ? idx - sliceSize   : idx;
-    uint zB = (z < params.gridDepth  - 1) ? idx + sliceSize   : idx;
+    uint zF = (z > 0) ? idx - sliceSize : idx;
+    uint zB = (z < params.gridDepth  - 1) ? idx + sliceSize : idx;
 
     float T  = inputData[idx];
-    float TL = inputData[xL];
-    float TR = inputData[xR];
-    float TU = inputData[yU];
-    float TD = inputData[yD];
-    float TF = inputData[zF];
-    float TB = inputData[zB];
 
-    // 3D heat equation — 6 neighbors so coefficient is 6, not 4
+    // mask-guard each neighbour such that if the neighbour is non-solid, use T itself (zero flux)
+    float TL = (maskData[xL] != 0u) ? inputData[xL] : T;
+    float TR = (maskData[xR] != 0u) ? inputData[xR] : T;
+    float TU = (maskData[yU] != 0u) ? inputData[yU] : T;
+    float TD = (maskData[yD] != 0u) ? inputData[yD] : T;
+    float TF = (maskData[zF] != 0u) ? inputData[zF] : T;
+    float TB = (maskData[zB] != 0u) ? inputData[zB] : T;
+
+    // clamp the diffusivity factor to ensure stability
+    float coeff = min(diffusivityData[idx] * params.dt, 0.166666);
+
+    // 3D heat equation,  6 neighbors 
     float laplacian = TL + TR + TU + TD + TF + TB - 6.0 * T;
-    outputData[idx] = T + params.alpha * params.dt * laplacian;
+    outputData[idx] = T + coeff * params.dt * laplacian;
 }

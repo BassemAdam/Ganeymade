@@ -98,6 +98,7 @@ public sealed class VoxelTracerSystem : MonoBehaviour
     public RenderTexture DiffusivityTexture => _diffusivityTex;
     public RenderTexture PhaseTexture => _phaseTex;
     public RenderTexture SDFTexture => _sdfTex;
+    public RenderTexture HeatSourceTexture => _heatSourceTex;
     public int Nx => _nx;
     public int Ny => _ny;
     public int Nz => _nz;
@@ -129,6 +130,7 @@ public sealed class VoxelTracerSystem : MonoBehaviour
     int KWriteMaterialProperties;
     int KSDFSeed, KSDFJumpFlood, KSDFFinalize, KComputeSDFNormals;
     bool _kernelsCached;
+    int KWriteHeatSources;
 
     // GPU buffers
     ComputeBuffer _voxelBuffer;      // working buffer: packed (bit 0=surface, bit 1=outside)
@@ -146,6 +148,7 @@ public sealed class VoxelTracerSystem : MonoBehaviour
     RenderTexture _diffusivityTex;
     RenderTexture _phaseTex;
     RenderTexture _sdfTex;
+    RenderTexture _heatSourceTex;
 
     // SDF (Jump Flood Algorithm) buffers
     ComputeBuffer _jfaBufferA;
@@ -596,6 +599,9 @@ public sealed class VoxelTracerSystem : MonoBehaviour
         // Compute SDF + SDF-based normals (replaces blur normals when SDF is on)
         if (computeSDF && _sdfTex != null)
             ComputeSDFJumpFlood(gx, gy, gz);
+        // Stamp heat-source voxels into the dedicated HeatSourceTexture.
+        // Must run after StampMaterialProperties so fill is guaranteed written.
+        StampHeatSources(gx, gy, gz, regMin, regMax);
     }
 
     void SetGridUniforms(int gx, int gy, int gz)
@@ -974,6 +980,7 @@ public sealed class VoxelTracerSystem : MonoBehaviour
         KClearVoxelBuffer = coreCS.FindKernel("ClearVoxelBuffer");
         KCopyWorkingToStatic = coreCS.FindKernel("CopyWorkingToStatic");
         KWriteMaterialProperties = coreCS.FindKernel("WriteMaterialProperties");
+        KWriteHeatSources = coreCS.FindKernel("WriteHeatSources");
         KSDFSeed = coreCS.FindKernel("SDFSeed");
         KSDFJumpFlood = coreCS.FindKernel("SDFJumpFlood");
         KSDFFinalize = coreCS.FindKernel("SDFFinalize");
@@ -1039,6 +1046,18 @@ public sealed class VoxelTracerSystem : MonoBehaviour
             filterMode = FilterMode.Point
         };
         _phaseTex.Create();
+
+        _heatSourceTex = new RenderTexture(gx, gy, 0, RenderTextureFormat.RFloat)
+        {
+            dimension = UnityEngine.Rendering.TextureDimension.Tex3D,
+            volumeDepth = gz,
+            enableRandomWrite = true,
+            useMipMap = false,
+            autoGenerateMips = false,
+            wrapMode = TextureWrapMode.Clamp,
+            filterMode = FilterMode.Point
+        };
+        _heatSourceTex.Create();
 
         // Normals textures: allocate when computeNormals OR computeSDF is enabled
         // When SDF is on, normals come from SDF gradient (no blur needed)
@@ -1141,6 +1160,7 @@ public sealed class VoxelTracerSystem : MonoBehaviour
         if (_temperatureTex != null) { _temperatureTex.Release(); Destroy(_temperatureTex); _temperatureTex = null; }
         if (_diffusivityTex != null) { _diffusivityTex.Release(); Destroy(_diffusivityTex); _diffusivityTex = null; }
         if (_phaseTex != null) { _phaseTex.Release(); Destroy(_phaseTex); _phaseTex = null; }
+        if (_heatSourceTex != null) { _heatSourceTex.Release(); Destroy(_heatSourceTex); _heatSourceTex = null; }
         if (_sdfTex != null) { _sdfTex.Release(); Destroy(_sdfTex); _sdfTex = null; }
     }
 
@@ -1273,7 +1293,87 @@ public sealed class VoxelTracerSystem : MonoBehaviour
 
         Dispatch3D(KWriteMaterialProperties, regSize.x, regSize.y, regSize.z);
     }
+    /// <summary>
+    /// Writes the HeatSourceTexture for the given dirty region.
+    /// The texture is first cleared to 0 across the region (so sources that
+    /// moved or deactivated since last frame don't leave stale hot spots).
+    /// Then every active VoxelHeatSource stamps its temperature value into the
+    /// voxels it overlaps.
+    /// </summary>
+    void StampHeatSources(int gx, int gy, int gz, Vector3Int regMin, Vector3Int regMax)
+    {
+        if (_heatSourceTex == null) return;
 
+        _materialSourceList.Clear();
+
+        Vector3 halfVoxelPad = Vector3.one * (voxelSize * 0.5f);
+
+        foreach (var hs in _registeredHeatSources)
+        {
+            if (hs == null || !hs.isActiveAndEnabled || !hs.active) continue;
+
+            if (hs.radius > 0f)
+            {
+                _materialSourceList.Add(new MaterialSource
+                {
+                    position = hs.transform.position,
+                    extents = Vector3.one * hs.radius,
+                    temperature = hs.temperature,
+                    thermalDiffusivity = 0f,
+                    phase = 0f,
+                    shape = 1
+                });
+            }
+            else
+            {
+                var r = hs.GetComponent<Renderer>();
+                if (r != null)
+                {
+                    _materialSourceList.Add(new MaterialSource
+                    {
+                        position = r.bounds.center,
+                        extents = r.bounds.extents + Vector3.one * voxelSize,
+                        temperature = hs.temperature,
+                        thermalDiffusivity = 0f,
+                        phase = 0f,
+                        shape = 0
+                    });
+                }
+                else
+                {
+                    _materialSourceList.Add(new MaterialSource
+                    {
+                        position = hs.transform.position,
+                        extents = Vector3.one * 0.5f,
+                        temperature = hs.temperature,
+                        thermalDiffusivity = 0f,
+                        phase = 0f,
+                        shape = 1
+                    });
+                }
+            }
+        }
+
+        // FIX: Always ensure the GPU buffer is valid and contains current data,
+        // even when count == 0 (kernel still runs to clear the texture region).
+        int count = _materialSourceList.Count;
+        if (_materialSourceBuffer == null || _materialSourceBuffer.count < Mathf.Max(1, count))
+        {
+            _materialSourceBuffer?.Release();
+            _materialSourceBuffer = new ComputeBuffer(Mathf.Max(1, count), Marshal.SizeOf(typeof(MaterialSource)));
+        }
+        if (count > 0)
+            _materialSourceBuffer.SetData(_materialSourceList);
+
+        Vector3Int regSize = regMax - regMin + Vector3Int.one;
+        SetRegionMin(regMin.x, regMin.y, regMin.z);
+
+        coreCS.SetInt("_MaterialSourceCount", count);   // correctly 0 when no sources
+        coreCS.SetTexture(KWriteHeatSources, "_FillTex", _fillTex);
+        coreCS.SetTexture(KWriteHeatSources, "_HeatSourceTex", _heatSourceTex);
+        coreCS.SetBuffer(KWriteHeatSources, "_MaterialSources", _materialSourceBuffer);
+        Dispatch3D(KWriteHeatSources, regSize.x, regSize.y, regSize.z);
+    }
     void BuildMaterialSourceList()
     {
         _materialSourceList.Clear();
@@ -1304,7 +1404,7 @@ public sealed class VoxelTracerSystem : MonoBehaviour
                 _materialSourceList.Add(new MaterialSource
                 {
                     position = r.bounds.center,
-                    extents = r.bounds.extents + halfVoxelPad,
+                    extents = r.bounds.extents + Vector3.one * voxelSize, 
                     temperature = sm.temperature,
                     thermalDiffusivity = sm.thermalDiffusivity,
                     phase = 0f,
@@ -1350,7 +1450,7 @@ public sealed class VoxelTracerSystem : MonoBehaviour
                     _materialSourceList.Add(new MaterialSource
                     {
                         position = r.bounds.center,
-                        extents = r.bounds.extents + halfVoxelPad,
+                        extents = r.bounds.extents + Vector3.one * voxelSize,
                         temperature = hs.temperature,
                         thermalDiffusivity = 0f,
                         phase = 0f,

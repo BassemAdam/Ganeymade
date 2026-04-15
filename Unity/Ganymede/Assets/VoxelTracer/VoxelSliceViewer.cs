@@ -15,6 +15,8 @@ public class VoxelSliceViewer : MonoBehaviour
 {
     [Header("References")]
     public VoxelTracerSystem voxelSystem;
+    [Tooltip("Optional: assign to show live diffused temperature instead of initial stamp")]
+    public ThermalReceiver thermalReceiver;
 
     [Header("Slice")]
     public SliceAxis axis = SliceAxis.Y;
@@ -82,6 +84,10 @@ public class VoxelSliceViewer : MonoBehaviour
 
         if (!_visible) return;
         if (voxelSystem == null || !voxelSystem.IsReady) return;
+
+        // Auto-find ThermalReceiver if not assigned
+        if (thermalReceiver == null)
+            thermalReceiver = FindObjectOfType<ThermalReceiver>();
 
         // Scroll wheel scrubs slice position when overlay is visible
         float scroll = Input.GetAxis("Mouse ScrollWheel");
@@ -175,6 +181,20 @@ public class VoxelSliceViewer : MonoBehaviour
         int nz = voxelSystem.Nz;
         int total = nx * ny * nz;
 
+        // Prefer live diffused temperature from ThermalReceiver when available
+        if (thermalReceiver != null && thermalReceiver.IsInitialized)
+        {
+            var live = thermalReceiver.LiveTemperatureData;
+            if (live != null && live.Length == total)
+            {
+                if (_tempData == null || _tempData.Length != total)
+                    _tempData = new float[total];
+                System.Array.Copy(live, _tempData, total);
+                return;
+            }
+        }
+
+        // Fallback: read the initial stamped temperature from the voxel system
         var tempRT = voxelSystem.TemperatureTexture;
         if (tempRT == null) return;
 
