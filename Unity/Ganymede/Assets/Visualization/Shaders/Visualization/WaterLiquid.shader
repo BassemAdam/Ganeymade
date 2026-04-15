@@ -23,9 +23,11 @@ Shader "Custom/WaterLiquid"
 
         Pass
         {
+            Name "WaterShading"
             Blend SrcAlpha OneMinusSrcAlpha
             ZWrite Off
-            Cull Off
+            ZTest LEqual
+            Cull Back
 
             HLSLPROGRAM
 
