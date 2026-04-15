@@ -1,4 +1,4 @@
-// Marching Cubes on a density grid (StructuredBuffer<uint>).
+// Marching Cubes on a density grid (Texture3D<float>).
 // ALL lookup data comes from runtime StructuredBuffers — zero large static const
 // arrays, guaranteed Vulkan/SPIR-V compatibility.
 
@@ -16,7 +16,8 @@ struct Vertex
 };
 
 // ---- Inputs ----
-StructuredBuffer<uint> DensityGrid;
+Texture3D<float> DensityTexture3D;
+SamplerState samplerDensityTexture3D;
 StructuredBuffer<int>  lut;        // flat triangle edge indices
 StructuredBuffer<int>  offsets;    // offset into lut for each of 256 configs
 StructuredBuffer<int>  lengths;    // number of indices per config
@@ -24,7 +25,6 @@ StructuredBuffer<int>  lengths;    // number of indices per config
 int3   GridSize;
 float3 VoxelSize;
 float3 BoundsMinWS;
-float  invDensityScale;
 float  isoLevel;
 
 // ---- Output ----
@@ -41,17 +41,13 @@ void ClearArgs(uint3 id : SV_DispatchThreadID)
 }
 
 // ---- Helpers ----
-uint GridIndex(int3 pos)
-{
-    return (uint)(pos.x + GridSize.x * (pos.y + GridSize.y * pos.z));
-}
-
 float SampleDensity(int3 pos)
 {
     bool isEdge = any(pos <= 0) || any(pos >= GridSize - 1);
     if (isEdge) return isoLevel;
 
-    return -(float)DensityGrid[GridIndex(pos)] * invDensityScale;
+    float3 uvw = ((float3)pos + 0.5) / max((float3)GridSize, 1.0);
+    return -DensityTexture3D.SampleLevel(samplerDensityTexture3D, uvw, 0).r;
 }
 
 float3 CalcNormal(int3 coord)

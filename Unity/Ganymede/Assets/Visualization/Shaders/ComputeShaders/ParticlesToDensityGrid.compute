@@ -9,6 +9,7 @@
 
 #pragma kernel ClearGrid
 #pragma kernel SplatParticles
+#pragma kernel NormalizeToTexture
 
 struct Particle
 {
@@ -30,6 +31,7 @@ struct Particle
 
 StructuredBuffer<Particle> _ParticleBuffer;
 RWStructuredBuffer<uint>   _DensityGrid;
+RWTexture3D<float>         _DensityTexture3D;
 
 int3   _VolumeDims;          // xyz
 uint   _ParticleCount;
@@ -137,4 +139,16 @@ void SplatParticles(uint id : SV_DispatchThreadID)
             }
         }
     }
+}
+
+[numthreads(8, 8, 8)]
+void NormalizeToTexture(uint3 id : SV_DispatchThreadID)
+{
+    if (id.x >= (uint)_VolumeDims.x || id.y >= (uint)_VolumeDims.y || id.z >= (uint)_VolumeDims.z)
+        return;
+
+    uint idx = GridIndex((int3)id);
+    uint intDensity = _DensityGrid[idx];
+
+    _DensityTexture3D[id] = (float)intDensity / max(_FixedPointScale, 1.0);
 }
