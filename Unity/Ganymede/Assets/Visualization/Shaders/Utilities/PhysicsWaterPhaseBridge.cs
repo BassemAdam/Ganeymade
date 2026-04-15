@@ -71,6 +71,13 @@ public class PhysicsWaterPhaseBridge : MonoBehaviour
     [Tooltip("If enabled, automatically disables ParticleRenderer on the same GameObject")]
     public bool disableParticleRenderer = true;
 
+    [Header("Visualization Proxy")]
+    [Tooltip("If enabled, ray-marching visuals use a child proxy renderer so the simulation root transform is never moved.")]
+    public bool useChildVisualProxy = true;
+
+    [Tooltip("Optional explicit proxy transform. If null and useChildVisualProxy is enabled, one is auto-created as a child.")]
+    public Transform visualProxyTransform;
+
     [Header("Materials")]
     [Tooltip("Material used for Ray Marching")]
     public Material rayMarchingMaterial;
@@ -90,6 +97,8 @@ public class PhysicsWaterPhaseBridge : MonoBehaviour
 
     private UseComputePlugin computePlugin;
     private Renderer waterRenderer;
+    private MeshRenderer rootMeshRenderer;
+    private MeshFilter rootMeshFilter;
 
     // GPU buffers
     private ComputeBuffer particleOutputBuffer;
@@ -114,6 +123,8 @@ public class PhysicsWaterPhaseBridge : MonoBehaviour
     // Init guard (Start might not have executed yet if the component is enabled mid-frame)
     private bool _kernelsInitialized;
 
+    private const string DefaultProxyObjectName = "WaterVisualProxy";
+
     // Runtime material instance for ray-marching path
     private Material _rayMarchMatInstance;
 
@@ -137,7 +148,8 @@ public class PhysicsWaterPhaseBridge : MonoBehaviour
     private void Awake()
     {
         computePlugin = GetComponent<UseComputePlugin>();
-        waterRenderer = GetComponent<Renderer>();
+        rootMeshRenderer = GetComponent<MeshRenderer>();
+        rootMeshFilter = GetComponent<MeshFilter>();
         mpb = new MaterialPropertyBlock();
         _particleStride = Marshal.SizeOf<Particle>();
 
@@ -148,13 +160,14 @@ public class PhysicsWaterPhaseBridge : MonoBehaviour
                 pr.enabled = false;
         }
 
-        MeshFilter mf = GetComponent<MeshFilter>();
-        if (mf.sharedMesh == null)
+        if (rootMeshFilter.sharedMesh == null)
         {
             GameObject tempCube = GameObject.CreatePrimitive(PrimitiveType.Cube);
-            mf.sharedMesh = tempCube.GetComponent<MeshFilter>().sharedMesh;
+            rootMeshFilter.sharedMesh = tempCube.GetComponent<MeshFilter>().sharedMesh;
             Destroy(tempCube);
         }
+
+        EnsureVisualRenderer();
     }
 
     private void OnEnable()
@@ -165,6 +178,72 @@ public class PhysicsWaterPhaseBridge : MonoBehaviour
             mpb = new MaterialPropertyBlock();
         if (_particleStride <= 0)
             _particleStride = Marshal.SizeOf<Particle>();
+
+        EnsureVisualRenderer();
+    }
+
+    private void EnsureVisualRenderer()
+    {
+        if (rootMeshRenderer == null)
+            rootMeshRenderer = GetComponent<MeshRenderer>();
+        if (rootMeshFilter == null)
+            rootMeshFilter = GetComponent<MeshFilter>();
+
+        if (!useChildVisualProxy)
+        {
+            if (visualProxyTransform != null)
+            {
+                Renderer externalRenderer = visualProxyTransform.GetComponent<Renderer>();
+                waterRenderer = externalRenderer != null ? externalRenderer : rootMeshRenderer;
+            }
+            else
+            {
+                waterRenderer = rootMeshRenderer;
+            }
+
+            return;
+        }
+
+        if (visualProxyTransform == null)
+        {
+            Transform existing = transform.Find(DefaultProxyObjectName);
+            if (existing != null)
+            {
+                visualProxyTransform = existing;
+            }
+            else
+            {
+                GameObject proxy = new GameObject(DefaultProxyObjectName);
+                visualProxyTransform = proxy.transform;
+                visualProxyTransform.SetParent(transform, false);
+            }
+        }
+
+        MeshFilter proxyFilter = visualProxyTransform.GetComponent<MeshFilter>();
+        if (proxyFilter == null)
+            proxyFilter = visualProxyTransform.gameObject.AddComponent<MeshFilter>();
+
+        MeshRenderer proxyRenderer = visualProxyTransform.GetComponent<MeshRenderer>();
+        if (proxyRenderer == null)
+            proxyRenderer = visualProxyTransform.gameObject.AddComponent<MeshRenderer>();
+
+        if (rootMeshFilter != null && proxyFilter.sharedMesh == null)
+            proxyFilter.sharedMesh = rootMeshFilter.sharedMesh;
+
+        if (rootMeshRenderer != null)
+        {
+            Material[] rootMats = rootMeshRenderer.sharedMaterials;
+            if ((proxyRenderer.sharedMaterials == null || proxyRenderer.sharedMaterials.Length == 0) &&
+                rootMats != null && rootMats.Length > 0)
+            {
+                proxyRenderer.sharedMaterials = rootMats;
+            }
+
+            if (proxyRenderer != rootMeshRenderer)
+                rootMeshRenderer.enabled = false;
+        }
+
+        waterRenderer = proxyRenderer;
     }
 
     private void Start()
@@ -208,8 +287,7 @@ public class PhysicsWaterPhaseBridge : MonoBehaviour
 
     private void UpdateMaterial()
     {
-        if (waterRenderer == null)
-            waterRenderer = GetComponent<Renderer>();
+        EnsureVisualRenderer();
         if (waterRenderer == null)
             return;
 
@@ -369,7 +447,7 @@ public class PhysicsWaterPhaseBridge : MonoBehaviour
         if (computePlugin == null)
             computePlugin = GetComponent<UseComputePlugin>();
         if (waterRenderer == null)
-            waterRenderer = GetComponent<Renderer>();
+            EnsureVisualRenderer();
         if (mpb == null)
             mpb = new MaterialPropertyBlock();
         if (!_kernelsInitialized)
@@ -433,8 +511,18 @@ public class PhysicsWaterPhaseBridge : MonoBehaviour
             {
                 Vector3 center = (boundsMin + boundsMax) * 0.5f;
                 Vector3 size = (boundsMax - boundsMin);
-                waterRenderer.transform.position = center;
-                waterRenderer.transform.localScale = size;
+                Transform visualTransform = waterRenderer.transform;
+                bool movingSimulationRoot = computePlugin != null &&
+                                            computePlugin.boundsAreLocalToTransform &&
+                                            visualTransform == computePlugin.transform;
+
+                // Guard against transform feedback loop:
+                // GetBoundsWS uses simulation transform.position when bounds are local,
+                // so writing that same transform's position from those bounds causes runaway drift.
+                if (!movingSimulationRoot)
+                    visualTransform.position = center;
+
+                visualTransform.localScale = size;
 
                 mpb.Clear();
                 mpb.SetTexture(ID_PhysicsDensityGrid, densityTexture3D);
