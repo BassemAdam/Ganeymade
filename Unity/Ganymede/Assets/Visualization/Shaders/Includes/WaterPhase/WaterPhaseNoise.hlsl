@@ -5,22 +5,18 @@
         // ───────────────────────────────────────────────────────────────
         // Physics density grid (GPU) — set at runtime by PhysicsWaterPhaseBridge
         //
-        // _PhysicsDensityGrid: fixed-point uint density values in a 3D grid
+        // _PhysicsDensityGrid: normalized float density values in a 3D texture
         // _PhysicsBoundsMinWS/_MaxWS: world-space simulation bounds
         // _PhysicsVolumeDims.xyz: grid dimensions (ints)
-        // _PhysicsVolumeDims.w: invScale to convert fixed-point sum to [0..1]
+        // _PhysicsVolumeDims.w: additional normalization scale to map occupancy into [0..1]
         //
         // NOTE: This path is keyword-gated to avoid forcing extra Vulkan
         //       bindings for noise-only materials.
-        StructuredBuffer<uint> _PhysicsDensityGrid;
+        Texture3D<float> _PhysicsDensityGrid;
+        SamplerState sampler_PhysicsDensityGrid;
         float4 _PhysicsBoundsMinWS;
         float4 _PhysicsBoundsMaxWS;
         float4 _PhysicsVolumeDims;
-
-        int PhysicsGridIndex(int3 v, int3 dims)
-        {
-            return v.x + dims.x * (v.y + dims.y * v.z);
-        }
 
         float SamplePhysicsDensityGrid(float3 worldPos)
         {
@@ -35,29 +31,8 @@
             if (uvw.x < 0.0 || uvw.y < 0.0 || uvw.z < 0.0 || uvw.x > 1.0 || uvw.y > 1.0 || uvw.z > 1.0)
                 return 0.0;
 
-            float3 gridPos = uvw * (float3)(dims - 1);
-            int3 base = (int3)floor(gridPos);
-            float3 f = gridPos - base;
-            int3 base1 = min(base + 1, dims - 1);
-
-            // Fetch 8 corners and manually trilinear-interpolate.
-            float d000 = (float)_PhysicsDensityGrid[PhysicsGridIndex(int3(base.x,  base.y,  base.z),  dims)] * invScale;
-            float d100 = (float)_PhysicsDensityGrid[PhysicsGridIndex(int3(base1.x, base.y,  base.z),  dims)] * invScale;
-            float d010 = (float)_PhysicsDensityGrid[PhysicsGridIndex(int3(base.x,  base1.y, base.z),  dims)] * invScale;
-            float d110 = (float)_PhysicsDensityGrid[PhysicsGridIndex(int3(base1.x, base1.y, base.z),  dims)] * invScale;
-            float d001 = (float)_PhysicsDensityGrid[PhysicsGridIndex(int3(base.x,  base.y,  base1.z), dims)] * invScale;
-            float d101 = (float)_PhysicsDensityGrid[PhysicsGridIndex(int3(base1.x, base.y,  base1.z), dims)] * invScale;
-            float d011 = (float)_PhysicsDensityGrid[PhysicsGridIndex(int3(base.x,  base1.y, base1.z), dims)] * invScale;
-            float d111 = (float)_PhysicsDensityGrid[PhysicsGridIndex(int3(base1.x, base1.y, base1.z), dims)] * invScale;
-
-            float d00 = lerp(d000, d100, f.x);
-            float d10 = lerp(d010, d110, f.x);
-            float d01 = lerp(d001, d101, f.x);
-            float d11 = lerp(d011, d111, f.x);
-            float d0  = lerp(d00, d10, f.y);
-            float d1  = lerp(d01, d11, f.y);
-
-            return saturate(lerp(d0, d1, f.z));
+            float density = _PhysicsDensityGrid.SampleLevel(sampler_PhysicsDensityGrid, uvw, 0).r * invScale;
+            return saturate(density);
         }
     #else
         float SamplePhysicsDensityGrid(float3 worldPos) { return 0.0; }

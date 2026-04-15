@@ -10,7 +10,7 @@ using UnityEngine.Rendering;
 ///
 /// Usage:
 ///   var mc = new MarchingCubesRenderer(computeShader, lutTextAsset, material);
-///   mc.Render(densityGrid, gridSize, boundsMin, boundsMax, invDensityScale, isoLevel, layer);
+///   mc.Render(densityTexture3D, gridSize, boundsMin, boundsMax, isoLevel, layer);
 ///   mc.Release();   // in OnDestroy
 /// </summary>
 public class MarchingCubesRenderer : IDisposable
@@ -41,14 +41,13 @@ public class MarchingCubesRenderer : IDisposable
 
     // ---- Property IDs ----
     private static readonly int PID_Vertices       = Shader.PropertyToID("vertices");
-    private static readonly int PID_DensityGrid    = Shader.PropertyToID("DensityGrid");
+    private static readonly int PID_DensityTexture3D = Shader.PropertyToID("DensityTexture3D");
     private static readonly int PID_Lut            = Shader.PropertyToID("lut");
     private static readonly int PID_Offsets         = Shader.PropertyToID("offsets");
     private static readonly int PID_Lengths         = Shader.PropertyToID("lengths");
     private static readonly int PID_GridSize       = Shader.PropertyToID("GridSize");
     private static readonly int PID_VoxelSize      = Shader.PropertyToID("VoxelSize");
     private static readonly int PID_BoundsMinWS    = Shader.PropertyToID("BoundsMinWS");
-    private static readonly int PID_InvDensityScale = Shader.PropertyToID("invDensityScale");
     private static readonly int PID_IsoLevel       = Shader.PropertyToID("isoLevel");
     private static readonly int PID_VertexBuffer   = Shader.PropertyToID("_MCVertices");
 
@@ -105,15 +104,14 @@ public class MarchingCubesRenderer : IDisposable
     /// Call this every frame from LateUpdate.
     /// </summary>
     public void Render(
-        ComputeBuffer densityGrid,
+        RenderTexture densityTexture3D,
         Vector3Int gridSize,
         Vector3 boundsMin,
         Vector3 boundsMax,
-        float invDensityScale,
         float isoLevel,
         int layer)
     {
-        if (_disposed || densityGrid == null) return;
+        if (_disposed || densityTexture3D == null) return;
 
         Vector3Int dims = new Vector3Int(
             Mathf.Max(2, gridSize.x),
@@ -135,11 +133,10 @@ public class MarchingCubesRenderer : IDisposable
         // Bind per-frame data
         _compute.SetBuffer(_kMarch, "drawArgs", _drawArgsBuffer);
         _compute.SetBuffer(_kMarch, PID_Vertices, _vertexBuffer);
-        _compute.SetBuffer(_kMarch, PID_DensityGrid, densityGrid);
+        _compute.SetTexture(_kMarch, PID_DensityTexture3D, densityTexture3D);
         _compute.SetInts(PID_GridSize, dims.x, dims.y, dims.z);
         _compute.SetVector(PID_VoxelSize, new Vector4(voxelSize.x, voxelSize.y, voxelSize.z, 0f));
         _compute.SetVector(PID_BoundsMinWS, new Vector4(boundsMin.x, boundsMin.y, boundsMin.z, 0f));
-        _compute.SetFloat(PID_InvDensityScale, invDensityScale);
         _compute.SetFloat(PID_IsoLevel, Mathf.Clamp01(isoLevel));
 
         // Dispatch
