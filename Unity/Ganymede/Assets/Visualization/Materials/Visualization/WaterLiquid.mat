@@ -39,20 +39,20 @@ Material:
     m_TexEnvs: []
     m_Ints: []
     m_Floats:
-    - _AbsorptionRate: 1.21
+    - _AbsorptionRate: 0.28
     - _BleedCompensation: 0.615
-    - _BlurRadius: 0.0452
+    - _BlurRadius: 0.0669
     - _BlurStrength: 0.0111
     - _DepthScale: 0.47
     - _FoamDistance: 1.912
     - _FoamSharpness: 4.98
-    - _FresnelPower: 5.48
+    - _FresnelPower: 10
     - _IOR: 1.556
-    - _MinAlpha: 1
-    - _ReflectionStrength: 0.867
-    - _RefractionStrength: 0.242
-    - _Smoothness: 0.959
-    - _SpecularStrength: 4.03
+    - _MinAlpha: 0.881
+    - _ReflectionStrength: 0.934
+    - _RefractionStrength: 0.268
+    - _Smoothness: 0.97
+    - _SpecularStrength: 4.79
     m_Colors:
     - _DeepColor: {r: 0.07289071, g: 0.11758502, b: 0.24528301, a: 1}
     - _FoamColor: {r: 1, g: 1, b: 1, a: 1}
