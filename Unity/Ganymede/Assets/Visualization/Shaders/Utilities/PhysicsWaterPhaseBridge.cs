@@ -64,18 +64,8 @@ public class PhysicsWaterPhaseBridge : MonoBehaviour
     [Range(0, 3)]
     public int kernelRadiusVoxels = 2;
 
-    [Header("Runtime Controls")]
-    [Tooltip("Forces the native plugin into perfTestMode (skips staging readback to CPU)")]
-    public bool forcePerfTestMode = true;
-
-    [Tooltip("If enabled, automatically disables ParticleRenderer on the same GameObject")]
-    public bool disableParticleRenderer = true;
-
     [Header("Visualization Proxy")]
-    [Tooltip("If enabled, ray-marching visuals use a child proxy renderer so the simulation root transform is never moved.")]
-    public bool useChildVisualProxy = true;
-
-    [Tooltip("Optional explicit proxy transform. If null and useChildVisualProxy is enabled, one is auto-created as a child.")]
+    [Tooltip("Optional explicit proxy transform. If null, one is auto-created as a child.")]
     public Transform visualProxyTransform;
 
     [Header("Materials")]
@@ -153,13 +143,6 @@ public class PhysicsWaterPhaseBridge : MonoBehaviour
         mpb = new MaterialPropertyBlock();
         _particleStride = Marshal.SizeOf<Particle>();
 
-        if (disableParticleRenderer)
-        {
-            var pr = GetComponent<ParticleRenderer>();
-            if (pr != null)
-                pr.enabled = false;
-        }
-
         if (rootMeshFilter.sharedMesh == null)
         {
             GameObject tempCube = GameObject.CreatePrimitive(PrimitiveType.Cube);
@@ -188,21 +171,6 @@ public class PhysicsWaterPhaseBridge : MonoBehaviour
             rootMeshRenderer = GetComponent<MeshRenderer>();
         if (rootMeshFilter == null)
             rootMeshFilter = GetComponent<MeshFilter>();
-
-        if (!useChildVisualProxy)
-        {
-            if (visualProxyTransform != null)
-            {
-                Renderer externalRenderer = visualProxyTransform.GetComponent<Renderer>();
-                waterRenderer = externalRenderer != null ? externalRenderer : rootMeshRenderer;
-            }
-            else
-            {
-                waterRenderer = rootMeshRenderer;
-            }
-
-            return;
-        }
 
         if (visualProxyTransform == null)
         {
@@ -459,9 +427,6 @@ public class PhysicsWaterPhaseBridge : MonoBehaviour
 
         if (computePlugin == null || particlesToDensityCompute == null || waterRenderer == null)
             return;
-
-        if (forcePerfTestMode)
-            computePlugin.perfTestMode = true;
 
         if (useMarchingCubes != _lastUseMarchingCubes)
         {
