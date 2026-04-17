@@ -6,8 +6,7 @@ Shader "Custom/WaterRaymarching"
         _TintColor ("Tint Color", Color) = (0.20, 0.60, 1.00, 1.00)
         _DensityOffset ("Density Offset", Float) = 0.0
         _DensityMultiplier ("Density Multiplier", Float) = 1.0
-        _Absorption ("Absorption", Range(0.0, 10.0)) = 0.01
-        _ScatteringCoefficients ("Scattering Coefficients", Color) = (0.25, 0.5, 1.0, 1.0)
+        _ScatteringCoefficients ("Scattering Coefficients (RGB = per-channel extinction)", Color) = (0.8, 0.2, 0.05, 1.0)
         _StepSize ("Step Size", Range(0.001, 1.0)) = 0.05
         _LightStepSize ("Light Step Size", Range(0.001, 2.0)) = 0.2
         _BlueNoiseTex ("Blue Noise Texture", 2D) = "white" {}
@@ -47,7 +46,6 @@ Shader "Custom/WaterRaymarching"
                 half4 _TintColor;
                 float _DensityOffset;
                 float _DensityMultiplier;
-                float _Absorption;
                 float3 _ScatteringCoefficients;
                 float _StepSize;
                 float _LightStepSize;
@@ -78,8 +76,8 @@ Shader "Custom/WaterRaymarching"
                     distanceMarchedToLight += _LightStepSize;
                 }
 
-                // Beer-Lambert: how much sunlight survives the path through the volume to posWS
-                return exp(-_Absorption * lightOpticalDepth);
+                // Beer-Lambert per channel: how much sunlight survives the path through the volume to posWS
+                return exp(-_ScatteringCoefficients * lightOpticalDepth);
             }
 
             Interpoalaters vert(MeshData IN)
@@ -104,38 +102,31 @@ Shader "Custom/WaterRaymarching"
                 float2 blueNoiseUV = frac(IN.positionHCS.xy / 1024.0); 
                 float blueNoise = SAMPLE_TEXTURE2D(_BlueNoiseTex, sampler_BlueNoiseTex, blueNoiseUV).r;
 
-                float stepSize = max(_StepSize, 0.001);
 
-                float currentDistance = dstToBox + stepSize * blueNoise;
+                float currentDistance = dstToBox + _StepSize * blueNoise;
                 float exitDistance = dstToBox + dstInsideBox;
 
                 float3 FinalLight = 0;
-                // Transmittance from camera to current sample (starts at 1 = fully unobstructed)
-                float viewTransmittance = 1.0;
+          float3 viewTransmittance = 1.0;
 
                 while (currentDistance < exitDistance)
                 {
                     float3 samplePosWS = _WorldSpaceCameraPos.xyz + rayDirWS * currentDistance;
                     float density = SampleDensityWS(samplePosWS, _DensityOffset, _DensityMultiplier);
-                    currentDistance += stepSize;
+                    currentDistance += _StepSize;
                     if (density <= 0) continue;
 
-                    // How much sunlight reaches this point from the light source
                     float3 sunTransmittance = CalculateTransmittedSunLight(samplePosWS);
 
-                    // In-scattered light at this step, weighted by remaining view transmittance
-                    float3 inScattered = _MainLightColor.rgb * sunTransmittance * _ScatteringCoefficients * density * stepSize;
+                    float3 inScattered = _MainLightColor.rgb * sunTransmittance * _ScatteringCoefficients * density * _StepSize;
                     FinalLight += inScattered * viewTransmittance;
 
-                    // Attenuate view transmittance through this step (Beer-Lambert)
-                    viewTransmittance *= exp(-_Absorption * density * stepSize);
+                    viewTransmittance *= exp(-_ScatteringCoefficients * density * _StepSize);
 
-                    // Early exit: ray is nearly fully absorbed
-                    if (viewTransmittance < 0.01) break;
+                    if (max(viewTransmittance.r, max(viewTransmittance.g, viewTransmittance.b)) < 0.01) break;
                 }
 
-                // Alpha = how opaque the volume appears (1 - remaining transmittance)
-                float alpha = 1.0 - viewTransmittance;
+                float alpha = 1.0 - dot(viewTransmittance, float3(0.333, 0.333, 0.333));
                 return half4(FinalLight, alpha);
             }
             ENDHLSL
