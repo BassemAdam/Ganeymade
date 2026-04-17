@@ -121,13 +121,13 @@ Material:
     - _Glossiness: 0
     - _GlossyReflections: 0
     - _LiquidAbsorptionRate: 0.1
-    - _LiquidBodyLightStrength: 1.13
-    - _LiquidFresnelPower: 2.53
-    - _LiquidOpacityCoeff: 30
-    - _LiquidReflectionStrength: 0.842
+    - _LiquidBodyLightStrength: 1.19
+    - _LiquidFresnelPower: 10
+    - _LiquidOpacityCoeff: 24.7
+    - _LiquidReflectionStrength: 0.881
     - _LiquidRefractionStrength: 0.268
-    - _LiquidSmoothness: 0.745
-    - _LiquidSpecularStrength: 1.89
+    - _LiquidSmoothness: 0.491
+    - _LiquidSpecularStrength: 3.12
     - _MarchSteps: 32
     - _Metallic: 0
     - _NoiseDriftSpeed: 0
