@@ -115,16 +115,13 @@ public class PhysicsWaterPhaseBridge : MonoBehaviour
 
     private const string DefaultProxyObjectName = "WaterVisualProxy";
 
-    // Runtime material instance for ray-marching path
-    private Material _rayMarchMatInstance;
+
 
     // Cached IDs
     private static readonly int ID_PhysicsDensityGrid = Shader.PropertyToID("_PhysicsDensityGrid");
     private static readonly int ID_PhysicsBoundsMinWS = Shader.PropertyToID("_PhysicsBoundsMinWS");
     private static readonly int ID_PhysicsBoundsMaxWS = Shader.PropertyToID("_PhysicsBoundsMaxWS");
     private static readonly int ID_PhysicsVolumeDims = Shader.PropertyToID("_PhysicsVolumeDims");
-
-    private const string KW_PhysicsDensityGrid = "_PHYSICS_DENSITY_GRID";
 
     private static readonly int ID_VolumeDims = Shader.PropertyToID("_VolumeDims");
     private static readonly int ID_ParticleCount = Shader.PropertyToID("_ParticleCount");
@@ -259,20 +256,11 @@ public class PhysicsWaterPhaseBridge : MonoBehaviour
         if (waterRenderer == null)
             return;
 
-        // Create ray-march material instance once so we can toggle keywords without mutating shared assets.
-        if (_rayMarchMatInstance == null && rayMarchingMaterial != null)
-            _rayMarchMatInstance = new Material(rayMarchingMaterial);
-
         if (!useMarchingCubes)
         {
-            // Ray-marching path: render the proxy cube and bind the density grid via MPB.
+            // Ray-marching path: use shared material directly so inspector changes apply at runtime.
             waterRenderer.enabled = true;
-            waterRenderer.sharedMaterials = new Material[] { _rayMarchMatInstance != null ? _rayMarchMatInstance : rayMarchingMaterial };
-
-            if (_rayMarchMatInstance != null)
-            {
-                _rayMarchMatInstance.EnableKeyword(KW_PhysicsDensityGrid);
-            }
+            waterRenderer.sharedMaterials = new Material[] { rayMarchingMaterial };
         }
         else
         {
@@ -544,6 +532,6 @@ public class PhysicsWaterPhaseBridge : MonoBehaviour
         }
         _mcRenderer?.Release();
 
-        if (_rayMarchMatInstance != null) Destroy(_rayMarchMatInstance);
+
     }
 }
