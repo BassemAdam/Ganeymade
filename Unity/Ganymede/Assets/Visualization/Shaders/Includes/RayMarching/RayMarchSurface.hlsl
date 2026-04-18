@@ -29,9 +29,9 @@ SurfaceHit MakeSurfaceHit(float3 posWS, float3 rayDir, bool enteringWater)
     s.hit   = true;
     s.posWS = posWS;
 
-    float3 n = GetSurfaceNormalWS(posWS);
-    if (dot(n, rayDir) > 0.0)
-        n = -n;
+    float3 n = GetSurfaceNormalWS(posWS, rayDir);
+    // if (dot(n, rayDir) > 0.0)
+    //     n = -n;
     s.normal = n;
 
     float iorIncident = enteringWater ? IOR_AIR   : IOR_WATER;
