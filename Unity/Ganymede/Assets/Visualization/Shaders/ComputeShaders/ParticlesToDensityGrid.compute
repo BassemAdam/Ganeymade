@@ -41,6 +41,7 @@ float  _ParticleContribution; // unitless, per particle
 float  _FixedPointScale;     // e.g. 1024
 float  _SmoothingRadiusWS;   // world units, controls splat kernel falloff
 int    _KernelRadiusVoxels;  // 0 = nearest voxel only, 1 = 27-voxel neighborhood, etc.
+float  _InvDensityScale;     // 1 / (particleContribution * maxParticlesPerVoxel) — maps accumulated density to [0..1]
 
 uint GridIndex(int3 v)
 {
@@ -87,8 +88,9 @@ void SplatParticles(uint id : SV_DispatchThreadID)
     float3 gridPos = uvw * (float3)(_VolumeDims - 1);
     int3 base = (int3)floor(gridPos);
 
-    // Fixed-point scalar to accumulate.
-    float baseAmount = max(0.0, _ParticleContribution) * max(_FixedPointScale, 1.0);
+    // Use the SPH-computed density directly: bulk regions have high p.density naturally,
+    // isolated particles have low p.density. _ParticleContribution is now just a display scale.
+    float baseAmount = max(0.0, p.density * _ParticleContribution) * max(_FixedPointScale, 1.0);
 
     // If kernel radius is 0 (fast path), just write into the nearest voxel.
     if (_KernelRadiusVoxels <= 0 || _SmoothingRadiusWS <= 1e-5)
@@ -150,5 +152,6 @@ void NormalizeToTexture(uint3 id : SV_DispatchThreadID)
     uint idx = GridIndex((int3)id);
     uint intDensity = _DensityGrid[idx];
 
-    _DensityTexture3D[id] = (float)intDensity / max(_FixedPointScale, 1.0);
+    float normalized = ((float)intDensity / max(_FixedPointScale, 1.0)) * _InvDensityScale;
+    _DensityTexture3D[id] = saturate(normalized);
 }

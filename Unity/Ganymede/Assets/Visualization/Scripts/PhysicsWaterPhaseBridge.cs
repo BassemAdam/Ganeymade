@@ -64,8 +64,7 @@ public class PhysicsWaterPhaseBridge : MonoBehaviour
     [Range(0, 3)]
     public int kernelRadiusVoxels = 2;
 
-    [Header("Visualization Proxy")]
-    [Tooltip("Optional explicit proxy transform. If null, one is auto-created as a child.")]
+    [HideInInspector]
     public Transform visualProxyTransform;
 
     [Header("Materials")]
@@ -115,16 +114,13 @@ public class PhysicsWaterPhaseBridge : MonoBehaviour
 
     private const string DefaultProxyObjectName = "WaterVisualProxy";
 
-    // Runtime material instance for ray-marching path
-    private Material _rayMarchMatInstance;
+
 
     // Cached IDs
     private static readonly int ID_PhysicsDensityGrid = Shader.PropertyToID("_PhysicsDensityGrid");
     private static readonly int ID_PhysicsBoundsMinWS = Shader.PropertyToID("_PhysicsBoundsMinWS");
     private static readonly int ID_PhysicsBoundsMaxWS = Shader.PropertyToID("_PhysicsBoundsMaxWS");
     private static readonly int ID_PhysicsVolumeDims = Shader.PropertyToID("_PhysicsVolumeDims");
-
-    private const string KW_PhysicsDensityGrid = "_PHYSICS_DENSITY_GRID";
 
     private static readonly int ID_VolumeDims = Shader.PropertyToID("_VolumeDims");
     private static readonly int ID_ParticleCount = Shader.PropertyToID("_ParticleCount");
@@ -134,6 +130,7 @@ public class PhysicsWaterPhaseBridge : MonoBehaviour
     private static readonly int ID_FixedPointScale = Shader.PropertyToID("_FixedPointScale");
     private static readonly int ID_SmoothingRadiusWS = Shader.PropertyToID("_SmoothingRadiusWS");
     private static readonly int ID_KernelRadiusVoxels = Shader.PropertyToID("_KernelRadiusVoxels");
+    private static readonly int ID_InvDensityScale = Shader.PropertyToID("_InvDensityScale");
 
     private void Awake()
     {
@@ -259,20 +256,11 @@ public class PhysicsWaterPhaseBridge : MonoBehaviour
         if (waterRenderer == null)
             return;
 
-        // Create ray-march material instance once so we can toggle keywords without mutating shared assets.
-        if (_rayMarchMatInstance == null && rayMarchingMaterial != null)
-            _rayMarchMatInstance = new Material(rayMarchingMaterial);
-
         if (!useMarchingCubes)
         {
-            // Ray-marching path: render the proxy cube and bind the density grid via MPB.
+            // Ray-marching path: use shared material directly so inspector changes apply at runtime.
             waterRenderer.enabled = true;
-            waterRenderer.sharedMaterials = new Material[] { _rayMarchMatInstance != null ? _rayMarchMatInstance : rayMarchingMaterial };
-
-            if (_rayMarchMatInstance != null)
-            {
-                _rayMarchMatInstance.EnableKeyword(KW_PhysicsDensityGrid);
-            }
+            waterRenderer.sharedMaterials = new Material[] { rayMarchingMaterial };
         }
         else
         {
@@ -384,13 +372,6 @@ public class PhysicsWaterPhaseBridge : MonoBehaviour
         return Mathf.Max(requestedRadius, minRadius);
     }
 
-    private int ComputeAutoKernelRadius(float smoothingRadius, Vector3 voxelSizeWS)
-    {
-        float avgVoxelSize = voxelSizeWS.magnitude / Mathf.Sqrt(3.0f);
-        int autoKernelRadius = Mathf.Max(kernelRadiusVoxels, Mathf.CeilToInt(smoothingRadius / Mathf.Max(avgVoxelSize, 1e-5f)));
-        return Mathf.Clamp(autoKernelRadius, 1, 3); // cap for performance
-    }
-
     private void ConfigureSplatKernelParams(Vector3 boundsMin, Vector3 boundsMax)
     {
         float requestedRadius = smoothingRadiusWS >= 0f ? smoothingRadiusWS : computePlugin.smoothingRadius;
@@ -401,9 +382,8 @@ public class PhysicsWaterPhaseBridge : MonoBehaviour
         float effectiveRadius = ComputeEffectiveSmoothingRadius(requestedRadius, voxelSizeWS);
         particlesToDensityCompute.SetFloat(ID_SmoothingRadiusWS, Mathf.Max(0f, effectiveRadius));
 
-        // Auto-expand kernel radius based on smoothing radius and voxel scale.
-        int autoKernelRadius = ComputeAutoKernelRadius(effectiveRadius, voxelSizeWS);
-        particlesToDensityCompute.SetInt(ID_KernelRadiusVoxels, autoKernelRadius);
+        // Use kernelRadiusVoxels directly — no auto-override.
+        particlesToDensityCompute.SetInt(ID_KernelRadiusVoxels, Mathf.Clamp(kernelRadiusVoxels, 0, 3));
     }
 
     private void LateUpdate()
@@ -446,6 +426,8 @@ public class PhysicsWaterPhaseBridge : MonoBehaviour
         particlesToDensityCompute.SetVector(ID_BoundsMaxWS, new Vector4(boundsMax.x, boundsMax.y, boundsMax.z, 0f));
         particlesToDensityCompute.SetFloat(ID_ParticleContribution, particleContribution);
         particlesToDensityCompute.SetFloat(ID_FixedPointScale, fixedPointScale);
+        float invScale = 1.0f / Mathf.Max(1e-5f, Mathf.Max(1e-5f, particleContribution) * Mathf.Max(1e-5f, maxParticlesPerVoxel));
+        particlesToDensityCompute.SetFloat(ID_InvDensityScale, invScale);
         ConfigureSplatKernelParams(boundsMin, boundsMax);
 
         // Dispatch clear
@@ -460,12 +442,6 @@ public class PhysicsWaterPhaseBridge : MonoBehaviour
 
         // Convert atomic uint grid -> float 3D texture (hardware trilinear-capable).
         particlesToDensityCompute.Dispatch(kNormalize, gx, gy, gz);
-
-        // Normalize the float field further for shader-space [0..1]-ish occupancy.
-        float invScale = 1.0f / Mathf.Max(
-            1e-5f,
-            Mathf.Max(1e-5f, particleContribution) * Mathf.Max(1e-5f, maxParticlesPerVoxel)
-        );
 
         if (!useMarchingCubes)
         {
@@ -544,6 +520,6 @@ public class PhysicsWaterPhaseBridge : MonoBehaviour
         }
         _mcRenderer?.Release();
 
-        if (_rayMarchMatInstance != null) Destroy(_rayMarchMatInstance);
+
     }
 }
