@@ -1,7 +1,6 @@
 #ifndef RAY_MARCH_GEOMETRY_INCLUDED
 #define RAY_MARCH_GEOMETRY_INCLUDED
 
-// Returns float2(dstToBox, dstInsideBox) for a ray vs AABB test in world space.
 float2 RayBoxDst(float3 rayOriginWS, float3 rayDirWS, float3 bminWS, float3 bmaxWS)
 {
     float3 invDir = 1.0 / max(abs(rayDirWS), 1e-6) * sign(rayDirWS);

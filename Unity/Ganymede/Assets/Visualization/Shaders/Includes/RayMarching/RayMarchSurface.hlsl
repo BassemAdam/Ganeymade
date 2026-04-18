@@ -4,14 +4,6 @@
 #define IOR_AIR   1.0003
 #define IOR_WATER 1.3330
 
-float3 RefractDirection(float iorIncident, float iorTransmit, float3 normal, float3 rayDir)
-{
-    float  iorRatio  = iorIncident / iorTransmit;
-    float3 refracted = refract(rayDir, normal, iorRatio);
-    bool   isTIR     = dot(refracted, refracted) < 0.001;
-    return isTIR ? reflect(rayDir, normal) : refracted;
-}
-
 // Fresnel-Schlick: returns [0=refract, 1=reflect] weight.
 float FresnelSchlick(float cosTheta, float n1, float n2)
 {

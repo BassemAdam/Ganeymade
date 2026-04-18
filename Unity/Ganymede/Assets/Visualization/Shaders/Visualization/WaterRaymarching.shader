@@ -37,6 +37,7 @@ Shader "Custom/WaterRaymarching"
             #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/DeclareDepthTexture.hlsl"
             #include "../Includes/RayMarching/RayMarchGeometry.hlsl"
             #include "../Includes/RayMarching/RayMarchDensity.hlsl"
+            #include "../Includes/RayMarching/RayMarchLighting.hlsl"
             #include "../Includes/RayMarching/RayMarchSurface.hlsl"
 
             struct MeshData
@@ -67,24 +68,6 @@ Shader "Custom/WaterRaymarching"
             SAMPLER(sampler_BlueNoiseTex);
             TEXTURE2D(_CameraOpaqueTexture);
             SAMPLER(sampler_CameraOpaqueTexture);
-
-            float3 CalculateTransmittedSunLight(float3 posWS)
-            {
-                float3 sunDir = normalize(_MainLightPosition.xyz);
-                float2 lightBoundsDst = RayBoxDst(posWS, sunDir, _PhysicsBoundsMinWS.xyz, _PhysicsBoundsMaxWS.xyz);
-                float dstToSunExit = lightBoundsDst.x + lightBoundsDst.y;
-                float lightOpticalDepth = 0.0;
-                float distanceMarchedToLight = lightBoundsDst.x;
-                while (distanceMarchedToLight < dstToSunExit)
-                {
-                    float3 lightSamplePosWS = posWS + sunDir * distanceMarchedToLight;
-                    float density = SampleDensityWS(lightSamplePosWS, _DensityOffset, _DensityMultiplier);
-                    if (density > 0)
-                        lightOpticalDepth += density * _LightStepSize;
-                    distanceMarchedToLight += _LightStepSize;
-                }
-                return exp(-_ScatteringCoefficients * lightOpticalDepth);
-            }
 
             Interpoalaters vert(MeshData IN)
             {
@@ -152,7 +135,7 @@ Shader "Custom/WaterRaymarching"
                     prevDensity = density;
                     if (density <= 0) continue;
 
-                    float3 sunTransmittance = CalculateTransmittedSunLight(samplePosWS);
+                    float3 sunTransmittance = CalculateTransmittedSunLight(samplePosWS, _ScatteringCoefficients, _DensityOffset, _DensityMultiplier, _LightStepSize);
 
                     float3 inScattered = _MainLightColor.rgb * sunTransmittance * _ScatterColor * density * _StepSize;
                     FinalLight += inScattered * viewTransmittance;
