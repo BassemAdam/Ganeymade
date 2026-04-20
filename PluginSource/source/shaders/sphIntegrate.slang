@@ -129,6 +129,21 @@ void computeMain(uint3 threadId: SV_DispatchThreadID)
    float3 sphAccel = (fPressure + fViscosity) / p.density;
    p.acceleration = sphAccel;
 
+   // ── Boundary repulsion: compensates for SPH kernel truncation at walls ──
+   // Without this, wall-adjacent particles lose ~half their kernel support,
+   // underestimating density and producing a pressure gradient that pushes
+   // particles INTO the wall instead of away from it.
+   float3 boundaryForce = float3(0.0);
+   float boundaryStiff = params.gasStiffness / h;
+   float3 dLo = p.position - params.boundsMin;
+   float3 dHi = params.boundsMax - p.position;
+   if (dLo.x > 0.0 && dLo.x < h) { float q = 1.0 - dLo.x / h; boundaryForce.x += boundaryStiff * q * q; }
+   if (dLo.y > 0.0 && dLo.y < h) { float q = 1.0 - dLo.y / h; boundaryForce.y += boundaryStiff * q * q; }
+   if (dLo.z > 0.0 && dLo.z < h) { float q = 1.0 - dLo.z / h; boundaryForce.z += boundaryStiff * q * q; }
+   if (dHi.x > 0.0 && dHi.x < h) { float q = 1.0 - dHi.x / h; boundaryForce.x -= boundaryStiff * q * q; }
+   if (dHi.y > 0.0 && dHi.y < h) { float q = 1.0 - dHi.y / h; boundaryForce.y -= boundaryStiff * q * q; }
+   if (dHi.z > 0.0 && dHi.z < h) { float q = 1.0 - dHi.z / h; boundaryForce.z -= boundaryStiff * q * q; }
+
    // Interaction force: attract or repulse particles toward/away from a point
    float3 interactAccel = float3(0.0);
    if (params.interactionStrength != 0.0)
@@ -143,15 +158,17 @@ void computeMain(uint3 threadId: SV_DispatchThreadID)
       }
    }
 
-   p.velocity += (sphAccel + params.gravity + interactAccel) * params.dt;
+   p.velocity += (sphAccel + params.gravity + interactAccel + boundaryForce) * params.dt;
    p.velocity *= params.damping;
-   p.position += p.velocity * params.dt;
 
-   // Velocity magnitude clamp — prevents explosions from density spikes
+   // Velocity magnitude clamp BEFORE position update — otherwise an unclamped
+   // velocity moves the particle too far in a single frame.
    float maxVel = 30.0;
    float vel2 = dot(p.velocity, p.velocity);
    if (vel2 > maxVel * maxVel)
       p.velocity *= maxVel / sqrt(vel2);
+
+   p.position += p.velocity * params.dt;
 
    // ── SDF collision: push out of solids along gradient normal ──────
    if (params.sdfEnabled != 0 && params.sdfVoxelSize > 0.0)
@@ -182,15 +199,18 @@ void computeMain(uint3 threadId: SV_DispatchThreadID)
       }
    }
 
-   // Boundary collision: clamp position and zero out velocity component.
-   // Zero restitution is appropriate for fluid against walls — prevents
-   // chain-reaction bounces when many particles pile at a boundary.
-   if (p.position.x < params.boundsMin.x) { p.position.x = params.boundsMin.x; if (p.velocity.x < 0) p.velocity.x = 0; }
-   if (p.position.y < params.boundsMin.y) { p.position.y = params.boundsMin.y; if (p.velocity.y < 0) p.velocity.y = 0; }
-   if (p.position.z < params.boundsMin.z) { p.position.z = params.boundsMin.z; if (p.velocity.z < 0) p.velocity.z = 0; }
-   if (p.position.x > params.boundsMax.x) { p.position.x = params.boundsMax.x; if (p.velocity.x > 0) p.velocity.x = 0; }
-   if (p.position.y > params.boundsMax.y) { p.position.y = params.boundsMax.y; if (p.velocity.y > 0) p.velocity.y = 0; }
-   if (p.position.z > params.boundsMax.z) { p.position.z = params.boundsMax.z; if (p.velocity.z > 0) p.velocity.z = 0; }
+   // Boundary collision: clamp with epsilon offset so particles never sit at
+   // the exact same boundary coordinate (which collapses inter-particle
+   // distances to zero and kills the SPH gradient computation).
+   float eps = h * 0.01;
+   float3 bMin = params.boundsMin + float3(eps, eps, eps);
+   float3 bMax = params.boundsMax - float3(eps, eps, eps);
+   if (p.position.x < bMin.x) { p.position.x = bMin.x; if (p.velocity.x < 0) p.velocity.x = 0; }
+   if (p.position.y < bMin.y) { p.position.y = bMin.y; if (p.velocity.y < 0) p.velocity.y = 0; }
+   if (p.position.z < bMin.z) { p.position.z = bMin.z; if (p.velocity.z < 0) p.velocity.z = 0; }
+   if (p.position.x > bMax.x) { p.position.x = bMax.x; if (p.velocity.x > 0) p.velocity.x = 0; }
+   if (p.position.y > bMax.y) { p.position.y = bMax.y; if (p.velocity.y > 0) p.velocity.y = 0; }
+   if (p.position.z > bMax.z) { p.position.z = bMax.z; if (p.velocity.z > 0) p.velocity.z = 0; }
 
    particlesOut[i] = p;
 }
