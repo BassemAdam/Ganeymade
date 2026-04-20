@@ -3,8 +3,9 @@ Shader "Custom/TempTextureShader_URP"
     Properties
     {
         _TempTex  ("Temperature Volume", 3D) = "black" {}
-        _MaxTemp  ("Max Temperature",  Float) = 100.0
-        _BaseColor("Base Color",       Color) = (0.2, 0.2, 0.2, 1)
+        _MinTemp  ("Min Temperature", Float) = 0.0
+        _MaxTemp  ("Max Temperature", Float) = 100.0
+        _BaseColor("Base Color", Color) = (0.2, 0.2, 0.2, 1)
     }
 
     SubShader
@@ -33,6 +34,7 @@ Shader "Custom/TempTextureShader_URP"
             SAMPLER(sampler_TempTex);
 
             CBUFFER_START(UnityPerMaterial)
+                float  _MinTemp;
                 float  _MaxTemp;
                 float4 _BaseColor;
             CBUFFER_END
@@ -52,7 +54,7 @@ Shader "Custom/TempTextureShader_URP"
             {
                 Varyings OUT;
                 OUT.positionHCS = TransformObjectToHClip(IN.positionOS.xyz);
-                OUT.localPos    = IN.positionOS.xyz + 0.5;
+                OUT.localPos = IN.positionOS.xyz + 0.5;
                 return OUT;
             }
 
@@ -69,9 +71,11 @@ Shader "Custom/TempTextureShader_URP"
 
             float4 frag(Varyings IN) : SV_Target
             {
-                float  temp       = SAMPLE_TEXTURE3D(_TempTex, sampler_TempTex, IN.localPos).r;
-                float  normalized = saturate(temp / _MaxTemp);
-                float4 heat       = HeatColor(normalized);
+                float temp = SAMPLE_TEXTURE3D(_TempTex, sampler_TempTex, IN.localPos).r;
+                if (temp <= 0.0)
+                    return _BaseColor;
+                float normalized = saturate((temp - _MinTemp) / max(_MaxTemp - _MinTemp, 0.001));
+                float4 heat = HeatColor(normalized);
                 return lerp(_BaseColor, heat, normalized);
             }
             ENDHLSL
@@ -102,7 +106,8 @@ Shader "Custom/TempTextureShader_URP"
             float3 _LightPosition;
 
             CBUFFER_START(UnityPerMaterial)
-                float  _MaxTemp;
+                float _MinTemp;
+                float _MaxTemp;
                 float4 _BaseColor;
             CBUFFER_END
 

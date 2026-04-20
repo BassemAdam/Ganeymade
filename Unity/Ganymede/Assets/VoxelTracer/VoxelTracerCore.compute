@@ -24,6 +24,7 @@
 #pragma kernel SDFJumpFlood
 #pragma kernel SDFFinalize
 #pragma kernel ComputeSDFNormals
+#pragma kernel WriteHeatSources
 
 // ---- Grid ----
 int _Width, _Height, _Depth;
@@ -54,6 +55,7 @@ int _RegionMinX, _RegionMinY, _RegionMinZ;
 RWTexture3D<float>  _FillTex;
 RWTexture3D<float>  _BlurredFillTex;
 RWTexture3D<float4> _NormalTex;
+RWTexture3D<float> _HeatSourceTex;
 
 // ========================= Helpers =========================
 
@@ -145,7 +147,13 @@ void Surface(uint3 id : SV_DispatchThreadID)
     gmin = clamp(gmin, 0, int3(_Width - 1, _Height - 1, _Depth - 1));
     gmax = clamp(gmax, 0, int3(_Width - 1, _Height - 1, _Depth - 1));
 
-    float3 ext = float3(_HalfUnit, _HalfUnit, _HalfUnit);
+    // Inflate half-extents by a tiny epsilon to prevent boundary-aligned
+    // triangles from being missed due to float32 rounding in the SAT test.
+    // Without this, a face that aligns exactly with a voxel boundary can
+    // fail the plane test (abs(s) <= r), leaving a gap in the surface shell
+    // that the flood fill leaks through — producing U-shaped hollow artifacts.
+    float surfaceEps = _HalfUnit * 1e-4;
+    float3 ext = float3(_HalfUnit + surfaceEps, _HalfUnit + surfaceEps, _HalfUnit + surfaceEps);
 
     for (int z = gmin.z; z <= gmax.z; z++)
     for (int y = gmin.y; y <= gmax.y; y++)
@@ -608,4 +616,40 @@ void ComputeSDFNormals(uint3 id : SV_DispatchThreadID)
     // the outward-facing normal. Normalize it.
     float3 n = grad * rsqrt(len2);
     _NormalTex[p] = float4(n, 1);
+}
+[numthreads(8, 8, 8)]
+void WriteHeatSources(uint3 id : SV_DispatchThreadID)
+{
+    uint3 coord = id + uint3(_RegionMinX, _RegionMinY, _RegionMinZ);
+    if ((int)coord.x >= _Width || (int)coord.y >= _Height || (int)coord.z >= _Depth)
+        return;
+    _HeatSourceTex[coord] = 0.0;
+ 
+    if (_FillTex[coord] < 0.5)
+        return;
+
+    float3 worldPos = _Start + (float3(coord) + 0.5) * _Unit;
+ 
+    for (int i = 0; i < _MaterialSourceCount; i++)
+    {
+        MaterialSource src = _MaterialSources[i];
+ 
+        bool inside = false;
+        if (src.shape == 0u)   // AABB
+        {
+            float3 d = abs(worldPos - src.position) - src.extents;
+            inside = all(d <= 0.0);
+        }
+        else                   // sphere
+        {
+            float3 delta = worldPos - src.position;
+            inside = dot(delta, delta) <= src.extents.x * src.extents.x;
+        }
+ 
+        if (inside)
+        {
+            // Last source wins (matches WriteMaterialProperties priority)
+            _HeatSourceTex[coord] = max(_HeatSourceTex[coord], src.temperature);
+        }
+    }
 }
