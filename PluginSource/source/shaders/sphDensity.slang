@@ -51,7 +51,7 @@ void computeMain(uint3 threadId: SV_DispatchThreadID)
       }
    }
    p.density = params.particleMass * params.poly6Const * densitySum;
-   p.density = max(p.density, 0.001);
+   p.density = max(p.density, params.restDensity * 0.01);
 
    p.pressure = params.gasStiffness * (p.density - params.restDensity);
    p.pressure = max(p.pressure, 0.0);
