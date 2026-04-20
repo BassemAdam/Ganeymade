@@ -24,16 +24,31 @@ Shader "Hidden/WaterThicknessGen"
             Cull Off 
 
             HLSLPROGRAM
+            #pragma target 4.5
             #pragma vertex vert
             #pragma fragment frag
             #pragma multi_compile _ DOTS_INSTANCING_ON
+            #pragma multi_compile _ _MARCHING_CUBES_PROCEDURAL
 
             #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Core.hlsl"
             #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/DeclareDepthTexture.hlsl"
 
+#if defined(_MARCHING_CUBES_PROCEDURAL)
+            // Marching-cubes procedural vertex stream.
+            struct MCVertex {
+                float4 position;
+                float4 normal;
+            };
+            StructuredBuffer<MCVertex> _MCVertices;
+#endif
+
             struct MeshInput
             {
+#if defined(_MARCHING_CUBES_PROCEDURAL)
+                uint vertexID : SV_VertexID;
+#else
                 float4 positionOS : POSITION;
+#endif
             };
 
             struct Interpolators
@@ -45,22 +60,27 @@ Shader "Hidden/WaterThicknessGen"
             Interpolators vert(MeshInput IN)
             {
                 Interpolators OUT;
+#if defined(_MARCHING_CUBES_PROCEDURAL)
+                // procedural vertices are already mostly in World Space, though we usually just 
+                // use TransformWorldToHClip. Let's make sure:
+                float3 posWS = _MCVertices[IN.vertexID].position.xyz;
+                OUT.positionHCS = TransformWorldToHClip(posWS);
+#else
                 OUT.positionHCS = TransformObjectToHClip(IN.positionOS.xyz);
+#endif
                 OUT.screenPos = ComputeScreenPos(OUT.positionHCS);
                 return OUT;
             }
 
-            // VFACE tells us if the GPU is currently drawing the outside (front) or inside (back) of the mesh
-            float4 frag(Interpolators IN, float vface : VFACE) : SV_Target
+            // SV_IsFrontFace is a bool and safely cross-compiles to Vulkan, DX, Metal
+            float4 frag(Interpolators IN, bool isFrontFace : SV_IsFrontFace) : SV_Target
             {
-                // 1. Determine if this is a front face or back face.
-                // In Unity, VFACE > 0 means Front Face. VFACE < 0 means Back Face.
                 // Front faces subtract depth (-1). Back faces add depth (+1).
-                float signMultiplier = (vface > 0.0) ? -1.0 : 1.0;
+                float signMultiplier = isFrontFace ? -1.0 : 1.0;
 
                 // 2. Calculate the depth of THIS specific voxel face (in meters)
-                float rawFragDepth = IN.positionHCS.z; 
-                float fragLinearEyeDepth = LinearEyeDepth(rawFragDepth, _ZBufferParams);
+                // IN.screenPos.w natively contains the exact linear eye depth derived from the vertex positionHCS.w!
+                float fragLinearEyeDepth = IN.screenPos.w; 
 
                 // 3. Sample the Opaque Scene Depth (the rocks, the floor)
                 float2 screenUV = IN.screenPos.xy / IN.screenPos.w;

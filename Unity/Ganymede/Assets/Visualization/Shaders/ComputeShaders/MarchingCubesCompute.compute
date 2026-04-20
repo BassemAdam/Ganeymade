@@ -1,121 +1,116 @@
-// Each #kernel tells which function to compile; you can have many kernels
-#pragma kernel March
-#include "MarchingTables.hlsl"
+// Marching Cubes on a density grid (Texture3D<float>).
+// ALL lookup data comes from runtime StructuredBuffers — zero large static const
+// arrays, guaranteed Vulkan/SPIR-V compatibility.
 
-// DATA STRUCTURES
-struct Triangle{
-    float3 vertexA;
-    float3 vertexB;
-    float3 vertexC;
-    float3 normalA;
-    float3 normalB;
-    float3 normalC;
+#pragma kernel MarchDensity
+#pragma kernel ClearArgs
+
+// Tiny arrays (24 ints total) — well within Vulkan constant limits
+static const int cornerA[12] = {0, 1, 2, 3, 4, 5, 6, 7, 0, 1, 2, 3};
+static const int cornerB[12] = {1, 2, 3, 0, 5, 6, 7, 4, 4, 5, 6, 7};
+
+struct Vertex
+{
+    float4 position;   // xyz = world pos, w = 1
+    float4 normal;     // xyz = normal,    w = 0
 };
 
-// INPUTS (From c# to GPU)
-StructuredBuffer<float> SDFGrid;
+// ---- Inputs ----
+Texture3D<float> DensityTexture3D;
+SamplerState samplerDensityTexture3D;
+StructuredBuffer<int>  lut;        // flat triangle edge indices
+StructuredBuffer<int>  offsets;    // offset into lut for each of 256 configs
+StructuredBuffer<int>  lengths;    // number of indices per config
 
-// Dimensions of the SDF grid
-uint3 GridSize;
+int3   GridSize;
 float3 VoxelSize;
-float isoLevel; // The "surface" level. For our SDF, water Surface is exactly at 0.0
+float3 BoundsMinWS;
+float  isoLevel;
 
-// OUTPUTS (From GPU to c#)
-AppendStructuredBuffer<Triangle> OutputTriangles; // note append becuase some threads might finish before other
+// ---- Output ----
+RWStructuredBuffer<Vertex> vertices;
+RWStructuredBuffer<uint> drawArgs;
 
-//Helper functions
-float SampleSDF(uint3 pos) {
-    // Convert 3D index to 1D index
-    uint index = pos.x + GridSize.x * (pos.y + GridSize.y * pos.z);
-    return SDFGrid[index];
+[numthreads(1,1,1)]
+void ClearArgs(uint3 id : SV_DispatchThreadID)
+{
+    drawArgs[0] = 0;
+    drawArgs[1] = 1;
+    drawArgs[2] = 0;
+    drawArgs[3] = 0;
 }
 
-// Clamped sample: safely samples SDF with int3 coords (handles boundary voxels)
-float SampleSDFSafe(int3 pos) {
-    int3 clamped = clamp(pos, int3(0,0,0), int3(GridSize) - int3(1,1,1));
-    return SampleSDF((uint3)clamped);
+// ---- Helpers ----
+float SampleDensity(int3 pos)
+{
+    bool isEdge = any(pos <= 0) || any(pos >= GridSize - 1);
+    if (isEdge) return isoLevel;
+
+    float3 uvw = ((float3)pos + 0.5) / max((float3)GridSize, 1.0);
+    return -DensityTexture3D.SampleLevel(samplerDensityTexture3D, uvw, 0).r;
 }
 
-// SDF gradient via central differences = outward surface normal
-float3 ComputeNormal(uint3 pos) {
-    int3 p = (int3)pos;
-    float dx = SampleSDFSafe(p + int3(1,0,0)) - SampleSDFSafe(p - int3(1,0,0));
-    float dy = SampleSDFSafe(p + int3(0,1,0)) - SampleSDFSafe(p - int3(0,1,0));
-    float dz = SampleSDFSafe(p + int3(0,0,1)) - SampleSDFSafe(p - int3(0,0,1));
+float3 CalcNormal(int3 coord)
+{
+    float dx = SampleDensity(coord + int3(1,0,0)) - SampleDensity(coord - int3(1,0,0));
+    float dy = SampleDensity(coord + int3(0,1,0)) - SampleDensity(coord - int3(0,1,0));
+    float dz = SampleDensity(coord + int3(0,0,1)) - SampleDensity(coord - int3(0,0,1));
     return normalize(float3(dx, dy, dz));
 }
 
-float3 NormalInterp(float isoLevel, float3 n1, float3 n2, float valp1, float valp2) {
-    if (abs(isoLevel - valp1) < 0.00001) return n1;
-    if (abs(isoLevel - valp2) < 0.00001) return n2;
-    if (abs(valp1 - valp2) < 0.00001) return n1;
-    float perc = (isoLevel - valp1) / (valp2 - valp1);
-    return normalize(n1 + perc * (n2 - n1));
-}
-
-float3 VertexInterp(float isoLevel, float3 p1, float3 p2, float valp1, float valp2) {
-    if (abs(isoLevel - valp1) < 0.00001)
-        return p1;
-    if (abs(isoLevel - valp2) < 0.00001)
-        return p2;
-    if (abs(valp1 - valp2) < 0.00001)
-        return p1;
-
-    float perc = (isoLevel - valp1) / (valp2 - valp1); // % or lerp
-    return p1 + perc * (p2 - p1);
-
-}
-
-[numthreads(8,8,8)]
-void March (uint3 id : SV_DispatchThreadID)
+Vertex MakeVertex(int3 ca, int3 cb)
 {
-    if (id.x >= GridSize.x - 1 || id.y >= GridSize.y - 1 || id.z >= GridSize.z - 1) return; // out of bounds check
-    
-    // Sample the 8 corners of the current voxel
-    float cubeValues[8];
-    float3 cubePositions[8];
-    float3 cubeNormals[8];
-    int cubeIndex = 0;
-    
-    for (int i = 0; i < 8; i++) {
-        uint3 cornerCoord = id + cornerOffsets[i];
-        float val = SampleSDF(cornerCoord);
-        
-        cubeValues[i] = val;
-        cubePositions[i] = cornerCoord * VoxelSize; // Convert to world position
-        cubeNormals[i] = ComputeNormal(cornerCoord); // SDF gradient = surface normal
-        
-        //  bitwise operation to get cubeIndex 
-        cubeIndex |= (val < isoLevel) << i; 
-    }
+    float3 posA = BoundsMinWS + (float3)ca * VoxelSize;
+    float3 posB = BoundsMinWS + (float3)cb * VoxelSize;
+    float dA = SampleDensity(ca);
+    float dB = SampleDensity(cb);
 
-    if (cubeIndex == 0 || cubeIndex == 255) return; 
+    float t = (abs(dB - dA) < 0.00001) ? 0.0 : (isoLevel - dA) / (dB - dA);
 
-    // calculate edge Intersections (positions + interpolated normals)
-    float3 vertList[12];
-    float3 normList[12];
-    for (int e = 0; e < 12; e++) {
-        int cornerA = edgeConnection[e][0];
-        int cornerB = edgeConnection[e][1];
-        
-        vertList[e] = VertexInterp(isoLevel, 
-                                   cubePositions[cornerA], cubePositions[cornerB], 
-                                   cubeValues[cornerA], cubeValues[cornerB]);
-        normList[e] = NormalInterp(isoLevel,
-                                   cubeNormals[cornerA], cubeNormals[cornerB],
-                                   cubeValues[cornerA], cubeValues[cornerB]);
-    }
+    float3 nA = CalcNormal(ca);
+    float3 nB = CalcNormal(cb);
 
-    // Build and Append the Triangles
-    for (int t = 0; triTable[cubeIndex][t] != -1; t += 3) {
-        Triangle tri;
-        tri.vertexA = vertList[triTable[cubeIndex][t]];
-        tri.vertexB = vertList[triTable[cubeIndex][t+1]];
-        tri.vertexC = vertList[triTable[cubeIndex][t+2]];
-        tri.normalA = normList[triTable[cubeIndex][t]];
-        tri.normalB = normList[triTable[cubeIndex][t+1]];
-        tri.normalC = normList[triTable[cubeIndex][t+2]];
-        
-        OutputTriangles.Append(tri);
+    Vertex v;
+    v.position = float4(posA + t * (posB - posA), 1.0);
+    v.normal   = float4(normalize(nA + t * (nB - nA)), 0.0);
+    return v;
+}
+
+// ---- Kernel ----
+[numthreads(8, 8, 8)]
+void MarchDensity(int3 id : SV_DispatchThreadID)
+{
+    if (id.x >= GridSize.x - 1 || id.y >= GridSize.y - 1 || id.z >= GridSize.z - 1)
+        return;
+
+    int3 c[8];
+    c[0] = id + int3(0,0,0); c[1] = id + int3(1,0,0);
+    c[2] = id + int3(1,0,1); c[3] = id + int3(0,0,1);
+    c[4] = id + int3(0,1,0); c[5] = id + int3(1,1,0);
+    c[6] = id + int3(1,1,1); c[7] = id + int3(0,1,1);
+
+    int cfg = 0;
+    for (int i = 0; i < 8; i++)
+        if (SampleDensity(c[i]) < isoLevel)
+            cfg |= (1 << i);
+
+    if (cfg == 0 || cfg == 255) return;
+
+    int numIdx = lengths[cfg];
+    int off    = offsets[cfg];
+
+    uint startIdx;
+    InterlockedAdd(drawArgs[0], numIdx, startIdx);
+
+    for (int t = 0; t < numIdx; t += 3)
+    {
+        int e0 = lut[off + t];
+        int e1 = lut[off + t + 1];
+        int e2 = lut[off + t + 2];
+
+        // Swapped e2, e1, e0 back to e0, e1, e2 to fix winding order
+        vertices[startIdx + t]     = MakeVertex(c[cornerA[e0]], c[cornerB[e0]]);
+        vertices[startIdx + t + 1] = MakeVertex(c[cornerA[e1]], c[cornerB[e1]]);
+        vertices[startIdx + t + 2] = MakeVertex(c[cornerA[e2]], c[cornerB[e2]]);
     }
 }
