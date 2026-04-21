@@ -119,7 +119,9 @@ void computeMain(uint3 threadId: SV_DispatchThreadID)
                fPressure += -params.particleMass * (p.pressure + pj.pressure) / (2.0 * pj.density) * spikyGrad;
 
                float viscLap = params.viscLapConst * hr;
-               fViscosity += params.particleMass * params.viscosity * (pj.velocity - p.velocity) / pj.density * viscLap;
+               // Phase-dependent viscosity: gas uses lower viscosity for turbulent motion
+               float visc = (p.phase == 1) ? params.gasViscosity : params.viscosity;
+               fViscosity += params.particleMass * visc * (pj.velocity - p.velocity) / pj.density * viscLap;
             }
          }
          idx++;
@@ -128,6 +130,16 @@ void computeMain(uint3 threadId: SV_DispatchThreadID)
 
    float3 sphAccel = (fPressure + fViscosity) / p.density;
    p.acceleration = sphAccel;
+
+   // ── Buoyancy: gas particles get upward acceleration scaled by temperature ──
+   // Hotter gas = more buoyant; as it cools toward boiling point, buoyancy fades to zero
+   float3 buoyancy = float3(0.0);
+   if (p.phase == 1)
+   {
+       float tempExcess = max(p.temperature - params.boilingTemperature, 0.0);
+       float buoyancyScale = clamp(tempExcess / max(params.boilingTemperature * 0.5, 1e-6), 0.0, 1.0);
+       buoyancy = float3(0.0, params.gasBuoyancy * buoyancyScale, 0.0);
+   }
 
    // ── Boundary repulsion: compensates for SPH kernel truncation at walls ──
    // Without this, wall-adjacent particles lose ~half their kernel support,
@@ -158,8 +170,10 @@ void computeMain(uint3 threadId: SV_DispatchThreadID)
       }
    }
 
-   p.velocity += (sphAccel + params.gravity + interactAccel + boundaryForce) * params.dt;
-   p.velocity *= params.damping;
+   p.velocity += (sphAccel + params.gravity + interactAccel + boundaryForce + buoyancy) * params.dt;
+   // Phase-dependent damping: gas retains more momentum
+   float damp = (p.phase == 1) ? min(params.damping + 0.001, 1.0) : params.damping;
+   p.velocity *= damp;
 
    // Velocity magnitude clamp BEFORE position update — otherwise an unclamped
    // velocity moves the particle too far in a single frame.
