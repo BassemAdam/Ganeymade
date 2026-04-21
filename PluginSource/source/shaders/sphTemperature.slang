@@ -43,60 +43,92 @@ void computeMain(uint3 threadId: SV_DispatchThreadID)
     float weightSum = 0.0;
 
     // Check if this particle is inside any heat source
+    bool insideHeatSource = false;
     for (int s = 0; s < 16; s++)
     {
         if (heatSources[s].active == 0u) continue;
-        float3 diff = p.position - heatSources[s].position;
+        float3 diff = p.position - float3(heatSources[s].position[0], heatSources[s].position[1], heatSources[s].position[2]);
         if (dot(diff, diff) <= heatSources[s].radius * heatSources[s].radius)
         {
-            // Particle is inside this source — fix its temperature and skip diffusion
             p.temperature = heatSources[s].temperature;
-            particlesOut[i] = p;
-            return;
+            insideHeatSource = true;
+            break;
         }
     }
 
-    for (int dz = -1; dz <= 1; dz++)
-    for (int dy = -1; dy <= 1; dy++)
-    for (int dx = -1; dx <= 1; dx++)
+    float deltaT = 0.0;
+
+    if (!insideHeatSource)
     {
-        uint key = hashCell(myCell + int3(dx, dy, dz), n);
-        uint idx = startIndices[key];
-        if (idx == 0xFFFFFFFF) continue;
-
-        while (idx < n && hashKeys[idx] == key)
+        for (int dz = -1; dz <= 1; dz++)
+        for (int dy = -1; dy <= 1; dy++)
+        for (int dx = -1; dx <= 1; dx++)
         {
-            uint j = indices[idx];
-            if (j != i)
+            uint key = hashCell(myCell + int3(dx, dy, dz), n);
+            uint idx = startIndices[key];
+            if (idx == 0xFFFFFFFF) continue;
+
+            while (idx < n && hashKeys[idx] == key)
             {
-                Particle pj = particlesIn[j];
-                float3 diff = p.position - pj.position;
-                float r2 = dot(diff, diff);
-
-                if (r2 < h2 && r2 > 1e-12)
+                uint j = indices[idx];
+                if (j != i)
                 {
-                    // Weight by kernel: closer neighbors exchange more heat
-                    float w = heatKernel(r2, h2);
+                    Particle pj = particlesIn[j];
+                    float3 diff = p.position - pj.position;
+                    float r2 = dot(diff, diff);
 
-                    // Heat flows from hot to cold proportional to temperature difference
-                    dT += w * (pj.temperature - p.temperature) / pj.density;
-                    weightSum += w;
+                    if (r2 < h2 && r2 > 1e-12)
+                    {
+                        float w = heatKernel(r2, h2);
+                        dT += w * (pj.temperature - p.temperature) / pj.density;
+                        weightSum += w;
+                    }
                 }
+                idx++;
             }
-            idx++;
         }
+
+        // Apply conduction
+        float conduction = params.thermalDiffusivity * params.particleMass * params.poly6Const * dT * params.dt;
+
+        // Apply ambient cooling (Newton's law of cooling)
+        float cooling = params.coolingRate * (p.temperature - params.ambientTemperature) * params.dt;
+
+        deltaT = conduction - cooling;
     }
 
-    // Apply conduction
-    float conduction = params.thermalDiffusivity* params.particleMass * params.poly6Const* dT* params.dt;
-
-    // Apply ambient cooling (Newton's law of cooling)
-    float cooling = params.coolingRate* (p.temperature - params.ambientTemperature)* params.dt;
-
-    p.temperature += conduction - cooling;
+    // ── Latent heat model: absorb/release energy at boiling point ──
+    if (p.phase == 0 && p.temperature + deltaT >= params.boilingTemperature)
+    {
+        // Liquid at or above boiling: excess energy goes into latent heat accumulator
+        float excess = (p.temperature + deltaT) - params.boilingTemperature;
+        p.temperature = params.boilingTemperature;
+        p.latentHeatAccum += excess;
+        if (p.latentHeatAccum >= params.latentHeat)
+        {
+            p.phase = 1; // transition to gas
+            p.latentHeatAccum = params.latentHeat; // cap at max
+        }
+    }
+    else if (p.phase == 1 && p.temperature + deltaT <= params.boilingTemperature)
+    {
+        // Gas cooling below boiling: release latent heat
+        float deficit = params.boilingTemperature - (p.temperature + deltaT);
+        p.temperature = params.boilingTemperature;
+        p.latentHeatAccum -= deficit;
+        if (p.latentHeatAccum <= 0.0)
+        {
+            p.phase = 0; // condense back to liquid
+            p.latentHeatAccum = 0.0;
+        }
+    }
+    else
+    {
+        p.temperature += deltaT;
+    }
 
     // Clamp to physical bounds
-    p.temperature = max(p.temperature, params.ambientTemperature);
+    p.temperature = max(p.temperature, 0.0);
 
     particlesOut[i] = p;
 }
