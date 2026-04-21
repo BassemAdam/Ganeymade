@@ -20,7 +20,7 @@ public struct Particle
     public float temperature;  // float
     public int phase;          // int
 
-    public float _pad0;        // padding (kept for 64-byte stride)
+    public float latentHeatAccum; // accumulated latent energy for phase transition
     public float _pad1;
 
     public static Particle Create(Vector3 position, Vector3 velocity, float mass, int phase = 0, float temperature = 0f)
@@ -35,7 +35,7 @@ public struct Particle
             mass = mass,
             temperature = temperature,
             phase = phase,
-            _pad0 = 0f,
+            latentHeatAccum = 0f,
             _pad1 = 0f,
         };
     }

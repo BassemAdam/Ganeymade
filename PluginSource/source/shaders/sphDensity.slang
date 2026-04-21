@@ -53,8 +53,12 @@ void computeMain(uint3 threadId: SV_DispatchThreadID)
    p.density = params.particleMass * params.poly6Const * densitySum;
    p.density = max(p.density, params.restDensity * 0.01);
 
-   p.pressure = params.gasStiffness * (p.density - params.restDensity);
-   p.pressure = max(p.pressure, 0.0);
+   // Phase-dependent rest density: gas uses much lower rest density → high expansion pressure
+   float rd = (p.phase == 1) ? params.gasRestDensity : params.restDensity;
+   p.pressure = params.gasStiffness * (p.density - rd);
+   // Liquid: clamp negative pressure (no tensile force). Gas: allow full expansion.
+   if (p.phase != 1)
+       p.pressure = max(p.pressure, 0.0);
 
    particlesOut[i] = p;
 }
