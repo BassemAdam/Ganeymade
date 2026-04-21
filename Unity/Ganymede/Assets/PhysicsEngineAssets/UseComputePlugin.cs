@@ -142,6 +142,25 @@ public class UseComputePlugin : MonoBehaviour
     [Range(0f, 0.1f)]
     public float coolingRate = 0.01f;
 
+    [Header("Phase Transition (Liquid ↔ Gas)")]
+    [Tooltip("Temperature at which liquid transitions to gas")]
+    public float boilingTemperature = 100f;
+
+    [Tooltip("Energy required for full phase transition (higher = slower transition)")]
+    [Min(0.01f)]
+    public float latentHeat = 50f;
+
+    [Tooltip("Rest density for gas particles (much lower than liquid restDensity)")]
+    [Min(0.1f)]
+    public float gasRestDensity = 5f;
+
+    [Tooltip("Viscosity for gas particles (lower = more turbulent)")]
+    [Min(0.01f)]
+    public float gasViscosity = 1f;
+
+    [Tooltip("Upward buoyancy acceleration for gas particles")]
+    public float gasBuoyancy = 15f;
+
     [Header("Init")]
     [Tooltip("Upload particles automatically on Start")]
     public bool autoInitialize = true;
@@ -227,7 +246,7 @@ public class UseComputePlugin : MonoBehaviour
         if (particleStride != 64)
             // Debug.LogError($"[UseComputePlugin] Particle stride mismatch. Expected 64, got {particleStride}. Check struct layout.");
             ;
-        if (simParamsStride != 156)
+        if (simParamsStride != 176)
             // Debug.LogError($"[UseComputePlugin] SimParams stride mismatch. Expected 156, got {simParamsStride}. Check struct layout.");
             ;
 
@@ -493,6 +512,12 @@ public class UseComputePlugin : MonoBehaviour
         p.thermalDiffusivity = thermalDiffusivity;   
         p.ambientTemperature = ambientTemperature;
         p.coolingRate = coolingRate;
+
+        p.boilingTemperature = boilingTemperature;
+        p.latentHeat = latentHeat;
+        p.gasRestDensity = gasRestDensity;
+        p.gasViscosity = gasViscosity;
+        p.gasBuoyancy = gasBuoyancy;
 
         SetSimParams(p);
     }
@@ -936,6 +961,11 @@ public class UseComputePlugin : MonoBehaviour
         public float  thermalDiffusivity;
         public float  ambientTemperature;
         public float  coolingRate;
+        public float  boilingTemperature;
+        public float  latentHeat;
+        public float  gasRestDensity;
+        public float  gasViscosity;
+        public float  gasBuoyancy;
     }
 
     

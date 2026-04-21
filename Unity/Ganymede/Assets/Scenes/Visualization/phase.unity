@@ -1569,7 +1569,7 @@ MonoBehaviour:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 781581037}
-  m_Enabled: 0
+  m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 4ca2acbb03c1a08439fd35842cc07253, type: 3}
   m_Name: 
@@ -1600,6 +1600,9 @@ MonoBehaviour:
   lightColor: {r: 1, g: 1, b: 1, a: 1}
   ambientColor: {r: 0.12, g: 0.12, b: 0.18, a: 1}
   maxSteps: 1024
+  tempTexture: {fileID: 0}
+  minDisplayTemp: 0
+  maxDisplayTemp: 100
 --- !u!114 &781581045
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -1613,6 +1616,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::VoxelSliceViewer
   voxelSystem: {fileID: 0}
+  thermalReceiver: {fileID: 0}
   axis: 1
   slicePosition: 0.5
   filledColor: {r: 1, g: 1, b: 1, a: 1}
@@ -1763,6 +1767,7 @@ GameObject:
   - component: {fileID: 916314656}
   - component: {fileID: 916314655}
   - component: {fileID: 916314654}
+  - component: {fileID: 916314658}
   m_Layer: 0
   m_Name: Cube (2)
   m_TagString: Untagged
@@ -1863,6 +1868,19 @@ Transform:
   m_Children: []
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 18.973}
+--- !u!114 &916314658
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 916314653}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 79a685bc6efa748479c5f1a261a967a0, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::HeatSourceObj
+  temperature: 90
 --- !u!1 &944885156
 GameObject:
   m_ObjectHideFlags: 0
@@ -1875,6 +1893,7 @@ GameObject:
   - component: {fileID: 944885159}
   - component: {fileID: 944885158}
   - component: {fileID: 944885157}
+  - component: {fileID: 944885161}
   m_Layer: 0
   m_Name: Cube (3)
   m_TagString: Untagged
@@ -1969,12 +1988,25 @@ Transform:
   m_GameObject: {fileID: 944885156}
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: 3.6, y: 0.5, z: -2}
+  m_LocalPosition: {x: 3.6, y: -4.86, z: -2}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &944885161
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 944885156}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 79a685bc6efa748479c5f1a261a967a0, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::HeatSourceObj
+  temperature: 90
 --- !u!1 &1122100312
 GameObject:
   m_ObjectHideFlags: 0
@@ -2103,7 +2135,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 0
+  m_IsActive: 1
 --- !u!114 &1137525689
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -2273,7 +2305,7 @@ MonoBehaviour:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 1188592644}
-  m_Enabled: 1
+  m_Enabled: 0
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: e9eb36d79300fe7428f1000517630b74, type: 3}
   m_Name: 
@@ -3167,7 +3199,7 @@ PrefabInstance:
     m_Modifications:
     - target: {fileID: 920208063865847605, guid: 18cf1fa5220a198409fde72db8b3e2a5, type: 3}
       propertyPath: m_Enabled
-      value: 0
+      value: 1
       objectReference: {fileID: 0}
     - target: {fileID: 920208063865847605, guid: 18cf1fa5220a198409fde72db8b3e2a5, type: 3}
       propertyPath: particleMaterial
@@ -3235,11 +3267,15 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 4161998456328252244, guid: 18cf1fa5220a198409fde72db8b3e2a5, type: 3}
       propertyPath: enableSDF
-      value: 0
+      value: 1
       objectReference: {fileID: 0}
     - target: {fileID: 4161998456328252244, guid: 18cf1fa5220a198409fde72db8b3e2a5, type: 3}
       propertyPath: viscosity
       value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 4161998456328252244, guid: 18cf1fa5220a198409fde72db8b3e2a5, type: 3}
+      propertyPath: latentHeat
+      value: 50
       objectReference: {fileID: 0}
     - target: {fileID: 4161998456328252244, guid: 18cf1fa5220a198409fde72db8b3e2a5, type: 3}
       propertyPath: boundsMax.z
@@ -3255,7 +3291,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 4161998456328252244, guid: 18cf1fa5220a198409fde72db8b3e2a5, type: 3}
       propertyPath: perfTestMode
-      value: 1
+      value: 0
       objectReference: {fileID: 0}
     - target: {fileID: 4161998456328252244, guid: 18cf1fa5220a198409fde72db8b3e2a5, type: 3}
       propertyPath: subStepCount
@@ -3267,7 +3303,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 4161998456328252244, guid: 18cf1fa5220a198409fde72db8b3e2a5, type: 3}
       propertyPath: fixedTimeStep
-      value: 0.0005
+      value: 0.002
       objectReference: {fileID: 0}
     - target: {fileID: 4161998456328252244, guid: 18cf1fa5220a198409fde72db8b3e2a5, type: 3}
       propertyPath: particleCount

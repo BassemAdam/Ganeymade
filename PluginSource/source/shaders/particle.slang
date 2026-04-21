@@ -27,6 +27,11 @@
        float  thermalDiffusivity;
        float  ambientTemperature;
        float  coolingRate;
+       float  boilingTemperature;   // temperature threshold for liquid→gas
+       float  latentHeat;           // energy required for full phase transition
+       float  gasRestDensity;       // rest density for gas phase (much lower than liquid)
+       float  gasViscosity;         // viscosity for gas phase (lower → turbulent)
+       float  gasBuoyancy;          // upward acceleration for gas particles
    };
 
    struct Particle
@@ -39,7 +44,7 @@
        float  mass;
        float  temperature;
        int    phase;
-       float  _pad0;
+       float  latentHeatAccum;   // energy absorbed/released during phase change
        float  _pad1;
    };
 

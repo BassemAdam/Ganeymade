@@ -3,13 +3,17 @@ Shader "Custom/ParticleInstanced"
     Properties
     {
         _Size ("Particle Size", Float) = 0.05
+        _GasScale ("Gas Particle Scale Multiplier", Float) = 1.5
+        _GasAlpha ("Gas Particle Opacity", Range(0, 1)) = 0.4
         _MinTemperature ("Min Temperature (for gradient)", Float) = 20.0
         _MaxTemperature ("Max Temperature (for gradient)", Float) = 100.0
         _GradientTex ("Gradient Texture", 2D) = "white" {}
     }
     SubShader
     {
-        Tags { "RenderType"="Opaque" }
+        Tags { "RenderType"="Transparent" "Queue"="Transparent" }
+        Blend SrcAlpha OneMinusSrcAlpha
+        ZWrite On
         Pass
         {
             CGPROGRAM
@@ -28,12 +32,14 @@ Shader "Custom/ParticleInstanced"
                 float mass;
                 float temperature;
                 int phase;
-                float _pad0;
+                float latentHeatAccum;
                 float _pad1;
             };
 
             StructuredBuffer<Particle> _ParticleBuffer;
             float _Size;
+            float _GasScale;
+            float _GasAlpha;
             float _MinTemperature;
             float _MaxTemperature;
             sampler2D _GradientTex;
@@ -43,17 +49,20 @@ Shader "Custom/ParticleInstanced"
                 float4 pos : SV_POSITION;
                 float3 normal : TEXCOORD0;
                 float temperature : TEXCOORD1;
+                float isGas : TEXCOORD2;
             };
 
             v2f vert(appdata_base v, uint instanceID : SV_InstanceID)
             {
                 Particle p = _ParticleBuffer[instanceID];
-                float3 worldPos = p.position + v.vertex.xyz * _Size;
+                float scale = (p.phase == 1) ? _Size * _GasScale : _Size;
+                float3 worldPos = p.position + v.vertex.xyz * scale;
 
                 v2f o;
                 o.pos = mul(UNITY_MATRIX_VP, float4(worldPos, 1.0));
                 o.normal = v.normal;
                 o.temperature = p.temperature;
+                o.isGas = (p.phase == 1) ? 1.0 : 0.0;
                 return o;
             }
 
@@ -88,7 +97,15 @@ Shader "Custom/ParticleInstanced"
                     col = lerp(float3(1, 0.5, 0), float3(1, 0, 0), (t - 0.75f) / 0.25f);
                 }
                 
-                return float4(col * ndl, 1.0);
+                // Gas particles: blend toward white (steam-like) and reduce opacity
+                float alpha = 1.0;
+                if (i.isGas > 0.5)
+                {
+                    col = lerp(col, float3(1, 1, 1), 0.5);
+                    alpha = _GasAlpha;
+                }
+                
+                return float4(col * ndl, alpha);
             }
             ENDCG
         }
