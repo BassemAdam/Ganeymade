@@ -29,7 +29,12 @@ SurfaceHit MakeSurfaceHit(float3 posWS, float3 rayDir, bool enteringWater)
     s.hit   = true;
     s.posWS = posWS;
 
-    float3 n = GetSurfaceNormalWS(posWS);
+    float3 n = GetSurfaceNormalWS(posWS, rayDir);
+    // The density gradient can point into the liquid, but Fresnel, reflection,
+    // and refraction all expect the shading normal to face against the incoming
+    // view ray. If we leave it flipped, cos(theta) collapses toward 0, which
+    // makes Fresnel shoot toward 1 everywhere and turns the water dark/black
+    // when reflection is increased.
     if (dot(n, rayDir) > 0.0)
         n = -n;
     s.normal = n;

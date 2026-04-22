@@ -40,15 +40,16 @@ Shader "Custom/WaterRaymarching"
             #include "../Includes/RayMarching/RayMarchLighting.hlsl"
             #include "../Includes/RayMarching/RayMarchSurface.hlsl"
 
-            struct MeshData
+            struct WaterRaymarchMeshInput
             {
                 float4 positionOS : POSITION;
             };
 
-            struct Interpoalaters
+            struct WaterRaymarchVaryings
             {
-                float4 positionHCS : SV_POSITION;
-                float3 positionWS : TEXCOORD0;
+                float4 rasterPosition : SV_POSITION;
+                float4 normalizedScreenPosition : TEXCOORD0;
+                float3 positionWS : TEXCOORD1;
             };
 
             CBUFFER_START(UnityPerMaterial)
@@ -69,98 +70,86 @@ Shader "Custom/WaterRaymarching"
             TEXTURE2D(_CameraOpaqueTexture);
             SAMPLER(sampler_CameraOpaqueTexture);
 
-            Interpoalaters vert(MeshData IN)
+            #include "../Includes/RayMarching/WaterRaymarchView.hlsl"
+            #include "../Includes/RayMarching/WaterRaymarchVolume.hlsl"
+            #include "../Includes/RayMarching/WaterRaymarchBackground.hlsl"
+
+            WaterRaymarchVaryings vert(WaterRaymarchMeshInput IN)
             {
-                Interpoalaters OUT;
+                WaterRaymarchVaryings OUT;
                 OUT.positionWS = TransformObjectToWorld(IN.positionOS.xyz);
-                OUT.positionHCS = TransformWorldToHClip(OUT.positionWS);
+                OUT.rasterPosition = TransformWorldToHClip(OUT.positionWS);
+                OUT.normalizedScreenPosition = ComputeScreenPos(OUT.rasterPosition);
                 return OUT;
             }
 
-            half4 frag(Interpoalaters IN) : SV_Target
+            half4 frag(WaterRaymarchVaryings IN) : SV_Target
             {
-                float3 rayDirWS = normalize(IN.positionWS - _WorldSpaceCameraPos.xyz);
+                WaterRaymarchViewData viewData = BuildWaterRaymarchViewData(IN.positionWS, IN.normalizedScreenPosition);
+                WaterRaymarchVolumeData volumeData = BuildWaterRaymarchVolumeData(
+                    viewData.cameraPositionWS,
+                    viewData.viewRayDirectionWS
+                );
 
-                float2 boundsDstInfo = RayBoxDst(_WorldSpaceCameraPos.xyz, rayDirWS, _PhysicsBoundsMinWS.xyz, _PhysicsBoundsMaxWS.xyz);
-                float dstToBox = boundsDstInfo.x;
-                float dstInsideBox = boundsDstInfo.y;
-
-                if (dstInsideBox <= 1e-5)
+                if (!volumeData.intersectsVolume)
                     return half4(0, 0, 0, 0);
 
-                float2 screenUV = IN.positionHCS.xy / _ScaledScreenParams.xy;
+                WaterRaymarchBackgroundData backgroundData = BuildWaterRaymarchBackgroundData(
+                    viewData,
+                    volumeData,
+                    _StepSize,
+                    _DensityOffset,
+                    _DensityMultiplier,
+                    _IsoLevel,
+                    _SurfaceDetectionMargin,
+                    _RefractionStrength
+                );
 
-                float rawDepth  = SampleSceneDepth(screenUV);
-                float eyeDepth  = LinearEyeDepth(rawDepth, _ZBufferParams);
-                float3 camFwdWS = -UNITY_MATRIX_V[2].xyz;
-                float sceneDist = eyeDepth / dot(rayDirWS, camFwdWS);
-
-                if (sceneDist <= dstToBox)
+                if (backgroundData.sceneDistanceAlongRay <= volumeData.distanceToVolume)
                     discard;
 
-                float2 blueNoiseUV = frac(IN.positionHCS.xy / 1024.0);
-                float blueNoise = SAMPLE_TEXTURE2D(_BlueNoiseTex, sampler_BlueNoiseTex, blueNoiseUV).r;
+                float3 accumulatedScatteredLight = 0.0;
+                float3 remainingViewTransmittance = 1.0;
 
-                float currentDistance = dstToBox + _StepSize * blueNoise;
-                float exitDistance = min(dstToBox + dstInsideBox, sceneDist);
-
-                float3 FinalLight = 0;
-                float3 viewTransmittance = 1.0;
-
-                float3 entryPosWS = _WorldSpaceCameraPos.xyz + rayDirWS * dstToBox;
-                float entryDensity = SampleDensityWS(entryPosWS, _DensityOffset, _DensityMultiplier);
-
-                bool cameraInsideBox = (dstToBox < 1e-5);
-                SurfaceHit surfaceHit = NoSurfaceHit();
-                if (!cameraInsideBox && entryDensity >= _IsoLevel)
-                    surfaceHit = MakeSurfaceHit(entryPosWS, rayDirWS, true);
-
-                float prevDensity = SampleDensityWS(_WorldSpaceCameraPos.xyz + rayDirWS * currentDistance, _DensityOffset, _DensityMultiplier);
+                float safeStepSize = max(_StepSize, 1e-4);
+                float currentDistance = volumeData.distanceToVolume + safeStepSize * viewData.blueNoiseValue;
+                float exitDistance = min(volumeData.volumeExitDistance, backgroundData.sceneDistanceAlongRay);
 
                 while (currentDistance < exitDistance)
                 {
-                    float3 samplePosWS = _WorldSpaceCameraPos.xyz + rayDirWS * currentDistance;
-                    float density = SampleDensityWS(samplePosWS, _DensityOffset, _DensityMultiplier);
+                    float3 samplePositionWS = viewData.cameraPositionWS + viewData.viewRayDirectionWS * currentDistance;
+                    float density = SampleDensityWS(samplePositionWS, _DensityOffset, _DensityMultiplier);
 
-                    if (!surfaceHit.hit)
-                    {
-                        float surfaceThreshold = _IsoLevel + _SurfaceDetectionMargin;
-                        bool airToWater = prevDensity < surfaceThreshold && density >= surfaceThreshold;
-                        bool waterToAir = prevDensity >= surfaceThreshold && density < surfaceThreshold;
-                        if (airToWater || waterToAir)
-                            surfaceHit = MakeSurfaceHit(samplePosWS, rayDirWS, airToWater);
-                    }
+                    currentDistance += safeStepSize;
+                    if (density <= 0.0)
+                        continue;
 
-                    currentDistance += _StepSize;
-                    prevDensity = density;
-                    if (density <= 0) continue;
+                    float3 sunTransmittance = CalculateTransmittedSunLight(
+                        samplePositionWS,
+                        _ScatteringCoefficients,
+                        _DensityOffset,
+                        _DensityMultiplier,
+                        _LightStepSize
+                    );
 
-                    float3 sunTransmittance = CalculateTransmittedSunLight(samplePosWS, _ScatteringCoefficients, _DensityOffset, _DensityMultiplier, _LightStepSize);
+                    float3 inScatteredLight = _MainLightColor.rgb * sunTransmittance * _ScatterColor * density * safeStepSize;
+                    accumulatedScatteredLight += inScatteredLight * remainingViewTransmittance;
+                    remainingViewTransmittance *= exp(-_ScatteringCoefficients * density * safeStepSize);
 
-                    float3 inScattered = _MainLightColor.rgb * sunTransmittance * _ScatterColor * density * _StepSize;
-                    FinalLight += inScattered * viewTransmittance;
-                    viewTransmittance *= exp(-_ScatteringCoefficients * density * _StepSize);
-
-                    if (max(viewTransmittance.r, max(viewTransmittance.g, viewTransmittance.b)) < 0.01) break;
+                    if (max(remainingViewTransmittance.r, max(remainingViewTransmittance.g, remainingViewTransmittance.b)) < 0.01)
+                        break;
                 }
 
-                float3 backgroundColor;
-                if (surfaceHit.hit)
-                {
-                    float3 reflColor    = GlossyEnvironmentReflection(surfaceHit.reflectDir, surfaceHit.posWS, 0.0h, 1.0h, screenUV);
-                    float3 refractDirVS = mul((float3x3)UNITY_MATRIX_V, surfaceHit.refractDir);
-                    float2 refractUV    = clamp(screenUV + refractDirVS.xy * _RefractionStrength, 0.001, 0.999);
-                    float3 refrColor    = SAMPLE_TEXTURE2D(_CameraOpaqueTexture, sampler_CameraOpaqueTexture, refractUV).rgb;
-                    // Fresnel-Schlick blend: head-on → refraction, grazing → reflection.
-                    backgroundColor = lerp(refrColor, reflColor, surfaceHit.fresnel * _ReflectionStrength);
-                }
-                else
-                {
-                    backgroundColor = SAMPLE_TEXTURE2D(_CameraOpaqueTexture, sampler_CameraOpaqueTexture, screenUV).rgb;
-                }
+                float3 backgroundColor = ComposeWaterBackgroundColor(
+                    backgroundData,
+                    viewData.screenUV,
+                    _ReflectionStrength
+                );
 
-                FinalLight += backgroundColor * viewTransmittance;
-                return half4(FinalLight, 1.0);
+                float3 finalColor = accumulatedScatteredLight
+                                  + backgroundColor * remainingViewTransmittance;
+
+                return half4(finalColor, 1.0);
             }
             ENDHLSL
         }

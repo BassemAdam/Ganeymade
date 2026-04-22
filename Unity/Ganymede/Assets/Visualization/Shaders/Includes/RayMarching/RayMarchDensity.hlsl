@@ -17,12 +17,17 @@ float SampleDensityWS(float3 samplePosWS, float densityOffset, float densityMult
     return (rawDensity + densityOffset) * densityMultiplier;
 }
 
-float3 GetSurfaceNormalWS(float3 posWS)
+// rayDir is the fallback when the density gradient is too flat to determine surface orientation.
+float3 GetSurfaceNormalWS(float3 posWS, float3 rayDir)
 {
     float3 sizeWS   = max(_PhysicsBoundsMaxWS.xyz - _PhysicsBoundsMinWS.xyz, 1e-5);
     float3 gridSize = max(_PhysicsVolumeDims.xyz, 1.0);
-    float3 uvw      = (posWS - _PhysicsBoundsMinWS.xyz) / sizeWS;
-    float3 eps      = 2.0 / gridSize;
+    float3 uvw      = (posWS - _PhysicsBoundsMinWS.xyz) / sizeWS + 0.5 / gridSize;
+    // 4-voxel half-span (8 voxels total) ensures samples straddle the SPH surface
+    // transition rather than both landing inside the uniform-density interior,
+    // which would make the gravity-driven vertical gradient dominate over the
+    // actual surface-facing horizontal gradient at side surfaces.
+    float3 eps      = 4.0 / gridSize;
 
     float dx = _PhysicsDensityGrid.SampleLevel(sampler_PhysicsDensityGrid, uvw + float3(eps.x, 0,     0    ), 0).r
              - _PhysicsDensityGrid.SampleLevel(sampler_PhysicsDensityGrid, uvw - float3(eps.x, 0,     0    ), 0).r;
@@ -33,18 +38,15 @@ float3 GetSurfaceNormalWS(float3 posWS)
 
     float3 gradient    = float3(dx, dy, dz);
     float  gradientLen = length(gradient);
+    // Same threshold as original — accepts any detectable gradient.
     if (gradientLen >= 1e-4)
         return gradient / gradientLen;
 
-    float3 distToMin = posWS - _PhysicsBoundsMinWS.xyz;
-    float3 distToMax = _PhysicsBoundsMaxWS.xyz - posWS;
-    float  nearestDist   = distToMin.x; float3 nearestNormal = float3(-1,  0,  0);
-    if (distToMax.x < nearestDist) { nearestDist = distToMax.x; nearestNormal = float3( 1,  0,  0); }
-    if (distToMin.y < nearestDist) { nearestDist = distToMin.y; nearestNormal = float3( 0, -1,  0); }
-    if (distToMax.y < nearestDist) { nearestDist = distToMax.y; nearestNormal = float3( 0,  1,  0); }
-    if (distToMin.z < nearestDist) { nearestDist = distToMin.z; nearestNormal = float3( 0,  0, -1); }
-    if (distToMax.z < nearestDist) {                            nearestNormal = float3( 0,  0,  1); }
-    return nearestNormal;
+    // Fallback: gradient is flat (both samples in uniform interior, empty space,
+    // or thin-fluid where both samples exit the fluid). Use -rayDir: always opposes
+    // the incoming ray and avoids the old nearest-box-face heuristic which returns
+    // the wrong face for fluid that isn't touching the bounding box walls.
+    return -normalize(rayDir);
 }
 
 #endif
