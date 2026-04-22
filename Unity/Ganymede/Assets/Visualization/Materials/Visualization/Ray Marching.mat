@@ -123,7 +123,7 @@ Material:
     - _Cull: 2
     - _Cutoff: 0.5
     - _DebugNormals: 1
-    - _DensityMultiplier: 4.78
+    - _DensityMultiplier: 1.59
     - _DensityOffset: 0
     - _DetailAlbedoMapScale: 1
     - _DetailNormalMapScale: 1
@@ -143,8 +143,8 @@ Material:
     - _Parallax: 0.005
     - _QueueOffset: 0
     - _ReceiveShadows: 1
-    - _ReflectionStrength: 0
-    - _RefractionStrength: 0.269
+    - _ReflectionStrength: 0.584
+    - _RefractionStrength: 0.327
     - _Smoothness: 0.5
     - _SmoothnessTextureChannel: 0
     - _SpecularHighlights: 1
