@@ -2788,6 +2788,24 @@ SetComputeData(Particle *data, int count)
     g_NeedsUpload = true;
 }
 
+// Patch a subset of particles by index without reallocating the full buffer.
+// indices[i] is the slot to overwrite with data[i].
+// Only marks g_NeedsUpload so the next DispatchCompute will re-upload.
+extern "C" void UNITY_INTERFACE_EXPORT UNITY_INTERFACE_API
+PatchParticles(int* indices, Particle* data, int count)
+{
+    if (indices == nullptr || data == nullptr || count <= 0 || g_InputData == nullptr)
+        return;
+
+    for (int i = 0; i < count; i++)
+    {
+        int idx = indices[i];
+        if (idx >= 0 && idx < g_ElementCount)
+            g_InputData[idx] = data[i];
+    }
+    g_NeedsUpload = true;
+}
+
 extern "C" bool UNITY_INTERFACE_EXPORT UNITY_INTERFACE_API
 IsComputeDone()
 {

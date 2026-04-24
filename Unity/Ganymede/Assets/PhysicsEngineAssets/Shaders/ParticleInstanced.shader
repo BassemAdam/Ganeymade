@@ -55,6 +55,17 @@ Shader "Custom/ParticleInstanced"
             v2f vert(appdata_base v, uint instanceID : SV_InstanceID)
             {
                 Particle p = _ParticleBuffer[instanceID];
+                // Dormant particles (phase == -1): collapse to a single degenerate
+                // point well outside the clip volume so no fragments are produced.
+                if (p.phase < 0)
+                {
+                    v2f dead;
+                    dead.pos = float4(0, 0, -2, 1); // behind near plane -> clipped
+                    dead.normal= float3(0, 1, 0);
+                    dead.temperature = 0;
+                    dead.isGas = 0;
+                    return dead;
+                }
                 float scale = (p.phase == 1) ? _Size * _GasScale : _Size;
                 float3 worldPos = p.position + v.vertex.xyz * scale;
 

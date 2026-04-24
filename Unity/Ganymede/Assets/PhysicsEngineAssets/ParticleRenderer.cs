@@ -6,7 +6,6 @@ using System.Runtime.InteropServices;
 /// Reads particle data via non-blocking readback (1-frame latency) and uploads to a ComputeBuffer.
 /// Attach to the same GameObject as UseComputePlugin.
 /// </summary>
-[RequireComponent(typeof(UseComputePlugin))]
 public class ParticleRenderer : MonoBehaviour
 {
 #if (PLATFORM_IOS || PLATFORM_TVOS || PLATFORM_BRATWURST || PLATFORM_SWITCH) && !UNITY_EDITOR
@@ -38,18 +37,26 @@ public class ParticleRenderer : MonoBehaviour
     [Range(20f, 500f)]
     public float maxTemp = 150f;
 
+    public UseComputePlugin computePlugin;
+
     private Texture2D gradientTexture;
     private ComputeBuffer particleBuffer;
     private ComputeBuffer argsBuffer;
     private Particle[] readbackData;
+    private Particle[] uploadData;
     private uint[] args = new uint[5];
-    private UseComputePlugin computePlugin;
     private Bounds renderBounds;
     private MaterialPropertyBlock mpb;
 
     void Start()
     {
-        computePlugin = GetComponent<UseComputePlugin>();
+        if (computePlugin == null)
+        {
+            Debug.LogError("[ParticleRenderer] computePlugin is not assigned! " +
+                           "Drag your simulation GameObject's UseComputePlugin into this field.");
+            enabled = false;
+            return;
+        }        
         int count = computePlugin.particleCount;
 
         mpb = new MaterialPropertyBlock();
@@ -88,6 +95,7 @@ public class ParticleRenderer : MonoBehaviour
         BakeGradientTexture();
 
         readbackData = new Particle[count];
+        uploadData = new Particle[count];
         particleBuffer = new ComputeBuffer(count, Marshal.SizeOf<Particle>());
 
         // Indirect args: (indexCount, instanceCount, startIndex, baseVertex, startInstance)
@@ -119,7 +127,24 @@ public class ParticleRenderer : MonoBehaviour
 
         // Read from plugin (non-blocking, 1-frame latency)
         GetComputeResult(readbackData, readbackData.Length);
-        particleBuffer.SetData(readbackData);
+
+        // Pack only live particles (phase >= 0) into the upload buffer so the
+        // GPU never has to deal with dormant slots parked at (0,-1000,0).
+        int liveCount = 0;
+        for (int i = 0; i < readbackData.Length; i++)
+        {
+            if (readbackData[i].phase >= 0)
+                uploadData[liveCount++] = readbackData[i];
+        }
+
+        if (liveCount == 0)
+            return;
+
+        particleBuffer.SetData(uploadData, 0, 0, liveCount);
+
+        // Update instance count in the indirect args so the draw call matches.
+        args[1] = (uint)liveCount;
+        argsBuffer.SetData(args);
 
         // Rebake gradient only when it has changed
         BakeGradientTexture();
