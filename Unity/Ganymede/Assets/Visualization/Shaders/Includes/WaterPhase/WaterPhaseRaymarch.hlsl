@@ -33,7 +33,10 @@
     float edgeSoftness,
     float2 screenUV,
     float2 blueNoiseRG,
-    float blueNoiseStrength)
+    float blueNoiseStrength,
+    float noiseDetailStrength = 0.0,
+    float densityMultiplier = 1.0,
+    float densityOffset = 0.0)
     {
         WaterPhaseMarchResult result;
         result.vapourScatter = 0.0;
@@ -103,8 +106,11 @@
             driftDir, driftSpeed,
             noiseScale, octaves,
             densityPower,
-            physicsDensity, physicsBlend
+            physicsDensity, physicsBlend,
+            noiseDetailStrength
             ) * shapeMask;
+
+            density = saturate(density * densityMultiplier + densityOffset);
 
             if (density <= 0.001)
             continue;
@@ -207,7 +213,8 @@
     float sceneLinearDepth,
     float3 boundsMinOS, float3 boundsMaxOS,
     float edgeSoftness,
-    float2 screenUV)
+    float2 screenUV,
+    float noiseDetailStrength = 0.0)
     {
         WaterPhaseMarchResult result;
         result.vapourScatter = 0.0;
@@ -252,7 +259,8 @@
             driftDir, driftSpeed,
             noiseScale, octaves,
             densityPower,
-            physicsDensity, physicsBlend
+            physicsDensity, physicsBlend,
+            noiseDetailStrength
             ) * shapeMask;
 
             if (density <= 0.001)

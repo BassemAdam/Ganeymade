@@ -3,11 +3,14 @@
 
     // Physics density grid (GPU) — set at runtime by PhysicsWaterPhaseBridge.
     // Always declared unconditionally — no keyword guard needed.
-    Texture3D<float> _PhysicsDensityGrid;
+    // R = liquid density, G = vapour density (both normalised 0..1).
+    Texture3D<float2> _PhysicsDensityGrid;
     SamplerState sampler_PhysicsDensityGrid;
     float4 _PhysicsBoundsMinWS;
     float4 _PhysicsBoundsMaxWS;
     float4 _PhysicsVolumeDims;
+    // Set to 1 by the vapour-only box renderer (MC mode). 0 = liquid (R), 1 = vapour (G).
+    float _PhysicsUseVapourChannel;
 
     float SamplePhysicsDensityGrid(float3 worldPos)
     {
@@ -21,7 +24,8 @@
         if (uvw.x < 0.0 || uvw.y < 0.0 || uvw.z < 0.0 || uvw.x > 1.0 || uvw.y > 1.0 || uvw.z > 1.0)
             return 0.0;
 
-        return _PhysicsDensityGrid.SampleLevel(sampler_PhysicsDensityGrid, uvw, 0).r;
+        float2 rg = _PhysicsDensityGrid.SampleLevel(sampler_PhysicsDensityGrid, uvw, 0);
+        return (_PhysicsUseVapourChannel > 0.5) ? rg.g : rg.r;
     }
 
     float Hash3D(float3 p)
@@ -79,7 +83,8 @@
     float3 driftDir, float driftSpeed,
     float noiseScale, int octaves,
     float densityPower,
-    float physicsDensity, float physicsBlend)
+    float physicsDensity, float physicsBlend,
+    float noiseDetailStrength = 0.0)
     {
         int3 dims = (int3)_PhysicsVolumeDims.xyz;
         bool gridValid = (dims.x > 1 && dims.y > 1 && dims.z > 1);
@@ -88,7 +93,26 @@
         if (physicsBlend >= 0.999 && gridValid)
         {
             float physicsGridDensity = SamplePhysicsDensityGrid(worldPos);
-            return saturate(physicsGridDensity * physicsDensity);
+            float base = physicsGridDensity * physicsDensity;
+
+            // Noise detail: FBM shape variation gated strictly by physics presence.
+            // When physics density is zero, zero is returned — noise never bleeds into empty space.
+            if (noiseDetailStrength > 0.0001 && base > 0.0001)
+            {
+                float3 driftedPos = worldPos + driftDir * (time * driftSpeed);
+                float3 p = driftedPos / max(noiseScale, 1e-5);
+                float3 warpOffset = float3(
+                    ValueNoise3D(p * 0.7 + float3(1.72, 9.23, 5.41)),
+                    ValueNoise3D(p * 0.7 + float3(8.31, 2.84, 3.26)),
+                    ValueNoise3D(p * 0.7 + float3(4.17, 6.73, 1.92))
+                ) * 2.0 - 1.0;
+                float3 warpedP = p + warpOffset * 0.35;
+                float rawNoise = FBM(warpedP, octaves, 2.0, 0.5);
+                // Centred noise [-0.5, 0.5] multiplied by physics density: sculpts only
+                // where physics says there is vapour, never creates phantom density.
+                base = base + base * (rawNoise - 0.5) * noiseDetailStrength;
+            }
+            return saturate(base);
         }
 
         // Procedural noise density (shared for legacy mode and blend mode).

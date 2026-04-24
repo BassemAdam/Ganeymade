@@ -81,6 +81,11 @@ public class PhysicsWaterPhaseBridge : MonoBehaviour
     [Tooltip("Material used for Marching Cubes")]
     public Material marchingCubesMaterial;
 
+    [Tooltip("Material used for the vapour volumetric box when Marching Cubes is active. "
+           + "Should use Custom/WaterPhase (WaterVapourRendering.shader) with _VapourOnlyMode = 1 "
+           + "and _PhysicsBlend = 1 set on the material.")]
+    public Material vapourRaymarchMaterial;
+
     [Tooltip("If enabled, uses the Marching Cubes material. Otherwise uses the Ray Marching material.")]
     public bool useMarchingCubes = false;
 
@@ -104,6 +109,12 @@ public class PhysicsWaterPhaseBridge : MonoBehaviour
     // Marching cubes (delegated to MarchingCubesRenderer)
     private MarchingCubesRenderer _mcRenderer;
 
+    // Vapour volumetric box (active only when useMarchingCubes = true)
+    private GameObject _vapourBoxGO;
+    private MeshRenderer _vapourBoxRenderer;
+    private MaterialPropertyBlock _vapourMpb;
+    private const string VapourBoxObjectName = "WaterVapourBox";
+
     private IntPtr registeredParticleOutputNativePtr = IntPtr.Zero;
 
     private int kClear;
@@ -124,10 +135,11 @@ public class PhysicsWaterPhaseBridge : MonoBehaviour
 
 
     // Cached IDs — material/MPB
-    private static readonly int ID_PhysicsDensityGrid   = Shader.PropertyToID("_PhysicsDensityGrid");   // RG texture → shaders
-    private static readonly int ID_PhysicsBoundsMinWS   = Shader.PropertyToID("_PhysicsBoundsMinWS");
-    private static readonly int ID_PhysicsBoundsMaxWS   = Shader.PropertyToID("_PhysicsBoundsMaxWS");
-    private static readonly int ID_PhysicsVolumeDims     = Shader.PropertyToID("_PhysicsVolumeDims");
+    private static readonly int ID_PhysicsDensityGrid        = Shader.PropertyToID("_PhysicsDensityGrid");   // RG texture → shaders
+    private static readonly int ID_PhysicsBoundsMinWS        = Shader.PropertyToID("_PhysicsBoundsMinWS");
+    private static readonly int ID_PhysicsBoundsMaxWS        = Shader.PropertyToID("_PhysicsBoundsMaxWS");
+    private static readonly int ID_PhysicsVolumeDims          = Shader.PropertyToID("_PhysicsVolumeDims");
+    private static readonly int ID_PhysicsUseVapourChannel    = Shader.PropertyToID("_PhysicsUseVapourChannel");
 
     // Cached IDs — compute shader
     private static readonly int ID_VolumeDims            = Shader.PropertyToID("_VolumeDims");
@@ -269,12 +281,65 @@ public class PhysicsWaterPhaseBridge : MonoBehaviour
             // Ray-marching path: use shared material directly so inspector changes apply at runtime.
             waterRenderer.enabled = true;
             waterRenderer.sharedMaterials = new Material[] { rayMarchingMaterial };
+
+            // Hide vapour box — not needed in full-raymarch mode.
+            if (_vapourBoxRenderer != null)
+                _vapourBoxRenderer.enabled = false;
         }
         else
         {
             // Marching-cubes path: do NOT render the proxy cube; we render procedurally.
             waterRenderer.enabled = false;
+
+            // Vapour box will be created/shown lazily in LateUpdate.
         }
+    }
+
+    private void EnsureVapourBox()
+    {
+        if (vapourRaymarchMaterial == null)
+            return;
+
+        if (_vapourBoxGO == null)
+        {
+            // Reuse an existing child if domain-reload or editor re-enable left one behind.
+            Transform existing = transform.Find(VapourBoxObjectName);
+            if (existing != null)
+            {
+                _vapourBoxGO = existing.gameObject;
+            }
+            else
+            {
+                _vapourBoxGO = new GameObject(VapourBoxObjectName);
+                _vapourBoxGO.transform.SetParent(transform, false);
+            }
+        }
+
+        MeshFilter mf = _vapourBoxGO.GetComponent<MeshFilter>();
+        if (mf == null) mf = _vapourBoxGO.AddComponent<MeshFilter>();
+        if (mf.sharedMesh == null)
+        {
+            // Borrow the same unit-cube mesh already used by the root.
+            if (rootMeshFilter != null && rootMeshFilter.sharedMesh != null)
+                mf.sharedMesh = rootMeshFilter.sharedMesh;
+            else
+            {
+                GameObject tmp = GameObject.CreatePrimitive(PrimitiveType.Cube);
+                mf.sharedMesh = tmp.GetComponent<MeshFilter>().sharedMesh;
+                Destroy(tmp);
+            }
+        }
+
+        if (_vapourBoxRenderer == null)
+            _vapourBoxRenderer = _vapourBoxGO.GetComponent<MeshRenderer>();
+        if (_vapourBoxRenderer == null)
+            _vapourBoxRenderer = _vapourBoxGO.AddComponent<MeshRenderer>();
+
+        _vapourBoxRenderer.sharedMaterials = new Material[] { vapourRaymarchMaterial };
+        _vapourBoxRenderer.gameObject.layer = gameObject.layer;
+
+        if (_vapourMpb == null)
+            _vapourMpb = new MaterialPropertyBlock();
     }
 
 
@@ -506,6 +571,30 @@ public class PhysicsWaterPhaseBridge : MonoBehaviour
                 boundsMax,
                 Mathf.Clamp01(marchingCubesIsoLevel),
                 gameObject.layer);
+
+            // ============================
+            // VAPOUR BOX (volumetric)
+            // ============================
+            if (vapourRaymarchMaterial != null)
+            {
+                EnsureVapourBox();
+
+                // Position and scale the box to match simulation bounds (same approach as non-MC proxy).
+                Vector3 center = (boundsMin + boundsMax) * 0.5f;
+                Vector3 size   = boundsMax - boundsMin;
+                _vapourBoxGO.transform.position   = center;
+                _vapourBoxGO.transform.localScale  = size;
+                _vapourBoxGO.transform.rotation    = Quaternion.identity;
+
+                _vapourMpb.Clear();
+                _vapourMpb.SetTexture(ID_PhysicsDensityGrid,     densityTextureRG);
+                _vapourMpb.SetVector(ID_PhysicsBoundsMinWS,      new Vector4(boundsMin.x, boundsMin.y, boundsMin.z, 0f));
+                _vapourMpb.SetVector(ID_PhysicsBoundsMaxWS,      new Vector4(boundsMax.x, boundsMax.y, boundsMax.z, 0f));
+                _vapourMpb.SetVector(ID_PhysicsVolumeDims,        new Vector4(volumeDims.x, volumeDims.y, volumeDims.z, 0f));
+                _vapourMpb.SetFloat(ID_PhysicsUseVapourChannel,   1.0f);
+                _vapourBoxRenderer.SetPropertyBlock(_vapourMpb);
+                _vapourBoxRenderer.enabled = true;
+            }
         }
     }
 
@@ -531,6 +620,11 @@ public class PhysicsWaterPhaseBridge : MonoBehaviour
         }
         _mcRenderer?.Release();
 
-
+        if (_vapourBoxGO != null)
+        {
+            Destroy(_vapourBoxGO);
+            _vapourBoxGO = null;
+            _vapourBoxRenderer = null;
+        }
     }
 }

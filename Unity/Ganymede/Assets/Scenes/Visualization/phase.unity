@@ -2305,7 +2305,7 @@ MonoBehaviour:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 1188592644}
-  m_Enabled: 0
+  m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: e9eb36d79300fe7428f1000517630b74, type: 3}
   m_Name: 
@@ -2317,12 +2317,14 @@ MonoBehaviour:
   particleContribution: 1
   fixedPointScale: 1024
   maxParticlesPerVoxel: 1
+  vapourInvDensityScale: 0.33
   smoothingRadiusWS: 0.01
   kernelRadiusVoxels: 3
   visualProxyTransform: {fileID: 0}
   rayMarchingMaterial: {fileID: 2100000, guid: 981a72c002f021c43bcf6a3e18c751a5, type: 2}
   marchingCubesMaterial: {fileID: 2100000, guid: a5f165da16e6e4a4e8b93a9c48ecc59b, type: 2}
-  useMarchingCubes: 0
+  vapourRaymarchMaterial: {fileID: 2100000, guid: ecfb9a36afdd6404e9a46793705c4a27, type: 2}
+  useMarchingCubes: 1
   marchingCubesIsoLevel: 0
 --- !u!23 &1188592649
 MeshRenderer:
@@ -2489,7 +2491,7 @@ Transform:
   m_GameObject: {fileID: 1268717246}
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: 3.52, y: -2.35, z: -1.74}
+  m_LocalPosition: {x: 3.52, y: 6.42, z: -1.74}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
@@ -3426,7 +3428,7 @@ PrefabInstance:
     m_Modifications:
     - target: {fileID: 920208063865847605, guid: 18cf1fa5220a198409fde72db8b3e2a5, type: 3}
       propertyPath: m_Enabled
-      value: 1
+      value: 0
       objectReference: {fileID: 0}
     - target: {fileID: 920208063865847605, guid: 18cf1fa5220a198409fde72db8b3e2a5, type: 3}
       propertyPath: particleMaterial
