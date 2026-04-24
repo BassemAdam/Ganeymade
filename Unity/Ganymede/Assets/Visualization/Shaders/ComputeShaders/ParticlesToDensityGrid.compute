@@ -1,9 +1,13 @@
-// Converts SPH particle positions (StructuredBuffer<Particle>) into a 3D density grid (RWStructuredBuffer<uint>)
-// for volumetric rendering in Custom/WaterPhase.
+// Converts SPH particle positions (StructuredBuffer<Particle>) into a 3D dual-phase density grid.
+// Liquid and vapour densities are stored in two contiguous slabs of the same RWStructuredBuffer<uint>:
+//   Liquid voxel index  = voxelIdx          (slab 0, range [0, N-1])
+//   Vapour voxel index  = N + voxelIdx       (slab 1, range [N, 2N-1])
+// where N = volX * volY * volZ.
+// After splat the buffer is normalised into a RWTexture3D<float2> (R = liquid, G = vapour).
 //
 // Notes:
 // - Uses fixed-point uint accumulation with atomics (InterlockedAdd) for stability.
-// - The density grid is later sampled in the fragment shader with manual trilinear filtering.
+// - The density texture is trilinear-sampled in the ray-march fragment shader.
 //
 // Author: Ganymede project
 
@@ -29,19 +33,21 @@ struct Particle
     float  _pad1;
 };
 
-StructuredBuffer<Particle> _ParticleBuffer;
-RWStructuredBuffer<uint>   _DensityGrid;
-RWTexture3D<float>         _DensityTexture3D;
+StructuredBuffer<Particle>  _ParticleBuffer;
+// Dual-slab buffer: first N elements = liquid, next N elements = vapour.
+// N = _VolumeDims.x * _VolumeDims.y * _VolumeDims.z
+RWStructuredBuffer<uint>    _DensityGrid;
+RWTexture3D<float2>         _DensityTexture3D_RG;  // R = liquid, G = vapour
 
-int3   _VolumeDims;          // xyz
+int3   _VolumeDims;           // xyz
 uint   _ParticleCount;
-float4 _BoundsMinWS;         // xyz
-float4 _BoundsMaxWS;         // xyz
-float  _ParticleContribution; // unitless, per particle
-float  _FixedPointScale;     // e.g. 1024
-float  _SmoothingRadiusWS;   // world units, controls splat kernel falloff
-int    _KernelRadiusVoxels;  // 0 = nearest voxel only, 1 = 27-voxel neighborhood, etc.
-float  _InvDensityScale;     // 1 / (particleContribution * maxParticlesPerVoxel) — maps accumulated density to [0..1]
+float4 _BoundsMinWS;          // xyz
+float4 _BoundsMaxWS;          // xyz
+float  _ParticleContribution;  // unitless, per particle
+float  _FixedPointScale;      // e.g. 1024
+float  _SmoothingRadiusWS;    // world units, controls splat kernel falloff
+int    _KernelRadiusVoxels;   // 0 = nearest voxel only, 1 = 27-voxel neighborhood, etc.
+float2 _InvDensityScaleRG;    // x = liquid scale, y = vapour scale (vapour rest density is lower)
 
 uint GridIndex(int3 v)
 {
@@ -54,16 +60,19 @@ void ClearGrid(uint3 id : SV_DispatchThreadID)
     if (id.x >= (uint)_VolumeDims.x || id.y >= (uint)_VolumeDims.y || id.z >= (uint)_VolumeDims.z)
         return;
 
+    uint N   = (uint)(_VolumeDims.x * _VolumeDims.y * _VolumeDims.z);
     uint idx = (uint)(id.x + (uint)_VolumeDims.x * (id.y + (uint)_VolumeDims.y * id.z));
-    _DensityGrid[idx] = 0;
+    _DensityGrid[idx]     = 0;  // liquid slab
+    _DensityGrid[N + idx] = 0;  // vapour slab
 }
 
-void AtomicAddDensity(int3 v, uint amount)
+// slabOffset: 0 for liquid slab, N for vapour slab.
+void AtomicAddDensity(int3 v, uint slabOffset, uint amount)
 {
     if (any(v < 0) || v.x >= _VolumeDims.x || v.y >= _VolumeDims.y || v.z >= _VolumeDims.z)
         return;
 
-    uint idx = GridIndex(v);
+    uint idx = slabOffset + GridIndex(v);
     uint original;
     InterlockedAdd(_DensityGrid[idx], amount, original);
 }
@@ -76,8 +85,18 @@ void SplatParticles(uint id : SV_DispatchThreadID)
 
     Particle p = _ParticleBuffer[id];
 
-    float3 minWS = _BoundsMinWS.xyz;
-    float3 maxWS = _BoundsMaxWS.xyz;
+    // Route to slab by phase.
+    //   phase == 0  →  liquid slab  (offset 0)
+    //   phase == 1  →  vapour slab  (offset N)
+    //   anything else (e.g. -1 = boundary/inactive)  →  skip
+    if (p.phase < 0 || p.phase > 1)
+        return;
+
+    uint N          = (uint)(_VolumeDims.x * _VolumeDims.y * _VolumeDims.z);
+    uint slabOffset = (p.phase == 1) ? N : 0u;
+
+    float3 minWS  = _BoundsMinWS.xyz;
+    float3 maxWS  = _BoundsMaxWS.xyz;
     float3 sizeWS = maxWS - minWS;
 
     // Map particle position to normalized [0..1] volume coordinates.
@@ -86,25 +105,22 @@ void SplatParticles(uint id : SV_DispatchThreadID)
         return;
 
     float3 gridPos = uvw * (float3)(_VolumeDims - 1);
-    int3 base = (int3)floor(gridPos);
+    int3   base    = (int3)floor(gridPos);
 
     // Use the SPH-computed density directly: bulk regions have high p.density naturally,
     // isolated particles have low p.density. _ParticleContribution is now just a display scale.
     float baseAmount = max(0.0, p.density * _ParticleContribution) * max(_FixedPointScale, 1.0);
 
-    // If kernel radius is 0 (fast path), just write into the nearest voxel.
+    // Fast path: nearest voxel only.
     if (_KernelRadiusVoxels <= 0 || _SmoothingRadiusWS <= 1e-5)
     {
         uint amt = (uint)round(baseAmount);
-        AtomicAddDensity(base, amt);
+        AtomicAddDensity(base, slabOffset, amt);
         return;
     }
 
-    float h = _SmoothingRadiusWS;
+    float h     = _SmoothingRadiusWS;
     float invH2 = 1.0 / max(h * h, 1e-6);
-
-    // Voxel size in world units.
-    float3 voxelSizeWS = sizeWS / max((float3)_VolumeDims, 1.0);
 
     // Splat into a small voxel neighborhood using a cheap poly6-ish falloff:
     // w = (1 - (r/h)^2)^3 for r<=h.
@@ -123,12 +139,12 @@ void SplatParticles(uint id : SV_DispatchThreadID)
                 if (any(v < 0) || v.x >= _VolumeDims.x || v.y >= _VolumeDims.y || v.z >= _VolumeDims.z)
                     continue;
 
-                // World-space center of voxel.
+                // World-space centre of voxel.
                 float3 voxelCenterUVW = ((float3)v + 0.5) / (float3)_VolumeDims;
-                float3 voxelCenterWS = minWS + voxelCenterUVW * sizeWS;
+                float3 voxelCenterWS  = minWS + voxelCenterUVW * sizeWS;
 
-                float3 d = voxelCenterWS - p.position;
-                float dist2 = dot(d, d);
+                float3 d     = voxelCenterWS - p.position;
+                float  dist2 = dot(d, d);
 
                 float t = saturate(1.0 - dist2 * invH2);
                 float w = t * t * t;
@@ -137,7 +153,7 @@ void SplatParticles(uint id : SV_DispatchThreadID)
                 if (amt == 0)
                     continue;
 
-                AtomicAddDensity(v, amt);
+                AtomicAddDensity(v, slabOffset, amt);
             }
         }
     }
@@ -149,9 +165,12 @@ void NormalizeToTexture(uint3 id : SV_DispatchThreadID)
     if (id.x >= (uint)_VolumeDims.x || id.y >= (uint)_VolumeDims.y || id.z >= (uint)_VolumeDims.z)
         return;
 
+    uint N   = (uint)(_VolumeDims.x * _VolumeDims.y * _VolumeDims.z);
     uint idx = GridIndex((int3)id);
-    uint intDensity = _DensityGrid[idx];
 
-    float normalized = ((float)intDensity / max(_FixedPointScale, 1.0)) * _InvDensityScale;
-    _DensityTexture3D[id] = saturate(normalized);
+    float invScale      = max(_FixedPointScale, 1.0);
+    float liquidNorm    = ((float)_DensityGrid[idx]     / invScale) * _InvDensityScaleRG.x;
+    float vapourNorm    = ((float)_DensityGrid[N + idx] / invScale) * _InvDensityScaleRG.y;
+
+    _DensityTexture3D_RG[id] = float2(saturate(liquidNorm), saturate(vapourNorm));
 }

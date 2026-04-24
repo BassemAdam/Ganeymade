@@ -16,7 +16,7 @@ struct Vertex
 };
 
 // ---- Inputs ----
-Texture3D<float> DensityTexture3D;
+Texture3D<float2> DensityTexture3D;   // R = liquid density, G = vapour (ignored here)
 SamplerState samplerDensityTexture3D;
 StructuredBuffer<int>  lut;        // flat triangle edge indices
 StructuredBuffer<int>  offsets;    // offset into lut for each of 256 configs

@@ -52,9 +52,16 @@ public class PhysicsWaterPhaseBridge : MonoBehaviour
     [Min(1f)]
     public float fixedPointScale = 1024.0f;
 
-    [Tooltip("Expected 'full' voxel occupancy in particles. Used to map the uint grid into a 0..1 density.")]
+    [Tooltip("Expected 'full' voxel occupancy for liquid particles. Maps liquid uint slab to 0..1.")]
     [Min(0.001f)]
     public float maxParticlesPerVoxel = 12.0f;
+
+    [Tooltip("Direct inverse density scale for vapour channel passed as _InvDensityScaleRG.y. "
+           + "Larger value = vapour registers more easily. "
+           + "Rule-of-thumb default: liquidScale × (liquidRestDensity / vapourRestDensity). "
+           + "For water SPH a value ~4-8× the liquid inv-scale is a good starting point.")]
+    [Min(1e-5f)]
+    public float vapourInvDensityScale = 0.33f; // tune per simulation; ~ 4× liquid sensitivity
 
     [Header("Splat Kernel")]
     [Tooltip("If < 0, uses UseComputePlugin.smoothingRadius")]
@@ -91,8 +98,8 @@ public class PhysicsWaterPhaseBridge : MonoBehaviour
 
     // GPU buffers
     private ComputeBuffer particleOutputBuffer;
-    private ComputeBuffer densityGrid; // uint accumulation buffer (atomics)
-    private RenderTexture densityTexture3D; // normalized float field
+    private ComputeBuffer densityGrid;    // dual-slab uint accumulation buffer: [0,N-1]=liquid, [N,2N-1]=vapour
+    private RenderTexture densityTextureRG; // R=liquid, G=vapour normalised float2 field
 
     // Marching cubes (delegated to MarchingCubesRenderer)
     private MarchingCubesRenderer _mcRenderer;
@@ -116,21 +123,22 @@ public class PhysicsWaterPhaseBridge : MonoBehaviour
 
 
 
-    // Cached IDs
-    private static readonly int ID_PhysicsDensityGrid = Shader.PropertyToID("_PhysicsDensityGrid");
-    private static readonly int ID_PhysicsBoundsMinWS = Shader.PropertyToID("_PhysicsBoundsMinWS");
-    private static readonly int ID_PhysicsBoundsMaxWS = Shader.PropertyToID("_PhysicsBoundsMaxWS");
-    private static readonly int ID_PhysicsVolumeDims = Shader.PropertyToID("_PhysicsVolumeDims");
+    // Cached IDs — material/MPB
+    private static readonly int ID_PhysicsDensityGrid   = Shader.PropertyToID("_PhysicsDensityGrid");   // RG texture → shaders
+    private static readonly int ID_PhysicsBoundsMinWS   = Shader.PropertyToID("_PhysicsBoundsMinWS");
+    private static readonly int ID_PhysicsBoundsMaxWS   = Shader.PropertyToID("_PhysicsBoundsMaxWS");
+    private static readonly int ID_PhysicsVolumeDims     = Shader.PropertyToID("_PhysicsVolumeDims");
 
-    private static readonly int ID_VolumeDims = Shader.PropertyToID("_VolumeDims");
-    private static readonly int ID_ParticleCount = Shader.PropertyToID("_ParticleCount");
-    private static readonly int ID_BoundsMinWS = Shader.PropertyToID("_BoundsMinWS");
-    private static readonly int ID_BoundsMaxWS = Shader.PropertyToID("_BoundsMaxWS");
-    private static readonly int ID_ParticleContribution = Shader.PropertyToID("_ParticleContribution");
-    private static readonly int ID_FixedPointScale = Shader.PropertyToID("_FixedPointScale");
-    private static readonly int ID_SmoothingRadiusWS = Shader.PropertyToID("_SmoothingRadiusWS");
-    private static readonly int ID_KernelRadiusVoxels = Shader.PropertyToID("_KernelRadiusVoxels");
-    private static readonly int ID_InvDensityScale = Shader.PropertyToID("_InvDensityScale");
+    // Cached IDs — compute shader
+    private static readonly int ID_VolumeDims            = Shader.PropertyToID("_VolumeDims");
+    private static readonly int ID_ParticleCount         = Shader.PropertyToID("_ParticleCount");
+    private static readonly int ID_BoundsMinWS           = Shader.PropertyToID("_BoundsMinWS");
+    private static readonly int ID_BoundsMaxWS           = Shader.PropertyToID("_BoundsMaxWS");
+    private static readonly int ID_ParticleContribution  = Shader.PropertyToID("_ParticleContribution");
+    private static readonly int ID_FixedPointScale       = Shader.PropertyToID("_FixedPointScale");
+    private static readonly int ID_SmoothingRadiusWS     = Shader.PropertyToID("_SmoothingRadiusWS");
+    private static readonly int ID_KernelRadiusVoxels    = Shader.PropertyToID("_KernelRadiusVoxels");
+    private static readonly int ID_InvDensityScaleRG     = Shader.PropertyToID("_InvDensityScaleRG");
 
     private void Awake()
     {
@@ -290,43 +298,46 @@ public class PhysicsWaterPhaseBridge : MonoBehaviour
             registeredParticleOutputNativePtr = IntPtr.Zero;
         }
 
-        if (densityGrid == null || densityGrid.count != gridCount)
+        // Dual-slab buffer: 2 * N uints (liquid slab [0,N-1], vapour slab [N,2N-1]).
+        if (densityGrid == null || densityGrid.count != gridCount * 2)
         {
             densityGrid?.Release();
-            densityGrid = new ComputeBuffer(gridCount, sizeof(uint), ComputeBufferType.Structured);
+            densityGrid = new ComputeBuffer(gridCount * 2, sizeof(uint), ComputeBufferType.Structured);
         }
 
-        if (densityTexture3D == null ||
-            densityTexture3D.width != volumeDims.x ||
-            densityTexture3D.height != volumeDims.y ||
-            densityTexture3D.volumeDepth != volumeDims.z)
+        if (densityTextureRG == null ||
+            densityTextureRG.width        != volumeDims.x ||
+            densityTextureRG.height       != volumeDims.y ||
+            densityTextureRG.volumeDepth  != volumeDims.z)
         {
-            if (densityTexture3D != null)
+            if (densityTextureRG != null)
             {
-                densityTexture3D.Release();
-                Destroy(densityTexture3D);
+                densityTextureRG.Release();
+                Destroy(densityTextureRG);
             }
 
-            densityTexture3D = new RenderTexture(volumeDims.x, volumeDims.y, 0, RenderTextureFormat.RFloat)
+            // RGHalf (VK_FORMAT_R16G16_SFLOAT): R = liquid density, G = vapour density, both normalised to [0..1].
+            // Falls back gracefully — Unity will assert at runtime if the format is unsupported on the device.
+            densityTextureRG = new RenderTexture(volumeDims.x, volumeDims.y, 0, RenderTextureFormat.RGHalf)
             {
-                dimension = TextureDimension.Tex3D,
-                volumeDepth = volumeDims.z,
+                dimension      = TextureDimension.Tex3D,
+                volumeDepth    = volumeDims.z,
                 enableRandomWrite = true,
-                filterMode = FilterMode.Trilinear,
-                wrapMode = TextureWrapMode.Clamp,
-                useMipMap = false,
+                filterMode     = FilterMode.Trilinear,
+                wrapMode       = TextureWrapMode.Clamp,
+                useMipMap      = false,
                 autoGenerateMips = false
             };
-            densityTexture3D.Create();
+            densityTextureRG.Create();
         }
 
-        // Bind buffers once (Unity will rebind internally as needed).
-        particlesToDensityCompute.SetBuffer(kClear, "_DensityGrid", densityGrid);
-        particlesToDensityCompute.SetBuffer(kClear, "_ParticleBuffer", particleOutputBuffer); // bound for safety
-        particlesToDensityCompute.SetBuffer(kSplat, "_DensityGrid", densityGrid);
-        particlesToDensityCompute.SetBuffer(kSplat, "_ParticleBuffer", particleOutputBuffer);
-        particlesToDensityCompute.SetBuffer(kNormalize, "_DensityGrid", densityGrid);
-        particlesToDensityCompute.SetTexture(kNormalize, "_DensityTexture3D", densityTexture3D);
+        // Bind buffers (Unity rebinds internally when kernels share the same resource).
+        particlesToDensityCompute.SetBuffer(kClear,     "_DensityGrid",         densityGrid);
+        particlesToDensityCompute.SetBuffer(kClear,     "_ParticleBuffer",      particleOutputBuffer); // bound for safety
+        particlesToDensityCompute.SetBuffer(kSplat,     "_DensityGrid",         densityGrid);
+        particlesToDensityCompute.SetBuffer(kSplat,     "_ParticleBuffer",      particleOutputBuffer);
+        particlesToDensityCompute.SetBuffer(kNormalize, "_DensityGrid",         densityGrid);
+        particlesToDensityCompute.SetTexture(kNormalize, "_DensityTexture3D_RG", densityTextureRG);
 
         // If we recreated the particle output buffer at runtime, re-register with the native plugin.
         if (SystemInfo.graphicsDeviceType == UnityEngine.Rendering.GraphicsDeviceType.Vulkan &&
@@ -426,8 +437,8 @@ public class PhysicsWaterPhaseBridge : MonoBehaviour
         particlesToDensityCompute.SetVector(ID_BoundsMaxWS, new Vector4(boundsMax.x, boundsMax.y, boundsMax.z, 0f));
         particlesToDensityCompute.SetFloat(ID_ParticleContribution, particleContribution);
         particlesToDensityCompute.SetFloat(ID_FixedPointScale, fixedPointScale);
-        float invScale = 1.0f / Mathf.Max(1e-5f, Mathf.Max(1e-5f, particleContribution) * Mathf.Max(1e-5f, maxParticlesPerVoxel));
-        particlesToDensityCompute.SetFloat(ID_InvDensityScale, invScale);
+        float invScaleLiquid = 1.0f / Mathf.Max(1e-5f, Mathf.Max(1e-5f, particleContribution) * Mathf.Max(1e-5f, maxParticlesPerVoxel));
+        particlesToDensityCompute.SetVector(ID_InvDensityScaleRG, new Vector2(invScaleLiquid, Mathf.Max(1e-5f, vapourInvDensityScale)));
         ConfigureSplatKernelParams(boundsMin, boundsMax);
 
         // Dispatch clear
@@ -466,10 +477,10 @@ public class PhysicsWaterPhaseBridge : MonoBehaviour
                 visualTransform.localScale = size;
 
                 mpb.Clear();
-                mpb.SetTexture(ID_PhysicsDensityGrid, densityTexture3D);
+                mpb.SetTexture(ID_PhysicsDensityGrid, densityTextureRG);
                 mpb.SetVector(ID_PhysicsBoundsMinWS, new Vector4(boundsMin.x, boundsMin.y, boundsMin.z, 0f));
                 mpb.SetVector(ID_PhysicsBoundsMaxWS, new Vector4(boundsMax.x, boundsMax.y, boundsMax.z, 0f));
-                mpb.SetVector(ID_PhysicsVolumeDims, new Vector4(volumeDims.x, volumeDims.y, volumeDims.z, invScale));
+                mpb.SetVector(ID_PhysicsVolumeDims, new Vector4(volumeDims.x, volumeDims.y, volumeDims.z, 0f));
                 waterRenderer.SetPropertyBlock(mpb);
             }
         }
@@ -489,7 +500,7 @@ public class PhysicsWaterPhaseBridge : MonoBehaviour
             }
 
             _mcRenderer.Render(
-                densityTexture3D,
+                densityTextureRG,
                 volumeDims,
                 boundsMin,
                 boundsMax,
@@ -512,11 +523,11 @@ public class PhysicsWaterPhaseBridge : MonoBehaviour
 
         particleOutputBuffer?.Release();
         densityGrid?.Release();
-        if (densityTexture3D != null)
+        if (densityTextureRG != null)
         {
-            densityTexture3D.Release();
-            Destroy(densityTexture3D);
-            densityTexture3D = null;
+            densityTextureRG.Release();
+            Destroy(densityTextureRG);
+            densityTextureRG = null;
         }
         _mcRenderer?.Release();
 

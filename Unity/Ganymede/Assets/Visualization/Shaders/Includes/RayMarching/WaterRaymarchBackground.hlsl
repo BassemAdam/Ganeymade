@@ -13,8 +13,6 @@ SurfaceHit FindWaterSurfaceHit(
     WaterRaymarchVolumeData volumeData,
     float maxSearchDistance,
     float stepSize,
-    float densityOffset,
-    float densityMultiplier,
     float isoLevel,
     float surfaceDetectionMargin)
 {
@@ -24,23 +22,21 @@ SurfaceHit FindWaterSurfaceHit(
 
     if (!cameraStartsInsideVolume)
     {
-        float entryDensity = SampleDensityWS(volumeData.entryPositionWS, densityOffset, densityMultiplier);
+        float entryDensity = SampleLiquidDensityWS(volumeData.entryPositionWS);
         if (entryDensity >= isoLevel)
             return MakeSurfaceHit(volumeData.entryPositionWS, viewData.viewRayDirectionWS, true);
     }
 
     SurfaceHit surfaceHit = NoSurfaceHit();
     float sampleDistance = volumeData.distanceToVolume + safeStepSize * viewData.blueNoiseValue;
-    float previousDensity = SampleDensityWS(
-        viewData.cameraPositionWS + viewData.viewRayDirectionWS * sampleDistance,
-        densityOffset,
-        densityMultiplier
+    float previousDensity = SampleLiquidDensityWS(
+        viewData.cameraPositionWS + viewData.viewRayDirectionWS * sampleDistance
     );
 
     while (!surfaceHit.hit && sampleDistance < maxSearchDistance)
     {
         float3 samplePositionWS = viewData.cameraPositionWS + viewData.viewRayDirectionWS * sampleDistance;
-        float currentDensity = SampleDensityWS(samplePositionWS, densityOffset, densityMultiplier);
+        float currentDensity = SampleLiquidDensityWS(samplePositionWS);
 
         bool enteringWater = previousDensity < surfaceThreshold && currentDensity >= surfaceThreshold;
         bool leavingWater = previousDensity >= surfaceThreshold && currentDensity < surfaceThreshold;
@@ -58,8 +54,6 @@ WaterRaymarchBackgroundData BuildWaterRaymarchBackgroundData(
     WaterRaymarchViewData viewData,
     WaterRaymarchVolumeData volumeData,
     float stepSize,
-    float densityOffset,
-    float densityMultiplier,
     float isoLevel,
     float surfaceDetectionMargin,
     float refractionStrength)
@@ -72,14 +66,25 @@ WaterRaymarchBackgroundData BuildWaterRaymarchBackgroundData(
     if (backgroundData.sceneDistanceAlongRay <= volumeData.distanceToVolume)
         return backgroundData;
 
+    // // Two-sample liquid presence test before committing to the full surface march.
+    // // Sample liquid density at the volume entry and at the mid-point of the volume.
+    // // If both return zero the scene is vapour-only (or boundary-only) — no iso-surface
+    // // exists and the entire FindWaterSurfaceHit march can be skipped entirely.
+    // {
+    //     float3 midPointWS = volumeData.entryPositionWS
+    //         + viewData.viewRayDirectionWS * (volumeData.distanceInsideVolume * 0.5);
+    //     bool hasLiquid = SampleLiquidDensityWS(volumeData.entryPositionWS) > 0.0
+    //                   || SampleLiquidDensityWS(midPointWS)                 > 0.0;
+    //     if (!hasLiquid)
+    //         return backgroundData;
+    // }
+
     float initialSearchDistance = min(volumeData.volumeExitDistance, backgroundData.sceneDistanceAlongRay);
     backgroundData.surfaceHit = FindWaterSurfaceHit(
         viewData,
         volumeData,
         initialSearchDistance,
         stepSize,
-        densityOffset,
-        densityMultiplier,
         isoLevel,
         surfaceDetectionMargin
     );
