@@ -97,6 +97,19 @@ public class PhysicsWaterPhaseBridge : MonoBehaviour
     public bool enhanceVapourDensity = true;
     [Tooltip("Gaussian-blur the vapour slab before noise enhancement to smooth out individual particle dots.")]
     public bool blurVapourDensity = true;
+
+    [Header("Liquid Density Blur")]
+    [Tooltip("Gaussian-blur the liquid slab after normalization to smooth out individual particle dots.")]
+    public bool blurLiquidDensity = false;
+    [Tooltip("Kernel half-size in voxels (1=3^3 taps, 2=5^3 taps, 3=7^3 taps). Larger = smoother but heavier.")]
+    [Range(1, 4)]
+    public int liquidBlurRadius = 1;
+    [Tooltip("Gaussian sigma in voxels. Small values give tight, localized blur; large values spread widely.")]
+    [Range(0.1f, 4.0f)]
+    public float liquidBlurSigma = 1.0f;
+    [Tooltip("0 = pure smooth (removes all particle detail), 1 = original high-frequency detail fully added back on top of the blur.")]
+    [Range(0f, 1f)]
+    public float liquidBlurDetailPreserve = 0.0f;
     [Tooltip("Kernel half-size in voxels (1=3^3 taps, 2=5^3 taps, 3=7^3 taps). Larger = smoother but heavier.")]
     [Range(1, 4)]
     public int blurRadius = 1;
@@ -153,6 +166,7 @@ public class PhysicsWaterPhaseBridge : MonoBehaviour
     private int kSplat;
     private int kNormalize;
     private int kBlur;
+    private int kBlurLiquid;
     private int kEnhance;
     private int kBakeNormals;
 
@@ -194,6 +208,9 @@ public class PhysicsWaterPhaseBridge : MonoBehaviour
     private static readonly int ID_BlurRadius                    = Shader.PropertyToID("_BlurRadius");
     private static readonly int ID_BlurSigma                     = Shader.PropertyToID("_BlurSigma");
     private static readonly int ID_BlurDetailPreserve            = Shader.PropertyToID("_BlurDetailPreserve");
+    private static readonly int ID_LiquidBlurRadius              = Shader.PropertyToID("_LiquidBlurRadius");
+    private static readonly int ID_LiquidBlurSigma               = Shader.PropertyToID("_LiquidBlurSigma");
+    private static readonly int ID_LiquidBlurDetailPreserve      = Shader.PropertyToID("_LiquidBlurDetailPreserve");
     private static readonly int ID_PhysicsNormalGrid             = Shader.PropertyToID("_PhysicsNormalGrid");
     private static readonly int ID_NormalTexture3D               = Shader.PropertyToID("_NormalTexture3D");
 
@@ -306,6 +323,7 @@ public class PhysicsWaterPhaseBridge : MonoBehaviour
             kSplat       = particlesToDensityCompute.FindKernel("SplatParticles");
             kNormalize   = particlesToDensityCompute.FindKernel("NormalizeToTexture");
             kBlur        = particlesToDensityCompute.FindKernel("BlurVapourDensity");
+            kBlurLiquid  = particlesToDensityCompute.FindKernel("BlurLiquidDensity");
             kEnhance     = particlesToDensityCompute.FindKernel("EnhanceVapourDensity");
             kBakeNormals = particlesToDensityCompute.FindKernel("BakeNormals");
             _kernelsInitialized = true;
@@ -587,6 +605,17 @@ public class PhysicsWaterPhaseBridge : MonoBehaviour
         particlesToDensityCompute.Dispatch(kSplat, Mathf.Max(1, groups), 1, 1);
 
         particlesToDensityCompute.Dispatch(kNormalize, gx, gy, gz);
+
+        if (blurLiquidDensity)
+        {
+            particlesToDensityCompute.SetInt(ID_LiquidBlurRadius,          liquidBlurRadius);
+            particlesToDensityCompute.SetFloat(ID_LiquidBlurSigma,         liquidBlurSigma);
+            particlesToDensityCompute.SetFloat(ID_LiquidBlurDetailPreserve, liquidBlurDetailPreserve);
+            particlesToDensityCompute.SetTexture(kBlurLiquid, "_DensityTexture3D_Read", densityTextureRG);
+            particlesToDensityCompute.SetTexture(kBlurLiquid, "_DensityTexture3D_RG",   densityTextureTempRG);
+            particlesToDensityCompute.Dispatch(kBlurLiquid, gx, gy, gz);
+            Graphics.CopyTexture(densityTextureTempRG, densityTextureRG);
+        }
 
         if (enhanceVapourDensity)
         {

@@ -2313,7 +2313,7 @@ MonoBehaviour:
   particlesToDensityCompute: {fileID: 7200000, guid: 3c585bfcf792db443b823ea9e4d73d39, type: 3}
   marchingCubesCompute: {fileID: 7200000, guid: a22c7c4891409a047968bd3b28af9da8, type: 3}
   marchingCubesLUT: {fileID: 4900000, guid: 711f0eebef002a84e95e6dc230c006be, type: 3}
-  volumeDims: {x: 128, y: 128, z: 128}
+  volumeDims: {x: 256, y: 256, z: 256}
   particleContribution: 1
   fixedPointScale: 1024
   maxParticlesPerVoxel: 1
@@ -2324,10 +2324,14 @@ MonoBehaviour:
   rayMarchingMaterial: {fileID: 2100000, guid: 981a72c002f021c43bcf6a3e18c751a5, type: 2}
   marchingCubesMaterial: {fileID: 2100000, guid: a5f165da16e6e4a4e8b93a9c48ecc59b, type: 2}
   vapourRaymarchMaterial: {fileID: 2100000, guid: ecfb9a36afdd6404e9a46793705c4a27, type: 2}
-  useMarchingCubes: 1
+  useMarchingCubes: 0
   marchingCubesIsoLevel: 0
   enhanceVapourDensity: 1
   blurVapourDensity: 1
+  blurLiquidDensity: 1
+  liquidBlurRadius: 1
+  liquidBlurSigma: 1.53
+  liquidBlurDetailPreserve: 0
   blurRadius: 4
   blurSigma: 4
   blurDetailPreserve: 0
