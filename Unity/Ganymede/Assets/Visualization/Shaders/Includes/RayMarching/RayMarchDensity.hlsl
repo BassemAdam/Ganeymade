@@ -39,30 +39,22 @@ float SampleVapourDensityWS(float3 posWS)
     return SampleDensityRG_WS(posWS).g;
 }
 
-// Surface normal from the liquid density gradient.
-// Vapour is excluded: volumetric fields have no meaningful iso-surface to differentiate.
-// rayDir is the fallback when the gradient magnitude is below the noise floor.
+// Pre-baked normal grid written once per frame by BakeNormals kernel (ParticlesToDensityGrid.compute).
+// Trilinear sample replaces the 6-tap per-fragment central-difference gradient.
+Texture3D<float4> _PhysicsNormalGrid;
+SamplerState      sampler_PhysicsNormalGrid;
+
+// Surface normal from the pre-baked outward normal texture.
+// rayDir is the fallback when the stored normal magnitude is below the noise floor.
 float3 GetSurfaceNormalWS(float3 posWS, float3 rayDir)
 {
-    float3 gridSize = max(_PhysicsVolumeDims.xyz, 1.0);
-    float3 uvw      = DensityGridUVW(posWS);
-    // 4-voxel half-span ensures samples straddle the SPH surface transition.
-    float3 eps      = 4.0 / gridSize;
-
-    float dx = _PhysicsDensityGrid.SampleLevel(sampler_PhysicsDensityGrid, uvw + float3(eps.x, 0,     0    ), 0).r
-             - _PhysicsDensityGrid.SampleLevel(sampler_PhysicsDensityGrid, uvw - float3(eps.x, 0,     0    ), 0).r;
-    float dy = _PhysicsDensityGrid.SampleLevel(sampler_PhysicsDensityGrid, uvw + float3(0,     eps.y, 0    ), 0).r
-             - _PhysicsDensityGrid.SampleLevel(sampler_PhysicsDensityGrid, uvw - float3(0,     eps.y, 0    ), 0).r;
-    float dz = _PhysicsDensityGrid.SampleLevel(sampler_PhysicsDensityGrid, uvw + float3(0,     0,     eps.z), 0).r
-             - _PhysicsDensityGrid.SampleLevel(sampler_PhysicsDensityGrid, uvw - float3(0,     0,     eps.z), 0).r;
-
-    float3 gradient    = float3(dx, dy, dz);
-    float  gradientLen = length(gradient);
-    if (gradientLen >= 1e-4)
-        return gradient / gradientLen;
-
-    // Fallback: no detectable gradient — oppose the incoming ray.
-    return -normalize(rayDir);
+    float3 sizeWS = max(_PhysicsBoundsMaxWS.xyz - _PhysicsBoundsMinWS.xyz, 1e-5);
+    float3 uvw    = (posWS - _PhysicsBoundsMinWS.xyz) / sizeWS;
+    float3 n   = _PhysicsNormalGrid.SampleLevel(sampler_PhysicsNormalGrid, uvw, 0).xyz;
+    float  len = length(n);
+    // Zero normal means this voxel has no detectable density gradient — it is not on a
+    // surface. Return zero so MakeSurfaceHit can discard the hit instead of faking a normal.
+    return (len >= 1e-4) ? (n / len) : float3(0.0, 0.0, 0.0);
 }
 
 #endif

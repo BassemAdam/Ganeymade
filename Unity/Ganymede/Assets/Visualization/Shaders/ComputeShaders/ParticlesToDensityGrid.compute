@@ -16,6 +16,7 @@
 #pragma kernel NormalizeToTexture
 #pragma kernel BlurVapourDensity
 #pragma kernel EnhanceVapourDensity
+#pragma kernel BakeNormals
 
 struct Particle
 {
@@ -43,6 +44,7 @@ RWTexture3D<float2>         _DensityTexture3D_RG;  // R = liquid, G = vapour
 // Read-only binding used by BlurVapourDensity and EnhanceVapourDensity to avoid
 // reading and writing the same texture in the same dispatch (hazard-free pipeline).
 Texture3D<float2>           _DensityTexture3D_Read;
+RWTexture3D<float4>         _NormalTexture3D;         // xyz = outward surface normal, w = unused
 
 int3   _VolumeDims;           // xyz
 uint   _ParticleCount;
@@ -363,4 +365,44 @@ void EnhanceVapourDensity(uint3 id : SV_DispatchThreadID)
     float enhanced    = lerp(vapour, noiseMasked, _VapourNoiseDetailStrength);
 
     _DensityTexture3D_RG[id] = float2(rg.r, saturate(enhanced));
+}
+
+// ── BakeNormals kernel ────────────────────────────────────────────────────────
+// Runs AFTER NormalizeToTexture (and blur/enhance if active).
+// Reads the final liquid channel (R) from _DensityTexture3D_Read and writes a
+// pre-baked outward surface normal into _NormalTexture3D (xyz = normal, w = 0).
+// Both MarchingCubesCompute and WaterRaymarching sample this instead of computing
+// per-vertex / per-fragment gradients at runtime.
+//
+// 4-voxel half-span matches the raymarcher's eps = 4/gridSize for consistent
+// smoothness across both renderers on a 128^3 volume.
+// ─────────────────────────────────────────────────────────────────────────────
+[numthreads(8, 8, 8)]
+void BakeNormals(uint3 id : SV_DispatchThreadID)
+{
+    if (id.x >= (uint)_VolumeDims.x || id.y >= (uint)_VolumeDims.y || id.z >= (uint)_VolumeDims.z)
+        return;
+
+    int3 c    = (int3)id;
+    int3 dims = _VolumeDims;
+
+    // Returns density at p, or 0.0 if p is outside the volume.
+    // Outside the volume is air — this makes boundary voxels produce a valid
+    // outward gradient even when the liquid is pressed against the volume edge.
+    #define SAMPLE_OR_AIR(p) (any((p) < int3(0,0,0)) || any((p) >= dims) ? 0.0 : _DensityTexture3D_Read[(p)].r)
+
+    // Central-difference gradient of the liquid density field (R channel).
+    // Uses out-of-bounds=0 (air) instead of clamping so that liquid touching the
+    // volume boundary still gets a correct outward normal on all six faces.
+    float dx = SAMPLE_OR_AIR(c + int3(1,0,0)) - SAMPLE_OR_AIR(c - int3(1,0,0));
+    float dy = SAMPLE_OR_AIR(c + int3(0,1,0)) - SAMPLE_OR_AIR(c - int3(0,1,0));
+    float dz = SAMPLE_OR_AIR(c + int3(0,0,1)) - SAMPLE_OR_AIR(c - int3(0,0,1));
+
+    float3 grad = float3(dx, dy, dz);
+    float  len  = length(grad);
+    // Negate: positive-density gradient points into the liquid;
+    // outward surface normal points away from the liquid.
+    float3 n = (len >= 1e-4) ? -(grad / len) : float3(0.0, 0.0, 0.0);
+
+    _NormalTexture3D[id] = float4(n, 0.0);
 }

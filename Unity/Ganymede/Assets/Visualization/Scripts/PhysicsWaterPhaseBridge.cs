@@ -136,6 +136,7 @@ public class PhysicsWaterPhaseBridge : MonoBehaviour
     private ComputeBuffer densityGrid;          // dual-slab uint accumulation: [0,N-1]=liquid, [N,2N-1]=vapour
     private RenderTexture densityTextureRG;     // R=liquid, G=vapour normalised float2 field
     private RenderTexture densityTextureTempRG; // temp for blur ping-pong
+    private RenderTexture normalTexture;        // xyz = pre-baked outward surface normals
 
     // Marching cubes (delegated to MarchingCubesRenderer)
     private MarchingCubesRenderer _mcRenderer;
@@ -153,6 +154,7 @@ public class PhysicsWaterPhaseBridge : MonoBehaviour
     private int kNormalize;
     private int kBlur;
     private int kEnhance;
+    private int kBakeNormals;
 
     // Per-renderer binding
     private MaterialPropertyBlock mpb;
@@ -192,6 +194,8 @@ public class PhysicsWaterPhaseBridge : MonoBehaviour
     private static readonly int ID_BlurRadius                    = Shader.PropertyToID("_BlurRadius");
     private static readonly int ID_BlurSigma                     = Shader.PropertyToID("_BlurSigma");
     private static readonly int ID_BlurDetailPreserve            = Shader.PropertyToID("_BlurDetailPreserve");
+    private static readonly int ID_PhysicsNormalGrid             = Shader.PropertyToID("_PhysicsNormalGrid");
+    private static readonly int ID_NormalTexture3D               = Shader.PropertyToID("_NormalTexture3D");
 
     private void Awake()
     {
@@ -298,11 +302,12 @@ public class PhysicsWaterPhaseBridge : MonoBehaviour
 
         if (!_kernelsInitialized)
         {
-            kClear     = particlesToDensityCompute.FindKernel("ClearGrid");
-            kSplat     = particlesToDensityCompute.FindKernel("SplatParticles");
-            kNormalize = particlesToDensityCompute.FindKernel("NormalizeToTexture");
-            kBlur      = particlesToDensityCompute.FindKernel("BlurVapourDensity");
-            kEnhance   = particlesToDensityCompute.FindKernel("EnhanceVapourDensity");
+            kClear       = particlesToDensityCompute.FindKernel("ClearGrid");
+            kSplat       = particlesToDensityCompute.FindKernel("SplatParticles");
+            kNormalize   = particlesToDensityCompute.FindKernel("NormalizeToTexture");
+            kBlur        = particlesToDensityCompute.FindKernel("BlurVapourDensity");
+            kEnhance     = particlesToDensityCompute.FindKernel("EnhanceVapourDensity");
+            kBakeNormals = particlesToDensityCompute.FindKernel("BakeNormals");
             _kernelsInitialized = true;
         }
 
@@ -455,6 +460,32 @@ public class PhysicsWaterPhaseBridge : MonoBehaviour
         particlesToDensityCompute.SetTexture(kNormalize, "_DensityTexture3D_RG", densityTextureRG);
         // kBlur and kEnhance bindings are set dynamically at dispatch time (see LateUpdate).
 
+        if (normalTexture == null ||
+            normalTexture.width       != volumeDims.x ||
+            normalTexture.height      != volumeDims.y ||
+            normalTexture.volumeDepth != volumeDims.z)
+        {
+            if (normalTexture != null)
+            {
+                normalTexture.Release();
+                Destroy(normalTexture);
+            }
+            normalTexture = new RenderTexture(volumeDims.x, volumeDims.y, 0, RenderTextureFormat.ARGBHalf)
+            {
+                dimension         = TextureDimension.Tex3D,
+                volumeDepth       = volumeDims.z,
+                enableRandomWrite = true,
+                filterMode        = FilterMode.Trilinear,
+                wrapMode          = TextureWrapMode.Clamp,
+                useMipMap         = false,
+                autoGenerateMips  = false
+            };
+            normalTexture.Create();
+        }
+
+        // Bind output slot for BakeNormals once; input (_DensityTexture3D_Read) is set at dispatch time.
+        particlesToDensityCompute.SetTexture(kBakeNormals, "_NormalTexture3D", normalTexture);
+
         if (SystemInfo.graphicsDeviceType == UnityEngine.Rendering.GraphicsDeviceType.Vulkan &&
             particleOutputBuffer != null &&
             registeredParticleOutputNativePtr == IntPtr.Zero)
@@ -595,6 +626,11 @@ public class PhysicsWaterPhaseBridge : MonoBehaviour
             }
         }
 
+        // Bake surface normals from the finalised liquid density into the shared normal texture.
+        // The liquid channel (R) is never modified by blur/enhance, so this is always valid here.
+        particlesToDensityCompute.SetTexture(kBakeNormals, "_DensityTexture3D_Read", densityTextureRG);
+        particlesToDensityCompute.Dispatch(kBakeNormals, gx, gy, gz);
+
         if (!useMarchingCubes)
         {
             if (waterRenderer != null)
@@ -613,6 +649,7 @@ public class PhysicsWaterPhaseBridge : MonoBehaviour
 
                 mpb.Clear();
                 mpb.SetTexture(ID_PhysicsDensityGrid, densityTextureRG);
+                mpb.SetTexture(ID_PhysicsNormalGrid,  normalTexture);
                 mpb.SetVector(ID_PhysicsBoundsMinWS, new Vector4(boundsMin.x, boundsMin.y, boundsMin.z, 0f));
                 mpb.SetVector(ID_PhysicsBoundsMaxWS, new Vector4(boundsMax.x, boundsMax.y, boundsMax.z, 0f));
                 mpb.SetVector(ID_PhysicsVolumeDims, new Vector4(volumeDims.x, volumeDims.y, volumeDims.z, 0f));
@@ -633,6 +670,7 @@ public class PhysicsWaterPhaseBridge : MonoBehaviour
 
             _mcRenderer.Render(
                 densityTextureRG,
+                normalTexture,
                 volumeDims,
                 boundsMin,
                 boundsMax,
@@ -651,6 +689,7 @@ public class PhysicsWaterPhaseBridge : MonoBehaviour
 
                 _vapourMpb.Clear();
                 _vapourMpb.SetTexture(ID_PhysicsDensityGrid,   densityTextureRG);
+                _vapourMpb.SetTexture(ID_PhysicsNormalGrid,    normalTexture);
                 _vapourMpb.SetVector(ID_PhysicsBoundsMinWS,    new Vector4(boundsMin.x, boundsMin.y, boundsMin.z, 0f));
                 _vapourMpb.SetVector(ID_PhysicsBoundsMaxWS,    new Vector4(boundsMax.x, boundsMax.y, boundsMax.z, 0f));
                 _vapourMpb.SetVector(ID_PhysicsVolumeDims,     new Vector4(volumeDims.x, volumeDims.y, volumeDims.z, 0f));
@@ -686,6 +725,12 @@ public class PhysicsWaterPhaseBridge : MonoBehaviour
             densityTextureTempRG.Release();
             Destroy(densityTextureTempRG);
             densityTextureTempRG = null;
+        }
+        if (normalTexture != null)
+        {
+            normalTexture.Release();
+            Destroy(normalTexture);
+            normalTexture = null;
         }
         _mcRenderer?.Release();
 

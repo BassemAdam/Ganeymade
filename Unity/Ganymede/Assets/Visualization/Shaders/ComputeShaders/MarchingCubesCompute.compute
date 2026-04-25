@@ -18,6 +18,8 @@ struct Vertex
 // ---- Inputs ----
 Texture3D<float2> DensityTexture3D;   // R = liquid density, G = vapour (ignored here)
 SamplerState samplerDensityTexture3D;
+Texture3D<float4>  NormalTexture3D;     // pre-baked outward surface normals (xyz), w = 0
+SamplerState       samplerNormalTexture3D;
 StructuredBuffer<int>  lut;        // flat triangle edge indices
 StructuredBuffer<int>  offsets;    // offset into lut for each of 256 configs
 StructuredBuffer<int>  lengths;    // number of indices per config
@@ -50,14 +52,6 @@ float SampleDensity(int3 pos)
     return -DensityTexture3D.SampleLevel(samplerDensityTexture3D, uvw, 0).r;
 }
 
-float3 CalcNormal(int3 coord)
-{
-    float dx = SampleDensity(coord + int3(1,0,0)) - SampleDensity(coord - int3(1,0,0));
-    float dy = SampleDensity(coord + int3(0,1,0)) - SampleDensity(coord - int3(0,1,0));
-    float dz = SampleDensity(coord + int3(0,0,1)) - SampleDensity(coord - int3(0,0,1));
-    return normalize(float3(dx, dy, dz));
-}
-
 Vertex MakeVertex(int3 ca, int3 cb)
 {
     float3 posA = BoundsMinWS + (float3)ca * VoxelSize;
@@ -67,12 +61,19 @@ Vertex MakeVertex(int3 ca, int3 cb)
 
     float t = (abs(dB - dA) < 0.00001) ? 0.0 : (isoLevel - dA) / (dB - dA);
 
-    float3 nA = CalcNormal(ca);
-    float3 nB = CalcNormal(cb);
+    // Sample the pre-baked normal texture at the interpolated vertex position.
+    float3 vertexPosWS  = posA + t * (posB - posA);
+    float3 volumeSizeWS = max((float3)GridSize * VoxelSize, 1e-5);
+    float3 uvw          = (vertexPosWS - BoundsMinWS) / volumeSizeWS;
+    float3 n    = NormalTexture3D.SampleLevel(samplerNormalTexture3D, uvw, 0).xyz;
+    float  nLen = length(n);
+    // Zero normal: gradient below threshold at this position. Store as-is — the
+    // surface shader will receive zero and produce no specular/diffuse contribution,
+    // which is the correct physical response for an indeterminate surface orientation.
 
     Vertex v;
-    v.position = float4(posA + t * (posB - posA), 1.0);
-    v.normal   = float4(normalize(nA + t * (nB - nA)), 0.0);
+    v.position = float4(vertexPosWS, 1.0);
+    v.normal   = float4((nLen >= 1e-4) ? (n / nLen) : float3(0.0, 0.0, 0.0), 0.0);
     return v;
 }
 

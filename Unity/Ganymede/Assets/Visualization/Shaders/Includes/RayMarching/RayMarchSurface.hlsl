@@ -23,6 +23,19 @@ struct SurfaceHit
     bool   totalInternalReflection;
 };
 
+SurfaceHit NoSurfaceHit()
+{
+    SurfaceHit s;
+    s.hit                     = false;
+    s.posWS                   = float3(0, 0, 0);
+    s.normal                  = float3(0, 0, 0);
+    s.reflectDir              = float3(0, 0, 0);
+    s.refractDir              = float3(0, 0, 0);
+    s.fresnel                 = 0.0;
+    s.totalInternalReflection = false;
+    return s;
+}
+
 SurfaceHit MakeSurfaceHit(float3 posWS, float3 rayDir, bool enteringWater)
 {
     SurfaceHit s;
@@ -30,11 +43,14 @@ SurfaceHit MakeSurfaceHit(float3 posWS, float3 rayDir, bool enteringWater)
     s.posWS = posWS;
 
     float3 n = GetSurfaceNormalWS(posWS, rayDir);
-    // The density gradient can point into the liquid, but Fresnel, reflection,
-    // and refraction all expect the shading normal to face against the incoming
-    // view ray. If we leave it flipped, cos(theta) collapses toward 0, which
-    // makes Fresnel shoot toward 1 everywhere and turns the water dark/black
-    // when reflection is increased.
+    // A zero normal means the baked gradient was below threshold — this density
+    // crossing is not a real surface (e.g. noise, interior bulk, or thin wisp).
+    // Discard it so the ray loop can continue searching for a genuine surface.
+    if (dot(n, n) < 1e-8)
+        return NoSurfaceHit();
+
+    // The pre-baked outward normal may still point into the liquid from the
+    // viewer's side. Flip it if needed so Fresnel/reflection/refraction are correct.
     if (dot(n, rayDir) > 0.0)
         n = -n;
     s.normal = n;
@@ -51,19 +67,6 @@ SurfaceHit MakeSurfaceHit(float3 posWS, float3 rayDir, bool enteringWater)
     s.totalInternalReflection = (dot(rawRefracted, rawRefracted) < 0.001);
     s.refractDir              = s.totalInternalReflection ? s.reflectDir : rawRefracted;
 
-    return s;
-}
-
-SurfaceHit NoSurfaceHit()
-{
-    SurfaceHit s;
-    s.hit                     = false;
-    s.posWS                   = float3(0, 0, 0);
-    s.normal                  = float3(0, 0, 0);
-    s.reflectDir              = float3(0, 0, 0);
-    s.refractDir              = float3(0, 0, 0);
-    s.fresnel                 = 0.0;
-    s.totalInternalReflection = false;
     return s;
 }
 
