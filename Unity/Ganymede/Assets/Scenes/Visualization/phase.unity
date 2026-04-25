@@ -2328,10 +2328,10 @@ MonoBehaviour:
   marchingCubesIsoLevel: 0
   enhanceVapourDensity: 1
   blurVapourDensity: 1
-  blurRadius: 1
-  blurSigma: 1
-  blurDetailPreserve: 0.25
-  vapourNoiseScale: 0.4
+  blurRadius: 4
+  blurSigma: 4
+  blurDetailPreserve: 0
+  vapourNoiseScale: 28.1
   vapourNoiseDriftDir: {x: 0, y: -1, z: 0}
   vapourNoiseDriftSpeed: 0.9
   vapourNoiseOctaves: 6
