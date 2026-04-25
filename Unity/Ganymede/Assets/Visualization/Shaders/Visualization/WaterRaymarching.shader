@@ -38,6 +38,8 @@ Shader "Custom/WaterRaymarching"
             HLSLPROGRAM
             #pragma vertex vert
             #pragma fragment frag
+            #pragma multi_compile _ _MAIN_LIGHT_SHADOWS _MAIN_LIGHT_SHADOWS_CASCADE _MAIN_LIGHT_SHADOWS_SCREEN
+            #pragma multi_compile _ _SHADOWS_SOFT
 
             #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Core.hlsl"
             #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Lighting.hlsl"
@@ -159,10 +161,19 @@ Shader "Custom/WaterRaymarching"
                         shadowStep
                     );
 
+                    // God rays: query Unity's shadow map for external geometry occlusion.
+                    #if defined(_MAIN_LIGHT_SHADOWS) || defined(_MAIN_LIGHT_SHADOWS_CASCADE) || defined(_MAIN_LIGHT_SHADOWS_SCREEN)
+                        float4 shadowCoord = TransformWorldToShadowCoord(samplePositionWS);
+                        half shadowAtten = MainLightRealtimeShadow(shadowCoord);
+                    #else
+                        half shadowAtten = 1.0;
+                    #endif
+
                     // In-scatter: liquid (isotropic) + vapour (HG anisotropic), one accumulation.
                     float  hgPhase   = HenyeyGreenstein(cosViewSun, _VapourPhaseG);
                     float3 inScatter = _MainLightColor.rgb
                         * sunTransmittance
+                        * shadowAtten
                         * (_LiquidScatterColor * dl + _VapourScatterColor * (dv * hgPhase))
                         * safeStepSize;
 
