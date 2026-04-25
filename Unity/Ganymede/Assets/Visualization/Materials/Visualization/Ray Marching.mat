@@ -135,7 +135,7 @@ Material:
     - _GlossyReflections: 0
     - _IsoLevel: 0.01
     - _Jitter: 1
-    - _LightStepSize: 0.397
+    - _LightStepSize: 0.726
     - _MarchSteps: 64
     - _MaxSteps: 2048
     - _Metallic: 0
