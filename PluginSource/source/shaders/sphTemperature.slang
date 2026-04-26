@@ -98,7 +98,11 @@ void computeMain(uint3 threadId: SV_DispatchThreadID)
     }
 
     // ── Latent heat model: absorb/release energy at boiling point ──
-    if (p.phase == 0 && p.temperature + deltaT >= params.boilingTemperature)
+    // Per-particle random factor for condensation variation (stable per particle index)
+    float randHash = frac(sin(float(i) * 12.9898 + 78.233) * 43758.5453);
+    float randScale = 0.5 + randHash; // range [0.5, 1.5]
+
+    if (p.phase == 0 && p.temperature + deltaT > params.boilingTemperature)
     {
         // Liquid at or above boiling: excess energy goes into latent heat accumulator
         float excess = (p.temperature + deltaT) - params.boilingTemperature;
@@ -110,12 +114,25 @@ void computeMain(uint3 threadId: SV_DispatchThreadID)
             p.latentHeatAccum = params.latentHeat; // cap at max
         }
     }
-    else if (p.phase == 1 && p.temperature + deltaT <= params.boilingTemperature)
+    else if (p.phase == 1)
     {
-        // Gas cooling below boiling: release latent heat
-        float deficit = params.boilingTemperature - (p.temperature + deltaT);
-        p.temperature = params.boilingTemperature;
-        p.latentHeatAccum -= deficit;
+        // Apply temperature change if not held by a heat source
+        if (!insideHeatSource)
+            p.temperature += deltaT;
+
+        // Drain latent heat when at or below boiling (condensation)
+        if (p.temperature <= params.boilingTemperature)
+        {
+            float coolingDrain = params.coolingRate
+                               * (params.boilingTemperature - params.ambientTemperature)
+                               * params.dt
+                               * randScale; // per-particle variation
+            // For cold heat sources, the large temperature gap drains faster
+            float deficit = params.boilingTemperature - p.temperature;
+            p.latentHeatAccum -= max(coolingDrain, deficit);
+            p.temperature = params.boilingTemperature;
+        }
+
         if (p.latentHeatAccum <= 0.0)
         {
             p.phase = 0; // condense back to liquid

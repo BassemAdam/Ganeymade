@@ -426,13 +426,15 @@ public class UseComputePlugin : MonoBehaviour
                     }
                 }
                 avgTemp /= particleCount;
-                /*
-                Debug.Log($"[Frame {frameCount}] " +
-                        $"Particles near source: {nearCount} | " +
-                        $"Max temp near source: {maxTemp:F1}° | " +
-                        $"Global avg temp: {avgTemp:F2}° | " +
-                        $"Hot particles (>{ambientTemperature+1f:F0}°): {hotCount}");
-                */
+
+                int phaseLiquid = 0, phaseGas = 0, phaseDrained = 0;
+                for (int i = 0; i < particleCount; i++)
+                {
+                    if (readbackData[i].phase == 0) phaseLiquid++;
+                    else if (readbackData[i].phase == 1) phaseGas++;
+                    else phaseDrained++;
+                }
+                Debug.Log($"[Frame {frameCount}] Phase: liquid={phaseLiquid} gas={phaseGas} drained={phaseDrained} | Avg temp: {avgTemp:F2}°");
             }
             else
             {

@@ -131,14 +131,17 @@ void computeMain(uint3 threadId: SV_DispatchThreadID)
    float3 sphAccel = (fPressure + fViscosity) / p.density;
    p.acceleration = sphAccel;
 
-   // ── Buoyancy: gas particles get upward acceleration scaled by temperature ──
-   // Hotter gas = more buoyant; as it cools toward boiling point, buoyancy fades to zero
+   // ── Buoyancy: gas particles always counteract gravity while phase == 1 ──
    float3 buoyancy = float3(0.0);
    if (p.phase == 1)
    {
+       // At minimum, cancel gravity so gas never sinks while still gas
+       float minBuoyancy = -params.gravity.y; // gravity.y is negative, so this is positive
+       float latentFraction = clamp(p.latentHeatAccum / max(params.latentHeat, 1e-6), 0.0, 1.0);
        float tempExcess = max(p.temperature - params.boilingTemperature, 0.0);
-       float buoyancyScale = clamp(tempExcess / max(params.boilingTemperature * 0.5, 1e-6), 0.0, 1.0);
-       buoyancy = float3(0.0, params.gasBuoyancy * buoyancyScale, 0.0);
+       float tempScale = clamp(tempExcess / max(params.boilingTemperature * 0.5, 1e-6), 0.0, 1.0);
+       float scale = max(latentFraction, tempScale);
+       buoyancy = float3(0.0, max(params.gasBuoyancy * scale, minBuoyancy), 0.0);
    }
 
    // ── Boundary repulsion: compensates for SPH kernel truncation at walls ──
