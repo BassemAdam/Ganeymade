@@ -57,6 +57,7 @@ void computeMain(uint3 threadId: SV_DispatchThreadID)
     }
 
     float deltaT = 0.0;
+    int liquidAbove = 0; // count liquid neighbors above this particle
 
     if (!insideHeatSource)
     {
@@ -82,6 +83,10 @@ void computeMain(uint3 threadId: SV_DispatchThreadID)
                         float w = heatKernel(r2, h2);
                         dT += w * (pj.temperature - p.temperature) / pj.density;
                         weightSum += w;
+
+                        // Count liquid neighbors above (for surface detection)
+                        if (pj.phase == 0 && pj.position.y > p.position.y + h * 0.2)
+                            liquidAbove++;
                     }
                 }
                 idx++;
@@ -104,10 +109,14 @@ void computeMain(uint3 threadId: SV_DispatchThreadID)
 
     if (p.phase == 0 && p.temperature + deltaT > params.boilingTemperature)
     {
+        // Surface factor: only surface particles accumulate latent heat
+        // 0 above = full rate, 1 = reduced, 2+ = blocked (no pre-charging)
+        float surfaceFactor = max(1.0 - float(liquidAbove) * 0.5, 0.0);
+
         // Liquid at or above boiling: excess energy goes into latent heat accumulator
         float excess = (p.temperature + deltaT) - params.boilingTemperature;
         p.temperature = params.boilingTemperature;
-        p.latentHeatAccum += excess;
+        p.latentHeatAccum += excess * surfaceFactor;
         if (p.latentHeatAccum >= params.latentHeat)
         {
             p.phase = 1; // transition to gas

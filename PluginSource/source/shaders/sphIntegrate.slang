@@ -131,6 +131,27 @@ void computeMain(uint3 threadId: SV_DispatchThreadID)
    float3 sphAccel = (fPressure + fViscosity) / p.density;
    p.acceleration = sphAccel;
 
+   // ── Boiling: liquid particles accumulating latent heat get random bubbling impulses ──
+   float3 boilingForce = float3(0.0);
+   if (p.phase == 0 && p.latentHeatAccum > 0.0)
+   {
+       float boilFraction = clamp(p.latentHeatAccum / max(params.latentHeat, 1e-6), 0.0, 1.0);
+       // Time-varying hash for randomness: unique per particle and changes each frame
+       float seed = float(i) * 12.9898 + params.dt * float(i % 256u) * 43.758;
+       float rand1 = frac(sin(seed) * 43758.5453);
+       float rand2 = frac(sin(seed * 1.731 + 7.139) * 23421.631);
+       float rand3 = frac(sin(seed * 2.847 + 3.654) * 63172.279);
+       // Random upward bursts with lateral jitter, intensity scales with boil progress
+       float burstChance = boilFraction * 0.4; // up to 40% chance per frame at full boil
+       if (rand1 < burstChance)
+       {
+           float strength = -params.gravity.y * boilFraction * 3.0;
+           boilingForce.y += strength * (0.5 + rand2);
+           boilingForce.x += strength * (rand3 - 0.5) * 0.3;
+           boilingForce.z += strength * (rand2 - 0.5) * 0.3;
+       }
+   }
+
    // ── Buoyancy: gas particles always counteract gravity while phase == 1 ──
    float3 buoyancy = float3(0.0);
    if (p.phase == 1)
@@ -173,7 +194,7 @@ void computeMain(uint3 threadId: SV_DispatchThreadID)
       }
    }
 
-   p.velocity += (sphAccel + params.gravity + interactAccel + boundaryForce + buoyancy) * params.dt;
+   p.velocity += (sphAccel + params.gravity + interactAccel + boundaryForce + buoyancy + boilingForce) * params.dt;
    // Phase-dependent damping: gas retains more momentum
    float damp = (p.phase == 1) ? min(params.damping + 0.001, 1.0) : params.damping;
    p.velocity *= damp;
