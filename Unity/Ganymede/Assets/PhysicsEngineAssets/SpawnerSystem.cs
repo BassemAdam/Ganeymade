@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Runtime.InteropServices;
 using UnityEngine;
 
@@ -73,6 +74,8 @@ public class SpawnManager : MonoBehaviour
     private int[] _patchIndices;
     private Particle[] _patchData;
     private int _patchCount;
+    // Tag tap slots permanently in a HashSet at Start()
+    private HashSet<int> _tapReservedSlots = new HashSet<int>();
 
     // ── Unity lifecycle ──────────────────────────────────────────────────
 
@@ -84,6 +87,7 @@ public class SpawnManager : MonoBehaviour
         _patchIndices = new int[maxSpawnsPerFrame];
         _patchData = new Particle[maxSpawnsPerFrame];
         _sim.GetBoundsWS(out _boundsMin, out _boundsMax);
+        _tapReservedSlots = _sim.TapReservedSlots;
 
         // mark all slots as live (position = centre of bounds) so none are reclaimed on frame 1.
         // The real positions arrive on the first Update's GetComputeResult call.
@@ -133,6 +137,10 @@ public class SpawnManager : MonoBehaviour
             WaterSource src = _sources[s];
             if (src == null || !src.isActive) 
                 continue;
+            
+            // Tap mode: skip if this source has exhausted the pool
+            if (src.spawnMode == WaterSource.SpawnMode.Tap && src.tapExhausted)
+                continue;
 
             // Accumulate fractional particles owed this frame
             _emitAccumulators[s] += src.emissionRate * dt;
@@ -150,16 +158,43 @@ public class SpawnManager : MonoBehaviour
 
             for (int i = 0; i < toSpawn; i++)
             {
-                int slot = FindReclaimableSlot();
-                if (slot < 0) 
-                    break; // pool fully active, nothing to reclaim yet
+                int slot = src.spawnMode == WaterSource.SpawnMode.Tap? FindDormantSlot() : FindReclaimableSlot(false);
+
+                if (slot < 0)
+                {
+                    if (src.spawnMode == WaterSource.SpawnMode.Tap)
+                    {
+                        src.tapExhausted = true;
+                        if (verbose)
+                            Debug.Log($"[SpawnManager] Tap '{src.name}' pool exhausted.");
+                    }
+                    break;
+                }
 
                 Vector3 offset = UnityEngine.Random.insideUnitSphere * src.emissionRadius;
                 Vector3 spawnPos = src.transform.position + offset;
 
                 Particle p = default;
                 p.position = spawnPos;
-                p.velocity = dir * src.emissionSpeed;
+
+                // Tap mode: tighten the stream — use a narrow cone instead of a full sphere offset,
+                // and add a small random radial spread perpendicular to the flow direction.
+                if (src.spawnMode == WaterSource.SpawnMode.Tap)
+                {
+                    Vector3 right = Vector3.Cross(dir, Vector3.up);
+                    if (right.sqrMagnitude < 0.001f) right = Vector3.Cross(dir, Vector3.forward);
+                    right.Normalize();
+                    Vector3 up2 = Vector3.Cross(dir, right).normalized;
+
+                    float radial = UnityEngine.Random.Range(0f, src.emissionRadius * 0.15f); // very tight
+                    float angle = UnityEngine.Random.Range(0f, Mathf.PI * 2f);
+                    p.velocity = dir * src.emissionSpeed + right * (radial * Mathf.Cos(angle)) + up2 * (radial * Mathf.Sin(angle));
+                }
+                else
+                {
+                    p.velocity = dir * src.emissionSpeed;
+                }
+
                 p.mass = _sim.particleMass;
                 p.temperature = src.initialTemperature;
                 p.phase = 0;   // liquid
@@ -199,21 +234,32 @@ public class SpawnManager : MonoBehaviour
     ///   (b) the particle has left the simulation bounds by outOfBoundsMargin, it has "escaped" and can safely be teleported back to the source.
     /// Returns -1 if no reclaimable slot is available.
     /// </summary>
-    private int FindReclaimableSlot()
+    private int FindReclaimableSlot(bool tapMode)
     {
         for (int attempts = 0; attempts < _particleCount; attempts++)
         {
             int idx = _searchHead;
             _searchHead = (_searchHead + 1) % _particleCount;
 
-            if (IsReclaimable(ref _cpuParticles[idx]))
-                return idx;
+            if (tapMode)
+            {
+                // Tap: only take genuinely dormant slots, never recycle live/escaped ones
+                if (_cpuParticles[idx].phase == -1)
+                    return idx;
+            }
+            else
+            {
+                if (IsReclaimable(ref _cpuParticles[idx], idx))
+                    return idx;
+            }
         }
         return -1;
     }
 
-    private bool IsReclaimable(ref Particle p)
+    private bool IsReclaimable(ref Particle p, int index)
     {
+        if (_tapReservedSlots.Contains(index)) return false; // never recycle tap slots
+
         if (p.phase == -1) return true;
 
         float m = outOfBoundsMargin;
@@ -223,7 +269,24 @@ public class SpawnManager : MonoBehaviour
 
         return false;
     }
+    /// Finds the next slot that is explicitly dormant (phase == -1).
+    /// Used by tap sources — never reclaims escaped/out-of-bounds particles.
+    private int FindDormantSlot()
+    {
+        float threshold = 1f; // distance from dormantPosition to count as "parked"
+        for (int attempts = 0; attempts < _particleCount; attempts++)
+        {
+            int idx = _searchHead;
+            _searchHead = (_searchHead + 1) % _particleCount;
 
+            Particle p = _cpuParticles[idx];
+
+            // Identity check: is this particle parked at the dormant position?
+            if (Vector3.Distance(p.position, _sim.dormantParkPosition) < threshold)
+                return idx;
+        }
+        return -1;
+    }
     // ── Scene scanning ───────────────────────────────────────────────────
 
     private void ScanSources()
@@ -252,7 +315,7 @@ public class SpawnManager : MonoBehaviour
         }
     }
 
-    // ── Particle mirror struct (must match native layout exactly) ─────────
+    // ── Particle mirror struct ─────────
 
     [StructLayout(LayoutKind.Sequential)]
     private struct Particle

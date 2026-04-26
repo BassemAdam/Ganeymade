@@ -43,7 +43,6 @@ public class ParticleRenderer : MonoBehaviour
     private ComputeBuffer particleBuffer;
     private ComputeBuffer argsBuffer;
     private Particle[] readbackData;
-    private Particle[] uploadData;
     private uint[] args = new uint[5];
     private Bounds renderBounds;
     private MaterialPropertyBlock mpb;
@@ -95,7 +94,6 @@ public class ParticleRenderer : MonoBehaviour
         BakeGradientTexture();
 
         readbackData = new Particle[count];
-        uploadData = new Particle[count];
         particleBuffer = new ComputeBuffer(count, Marshal.SizeOf<Particle>());
 
         // Indirect args: (indexCount, instanceCount, startIndex, baseVertex, startInstance)
@@ -120,31 +118,14 @@ public class ParticleRenderer : MonoBehaviour
     {
         if (particleMaterial == null || particleMesh == null || particleBuffer == null)
             return;
-
         // Skip all readback and rendering in perf-test mode
         if (computePlugin != null && computePlugin.perfTestMode)
             return;
 
-        // Read from plugin (non-blocking, 1-frame latency)
+        // Read the full particle buffer — the shader handles dormant particles
+        // (phase < 0) by collapsing them to w=0 (point at infinity, no rasterization).
         GetComputeResult(readbackData, readbackData.Length);
-
-        // Pack only live particles (phase >= 0) into the upload buffer so the
-        // GPU never has to deal with dormant slots parked at (0,-1000,0).
-        int liveCount = 0;
-        for (int i = 0; i < readbackData.Length; i++)
-        {
-            if (readbackData[i].phase >= 0)
-                uploadData[liveCount++] = readbackData[i];
-        }
-
-        if (liveCount == 0)
-            return;
-
-        particleBuffer.SetData(uploadData, 0, 0, liveCount);
-
-        // Update instance count in the indirect args so the draw call matches.
-        args[1] = (uint)liveCount;
-        argsBuffer.SetData(args);
+        particleBuffer.SetData(readbackData);
 
         // Rebake gradient only when it has changed
         BakeGradientTexture();

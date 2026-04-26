@@ -60,7 +60,7 @@ Shader "Custom/ParticleInstanced"
                 if (p.phase < 0)
                 {
                     v2f dead;
-                    dead.pos = float4(0, 0, -2, 1); // behind near plane -> clipped
+                    dead.pos = float4(0, 0, 1, 0); // point at infinity
                     dead.normal= float3(0, 1, 0);
                     dead.temperature = 0;
                     dead.isGas = 0;

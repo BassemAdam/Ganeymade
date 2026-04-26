@@ -7,6 +7,18 @@ using UnityEngine;
 /// </summary>
 public class WaterSource : MonoBehaviour
 {
+    public enum SpawnMode { Sphere, Tap }
+
+    [Header("Mode")]
+    [Tooltip("Sphere: pre-filled ball that recycles out-of-bounds particles. " +
+             "Tap: one-shot stream that fills the pool and then stops.")]
+    public SpawnMode spawnMode = SpawnMode.Tap;
+
+    [Tooltip("If true, the tap stops emitting once the pool is full (no reclaimable slots). " +
+         "Set false to emit indefinitely (recycling escaped particles).")]
+    public bool stopWhenPoolFull = true;
+    [HideInInspector] public bool tapExhausted = false;
+
     [Tooltip("Particles emitted per second when active.")]
     [Min(0)] public float emissionRate = 200f;
 
@@ -34,5 +46,20 @@ public class WaterSource : MonoBehaviour
         Gizmos.color = new Color(0f, 0.8f, 1f, 0.9f);
         Vector3 dir = emissionDirection.normalized;
         Gizmos.DrawRay(transform.position, dir * emissionRadius * 3f);
+
+        if (spawnMode == SpawnMode.Tap)
+        {
+            // Draw a narrow stream cone to visualize tap flow
+            Gizmos.color = new Color(0f, 1f, 0.4f, 0.8f);
+            Vector3 streamEnd = transform.position + emissionDirection.normalized * emissionSpeed * 0.5f;
+            Gizmos.DrawLine(transform.position, streamEnd);
+            Gizmos.DrawWireSphere(streamEnd, emissionRadius * 0.3f);
+
+            if (tapExhausted)
+            {
+                Gizmos.color = Color.red;
+                Gizmos.DrawWireSphere(transform.position, emissionRadius * 1.2f);
+            }
+        }
     }
 }
