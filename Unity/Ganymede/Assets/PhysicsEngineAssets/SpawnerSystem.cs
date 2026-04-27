@@ -224,8 +224,8 @@ public class SpawnManager : MonoBehaviour
         {
             PatchParticles(_patchIndices, _patchData, _patchCount);
 
-            if (verbose)
-                Debug.Log($"[SpawnManager] Spawned {_patchCount} particles this frame.");
+            // if (verbose)
+            //     Debug.Log($"[SpawnManager] Spawned {_patchCount} particles this frame.");
         }
 
         // Refresh the CPU mirror so FindReclaimableSlot stays accurate.

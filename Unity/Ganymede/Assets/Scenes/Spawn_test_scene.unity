@@ -263,13 +263,14 @@ GameObject:
   - component: {fileID: 684895344}
   - component: {fileID: 684895343}
   - component: {fileID: 684895342}
+  - component: {fileID: 684895346}
   m_Layer: 0
   m_Name: Cube
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 0
+  m_IsActive: 1
 --- !u!65 &684895342
 BoxCollider:
   m_ObjectHideFlags: 0
@@ -356,12 +357,25 @@ Transform:
   m_GameObject: {fileID: 684895341}
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: 0.95, y: -2.69, z: -0.02}
+  m_LocalPosition: {x: 0, y: -1.64, z: 0}
   m_LocalScale: {x: 2, y: 2, z: 2}
   m_ConstrainProportionsScale: 0
   m_Children: []
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &684895346
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 684895341}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 79a685bc6efa748479c5f1a261a967a0, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::HeatSourceObj
+  temperature: 100
 --- !u!1 &1412671241
 GameObject:
   m_ObjectHideFlags: 0
