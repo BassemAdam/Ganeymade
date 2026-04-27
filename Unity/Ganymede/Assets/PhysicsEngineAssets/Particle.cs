@@ -21,7 +21,7 @@ public struct Particle
     public int phase;          // int
 
     public float latentHeatAccum; // accumulated latent energy for phase transition
-    public float _pad1;
+    public int fixedId;
 
     public static Particle Create(Vector3 position, Vector3 velocity, float mass, int phase = 0, float temperature = 0f)
     {
@@ -36,7 +36,7 @@ public struct Particle
             temperature = temperature,
             phase = phase,
             latentHeatAccum = 0f,
-            _pad1 = 0f,
+            fixedId = 0,
         };
     }
 }

@@ -23,6 +23,8 @@ public class SpawnManager : MonoBehaviour
 
     [DllImport(PluginName)]
     private static extern void GetComputeResult([Out] Particle[] data, int count);
+    [DllImport(PluginName)]
+    private static extern void ResetAllParticles([In] Particle[] data, int count);
 
     // ── Inspector ────────────────────────────────────────────────────────
 
@@ -42,11 +44,6 @@ public class SpawnManager : MonoBehaviour
              "see particles being recycled too early near the boundary.")]
     [Min(0f)]
     public float outOfBoundsMargin = 0.5f;
-
-    [Header("Dormant Particle")]
-    [Tooltip("World-space position where explicitly dormant (phase == -1) particles " +
-             "are parked. Must be outside the simulation bounds.")]
-    public Vector3 dormantPosition = new Vector3(0f, -1000f, 0f);
 
     [Header("Debug")]
     public bool verbose = false;
@@ -69,13 +66,18 @@ public class SpawnManager : MonoBehaviour
 
     // Ring-buffer head for the slot search (avoids O(n) scan from 0 every frame)
     private int _searchHead;
+    private int _tapSearchHead = 0;
 
     // Reusable patch arrays (re-allocated only when maxSpawnsPerFrame changes)
     private int[] _patchIndices;
     private Particle[] _patchData;
     private int _patchCount;
-    // Tag tap slots permanently in a HashSet at Start()
+
     private HashSet<int> _tapReservedSlots = new HashSet<int>();
+    private List<int> _tapSlotList = null;
+    private Particle[] _readbackBuffer;
+    private int _tapEmitCount = 0;
+    private int _skipReadbackFrames = 1;
 
     // ── Unity lifecycle ──────────────────────────────────────────────────
 
@@ -84,22 +86,25 @@ public class SpawnManager : MonoBehaviour
         _sim = GetComponent<UseComputePlugin>();
         _particleCount = _sim.particleCount;
         _cpuParticles = new Particle[_particleCount];
+        _readbackBuffer = new Particle[_particleCount];
         _patchIndices = new int[maxSpawnsPerFrame];
         _patchData = new Particle[maxSpawnsPerFrame];
         _sim.GetBoundsWS(out _boundsMin, out _boundsMax);
         _tapReservedSlots = _sim.TapReservedSlots;
+        _tapSlotList = new List<int>(_tapReservedSlots);
+        _tapEmitCount = 0;
 
-        // mark all slots as live (position = centre of bounds) so none are reclaimed on frame 1.
-        // The real positions arrive on the first Update's GetComputeResult call.
-        Vector3 centre = (_boundsMin + _boundsMax) * 0.5f;
-        for (int i = 0; i < _particleCount; i++)
+        if (_sim.InitialParticleSnapshot != null)
         {
-            _cpuParticles[i].position = centre;
-            _cpuParticles[i].phase = 0;
+            Array.Copy(_sim.InitialParticleSnapshot, _cpuParticles, _particleCount);
+            _sim.InitialParticleSnapshot = null; 
         }
-
+        else
+        {
+            GetComputeResult(_cpuParticles, _particleCount);
+        }
         ScanSources();
-
+        ResetAllParticles(_cpuParticles, _particleCount);
         if (verbose)
             Debug.Log($"[SpawnManager] Initialized. pool={_particleCount}, sources={(_sources?.Length ?? 0)}");
     }
@@ -144,7 +149,8 @@ public class SpawnManager : MonoBehaviour
 
             // Accumulate fractional particles owed this frame
             _emitAccumulators[s] += src.emissionRate * dt;
-
+            float maxAccum = src.emissionRate * Time.fixedDeltaTime * 2f;
+            _emitAccumulators[s] = Mathf.Min(_emitAccumulators[s], maxAccum);
             int toSpawn = Mathf.FloorToInt(_emitAccumulators[s]);
             if (toSpawn <= 0) 
                 continue;
@@ -152,13 +158,11 @@ public class SpawnManager : MonoBehaviour
             _emitAccumulators[s] -= toSpawn;
             toSpawn = Mathf.Min(toSpawn, maxSpawnsPerFrame - _patchCount);
 
-            Vector3 dir = src.emissionDirection.sqrMagnitude > 0.0001f
-                ? src.emissionDirection.normalized
-                : Vector3.down;
+            Vector3 dir = src.emissionDirection.sqrMagnitude > 0.0001f ? src.emissionDirection.normalized : Vector3.down;
 
             for (int i = 0; i < toSpawn; i++)
             {
-                int slot = src.spawnMode == WaterSource.SpawnMode.Tap? FindDormantSlot() : FindReclaimableSlot(false);
+                int slot = src.spawnMode == WaterSource.SpawnMode.Tap ? FindDormantSlot() : FindReclaimableSlot();
 
                 if (slot < 0)
                 {
@@ -171,45 +175,51 @@ public class SpawnManager : MonoBehaviour
                     break;
                 }
 
-                Vector3 offset = UnityEngine.Random.insideUnitSphere * src.emissionRadius;
-                Vector3 spawnPos = src.transform.position + offset;
-
                 Particle p = default;
-                p.position = spawnPos;
 
-                // Tap mode: tighten the stream — use a narrow cone instead of a full sphere offset,
-                // and add a small random radial spread perpendicular to the flow direction.
                 if (src.spawnMode == WaterSource.SpawnMode.Tap)
                 {
                     Vector3 right = Vector3.Cross(dir, Vector3.up);
-                    if (right.sqrMagnitude < 0.001f) right = Vector3.Cross(dir, Vector3.forward);
+                    if (right.sqrMagnitude < 0.001f) 
+                        right = Vector3.Cross(dir, Vector3.forward);
                     right.Normalize();
                     Vector3 up2 = Vector3.Cross(dir, right).normalized;
 
-                    float radial = UnityEngine.Random.Range(0f, src.emissionRadius * 0.15f); // very tight
-                    float angle = UnityEngine.Random.Range(0f, Mathf.PI * 2f);
-                    p.velocity = dir * src.emissionSpeed + right * (radial * Mathf.Cos(angle)) + up2 * (radial * Mathf.Sin(angle));
+                    // Stagger consecutive particles along the stream axis by one smoothing radius so SPH pressure doesn't 
+                    // blast them into a cone shape.
+                    float streamSpacing = _sim.smoothingRadius * 1.1f;
+                    int streamIndex = _tapEmitCount % Mathf.Max(1, Mathf.RoundToInt(src.emissionRadius / streamSpacing));
+
+                    float radial = UnityEngine.Random.Range(0f, _sim.smoothingRadius * 0.5f);
+                    float angle  = UnityEngine.Random.Range(0f, Mathf.PI * 2f);
+                    p.position = src.transform.position + right * (radial * Mathf.Cos(angle)) + up2 * (radial * Mathf.Sin(angle)) + dir * (streamIndex * streamSpacing);
+
+                    // Axial jitter larger than radial so velocity spread stays within the stream rather than diverging outward.
+                    float jitterAxial  = UnityEngine.Random.Range(-0.05f, 0.05f) * src.emissionSpeed;
+                    float jitterRadial = UnityEngine.Random.Range(-0.02f, 0.02f) * src.emissionSpeed;
+                    p.velocity = dir * (src.emissionSpeed + jitterAxial) + right * (jitterRadial * Mathf.Cos(angle)) + up2 * (jitterRadial * Mathf.Sin(angle));
+
+                    _tapEmitCount++;
                 }
                 else
                 {
+                    Vector3 offset = UnityEngine.Random.insideUnitSphere * src.emissionRadius;
+                    p.position = src.transform.position + offset;
                     p.velocity = dir * src.emissionSpeed;
                 }
 
                 p.mass = _sim.particleMass;
                 p.temperature = src.initialTemperature;
-                p.phase = 0;   // liquid
+                p.phase = 0;
                 p.density = _sim.restDensity;
+                p.fixedId = (int)slot;
 
-                // Mark live in the CPU mirror immediately so this slot won't be
-                // picked again before the next GPU readback arrives.
                 _cpuParticles[slot] = p;
-
                 _patchIndices[_patchCount] = slot;
-                _patchData[_patchCount]= p;
+                _patchData[_patchCount] = p;
                 _patchCount++;
             }
         }
-
         if (_patchCount > 0)
         {
             PatchParticles(_patchIndices, _patchData, _patchCount);
@@ -219,39 +229,37 @@ public class SpawnManager : MonoBehaviour
         }
 
         // Refresh the CPU mirror so FindReclaimableSlot stays accurate.
-        // GetComputeResult has 1-frame GPU latency — slots we just patched are
-        // already marked live in _cpuParticles above so there's no double-reclaim.
-        GetComputeResult(_cpuParticles, _particleCount);
+        if (_skipReadbackFrames > 0)
+        {
+            _skipReadbackFrames--;
+        }
+        else 
+        {
+            GetComputeResult(_readbackBuffer, _particleCount);
+            for (int i = 0; i < _particleCount; i++)
+            {
+                int id = _readbackBuffer[i].fixedId;
+                if (id < _particleCount)
+                    _cpuParticles[id] = _readbackBuffer[i];
+            }
+        }
     }
 
     // ── Slot reclamation ─────────────────────────────────────────────────
 
     /// <summary>
     /// Finds the next reclaimable particle slot using a ring-buffer search.
-    ///
-    /// A slot is reclaimable when:
-    ///   (a) phase == -1  — explicitly marked dormant, OR
-    ///   (b) the particle has left the simulation bounds by outOfBoundsMargin, it has "escaped" and can safely be teleported back to the source.
-    /// Returns -1 if no reclaimable slot is available.
+    /// A slot is reclaimable when phase == -1 or the particle has left the simulation bounds by outOfBoundsMargin,
     /// </summary>
-    private int FindReclaimableSlot(bool tapMode)
+    private int FindReclaimableSlot()
     {
         for (int attempts = 0; attempts < _particleCount; attempts++)
         {
             int idx = _searchHead;
             _searchHead = (_searchHead + 1) % _particleCount;
 
-            if (tapMode)
-            {
-                // Tap: only take genuinely dormant slots, never recycle live/escaped ones
-                if (_cpuParticles[idx].phase == -1)
-                    return idx;
-            }
-            else
-            {
-                if (IsReclaimable(ref _cpuParticles[idx], idx))
-                    return idx;
-            }
+            if (IsReclaimable(ref _cpuParticles[idx], idx))
+                return idx;
         }
         return -1;
     }
@@ -269,24 +277,25 @@ public class SpawnManager : MonoBehaviour
 
         return false;
     }
+
     /// Finds the next slot that is explicitly dormant (phase == -1).
     /// Used by tap sources — never reclaims escaped/out-of-bounds particles.
     private int FindDormantSlot()
     {
-        float threshold = 1f; // distance from dormantPosition to count as "parked"
-        for (int attempts = 0; attempts < _particleCount; attempts++)
+        int count = _tapSlotList.Count;
+        if (count == 0) return -1;
+
+        for (int attempts = 0; attempts < count; attempts++)
         {
-            int idx = _searchHead;
-            _searchHead = (_searchHead + 1) % _particleCount;
+            int idx = _tapSlotList[_tapSearchHead % count];
+            _tapSearchHead = (_tapSearchHead + 1) % count;
 
-            Particle p = _cpuParticles[idx];
-
-            // Identity check: is this particle parked at the dormant position?
-            if (Vector3.Distance(p.position, _sim.dormantParkPosition) < threshold)
+            if (_cpuParticles[idx].phase == -1)
                 return idx;
         }
         return -1;
     }
+
     // ── Scene scanning ───────────────────────────────────────────────────
 
     private void ScanSources()
@@ -313,23 +322,5 @@ public class SpawnManager : MonoBehaviour
             Gizmos.color = new Color(0.2f, 0.8f, 1f, 0.4f);
             Gizmos.DrawWireSphere(src.transform.position, src.emissionRadius);
         }
-    }
-
-    // ── Particle mirror struct ─────────
-
-    [StructLayout(LayoutKind.Sequential)]
-    private struct Particle
-    {
-        public Vector3 position;        // 12 bytes
-        public float density;         //  4 bytes
-        public Vector3 velocity;        // 12 bytes
-        public float pressure;        //  4 bytes
-        public Vector3 acceleration;    // 12 bytes
-        public float mass;            //  4 bytes
-        public float temperature;     //  4 bytes
-        public int phase;           //  4 bytes
-        public float latentHeatAccum; //  4 bytes
-        public float  _pad1;           //  4 bytes
-        // total: 64 bytes
     }
 }
