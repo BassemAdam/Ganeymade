@@ -57,6 +57,7 @@ void computeMain(uint3 threadId: SV_DispatchThreadID)
     }
 
     float deltaT = 0.0;
+    int liquidAbove = 0; // count liquid neighbors above this particle
 
     if (!insideHeatSource)
     {
@@ -82,6 +83,10 @@ void computeMain(uint3 threadId: SV_DispatchThreadID)
                         float w = heatKernel(r2, h2);
                         dT += w * (pj.temperature - p.temperature) / pj.density;
                         weightSum += w;
+
+                        // Count liquid neighbors above (for surface detection)
+                        if (pj.phase == 0 && pj.position.y > p.position.y + h * 0.2)
+                            liquidAbove++;
                     }
                 }
                 idx++;
@@ -98,24 +103,45 @@ void computeMain(uint3 threadId: SV_DispatchThreadID)
     }
 
     // ── Latent heat model: absorb/release energy at boiling point ──
-    if (p.phase == 0 && p.temperature + deltaT >= params.boilingTemperature)
+    // Per-particle random factor for condensation variation (stable per particle index)
+    float randHash = frac(sin(float(i) * 12.9898 + 78.233) * 43758.5453);
+    float randScale = 0.5 + randHash; // range [0.5, 1.5]
+
+    if (p.phase == 0 && p.temperature + deltaT > params.boilingTemperature)
     {
+        // Surface factor: only surface particles accumulate latent heat
+        // 0 above = full rate, 1 = reduced, 2+ = blocked (no pre-charging)
+        float surfaceFactor = max(1.0 - float(liquidAbove) * 0.5, 0.0);
+
         // Liquid at or above boiling: excess energy goes into latent heat accumulator
         float excess = (p.temperature + deltaT) - params.boilingTemperature;
         p.temperature = params.boilingTemperature;
-        p.latentHeatAccum += excess;
+        p.latentHeatAccum += excess * surfaceFactor;
         if (p.latentHeatAccum >= params.latentHeat)
         {
             p.phase = 1; // transition to gas
             p.latentHeatAccum = params.latentHeat; // cap at max
         }
     }
-    else if (p.phase == 1 && p.temperature + deltaT <= params.boilingTemperature)
+    else if (p.phase == 1)
     {
-        // Gas cooling below boiling: release latent heat
-        float deficit = params.boilingTemperature - (p.temperature + deltaT);
-        p.temperature = params.boilingTemperature;
-        p.latentHeatAccum -= deficit;
+        // Apply temperature change if not held by a heat source
+        if (!insideHeatSource)
+            p.temperature += deltaT;
+
+        // Drain latent heat when at or below boiling (condensation)
+        if (p.temperature <= params.boilingTemperature)
+        {
+            float coolingDrain = params.coolingRate
+                               * (params.boilingTemperature - params.ambientTemperature)
+                               * params.dt
+                               * randScale; // per-particle variation
+            // For cold heat sources, the large temperature gap drains faster
+            float deficit = params.boilingTemperature - p.temperature;
+            p.latentHeatAccum -= max(coolingDrain, deficit);
+            p.temperature = params.boilingTemperature;
+        }
+
         if (p.latentHeatAccum <= 0.0)
         {
             p.phase = 0; // condense back to liquid
