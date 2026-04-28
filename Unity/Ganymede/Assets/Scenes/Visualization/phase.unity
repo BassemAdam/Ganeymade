@@ -2313,7 +2313,7 @@ MonoBehaviour:
   particlesToDensityCompute: {fileID: 7200000, guid: 3c585bfcf792db443b823ea9e4d73d39, type: 3}
   marchingCubesCompute: {fileID: 7200000, guid: a22c7c4891409a047968bd3b28af9da8, type: 3}
   marchingCubesLUT: {fileID: 4900000, guid: 711f0eebef002a84e95e6dc230c006be, type: 3}
-  volumeDims: {x: 256, y: 256, z: 256}
+  volumeDims: {x: 128, y: 128, z: 128}
   particleContribution: 1
   fixedPointScale: 1024
   maxParticlesPerVoxel: 1
