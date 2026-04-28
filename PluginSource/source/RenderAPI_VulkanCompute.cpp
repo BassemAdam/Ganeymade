@@ -2837,6 +2837,9 @@ ResetAllParticles(Particle* data, int count)
     int n = (count > g_ElementCount) ? g_ElementCount : count;
     memcpy(g_InputData, data, n * sizeof(Particle));
     memset(g_OutputData, 0, g_ElementCount * sizeof(Particle));
+    memset(g_HeatSources, 0, sizeof(g_HeatSources));
+    g_HeatSourceCount = 0;
+    g_NeedsHeatSourceUpload = true; 
     g_StagingReady = false;
     g_PatchIndices.clear();
     g_NeedsUpload = true;
