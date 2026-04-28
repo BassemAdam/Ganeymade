@@ -166,6 +166,11 @@ public class UseComputePlugin : MonoBehaviour
     [Range(0f, 1f)]
     public float pressureBoilingScale = 0.1f;
 
+    [Tooltip("Cohesion (surface tension) strength between liquid particles. " +
+             "Higher values keep the fluid together when disturbed. ~0.001–0.01.")]
+    [Range(0f, 0.1f)]
+    public float cohesionStrength = 0.005f;
+
     [Header("Init")]
     [Tooltip("Upload particles automatically on Start")]
     public bool autoInitialize = true;
@@ -526,6 +531,7 @@ public class UseComputePlugin : MonoBehaviour
         p.gasViscosity = gasViscosity;
         p.gasBuoyancy = gasBuoyancy;
         p.pressureBoilingScale = pressureBoilingScale;
+        p.cohesionStrength = cohesionStrength;
 
         SetSimParams(p);
     }
@@ -975,6 +981,7 @@ public class UseComputePlugin : MonoBehaviour
         public float  gasViscosity;
         public float  gasBuoyancy;
         public float  pressureBoilingScale;
+        public float  cohesionStrength;
     }
 
     

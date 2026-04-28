@@ -33,6 +33,7 @@
        float  gasViscosity;           // viscosity for gas phase (lower → turbulent)
        float  gasBuoyancy;            // upward acceleration for gas particles
        float  pressureBoilingScale;   // how much local pressure raises the effective boiling point
+       float  cohesionStrength;       // attractive force between nearby liquid particles (surface tension)
    };
 
    struct Particle

@@ -43,17 +43,28 @@ void computeMain(uint3 threadId: SV_DispatchThreadID)
     float weightSum = 0.0;
 
     // Check if this particle is inside any heat source
+    // Heat sources act as temperature boundary conditions in both directions:
+    // they heat cold particles AND cool hot particles toward the source temperature.
     bool insideHeatSource = false;
+    bool nearHeatSource   = false;
     for (int s = 0; s < 16; s++)
     {
         if (heatSources[s].active == 0u) continue;
-        float3 diff = p.position - float3(heatSources[s].position[0], heatSources[s].position[1], heatSources[s].position[2]);
-        if (dot(diff, diff) <= heatSources[s].radius * heatSources[s].radius)
+        float3 hsPos  = float3(heatSources[s].position[0], heatSources[s].position[1], heatSources[s].position[2]);
+        float3 diff   = p.position - hsPos;
+        float  dist2  = dot(diff, diff);
+        float  r2     = heatSources[s].radius * heatSources[s].radius;
+        if (dist2 <= r2)
         {
-            p.temperature = heatSources[s].temperature;
+            // Bidirectional: lerp toward source temperature each frame for smooth response
+            float rate = clamp(params.thermalDiffusivity * params.dt * 10.0, 0.0, 1.0);
+            p.temperature = lerp(p.temperature, heatSources[s].temperature, rate);
             insideHeatSource = true;
+            nearHeatSource   = true;
             break;
         }
+        if (dist2 <= r2 * 4.0)
+            nearHeatSource = true;
     }
 
     float deltaT = 0.0;
@@ -156,18 +167,25 @@ void computeMain(uint3 threadId: SV_DispatchThreadID)
         if (!insideHeatSource)
             p.temperature += deltaT;
 
+        // Base drain from ambient cooling
         float coolingDrain = params.coolingRate
                            * (effectiveBoilingTemp - params.ambientTemperature)
                            * params.dt
                            * randScale;
 
-        // Drain latent heat at a controlled rate only.
-        // Using the raw temperature deficit caused instant condensation when surrounded
-        // by cool liquid — the conduction spike could drain all latent heat in one frame.
+        // Cold source accelerates condensation proportional to how far below boiling it pulls the particle
+        if (insideHeatSource && p.temperature < effectiveBoilingTemp)
+        {
+            float coldDelta = effectiveBoilingTemp - p.temperature;
+            coolingDrain += coldDelta * params.dt * 5.0; // fast drain when actively chilled
+        }
+
+        // Drain latent heat. Only clamp temperature when NOT being actively chilled by a source.
         if (p.temperature <= effectiveBoilingTemp)
         {
             p.latentHeatAccum -= coolingDrain;
-            p.temperature = effectiveBoilingTemp;
+            if (!insideHeatSource)
+                p.temperature = effectiveBoilingTemp; // hold at boiling during natural condensation
         }
 
         if (p.latentHeatAccum <= 0.0)

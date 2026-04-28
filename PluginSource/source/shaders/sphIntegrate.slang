@@ -74,6 +74,24 @@ float3 sdfGradient(float3 worldPos)
     return len > 1e-8 ? grad / len : float3(0, 1, 0);
 }
 
+// ── Cohesion kernel (Akinci 2013, clamped) ──────────────────────────────
+// Peaks at r ≈ h/2, zero at r=0 and r=h — models mid-range liquid attraction.
+// Clamped to >= 0: pressure handles close-range repulsion; cohesion is attraction only.
+float cohesionKernel(float r, float h)
+{
+    float h3 = h * h * h;
+    float h9 = h3 * h3 * h3;
+    float coeff = 32.0 / (3.14159265 * h9);
+    float hr3 = (h - r) * (h - r) * (h - r);
+    float r3  = r * r * r;
+    float val;
+    if (r <= 0.5 * h)
+        val = coeff * (2.0 * hr3 * r3 - h9 / 64.0);
+    else
+        val = coeff * hr3 * r3;
+    return max(0.0, val); // clamp: no repulsive cohesion at very close range
+}
+
 // ── Main compute kernel ─────────────────────────────────────────────────
 
 [shader("compute")]
@@ -93,6 +111,7 @@ void computeMain(uint3 threadId: SV_DispatchThreadID)
 
    float3 fPressure = float3(0.0);
    float3 fViscosity = float3(0.0);
+   float3 fCohesion  = float3(0.0);
 
    for (int dz = -1; dz <= 1; dz++)
    for (int dy = -1; dy <= 1; dy++)
@@ -122,13 +141,20 @@ void computeMain(uint3 threadId: SV_DispatchThreadID)
                // Phase-dependent viscosity: gas uses lower viscosity for turbulent motion
                float visc = (p.phase == 1) ? params.gasViscosity : params.viscosity;
                fViscosity += params.particleMass * visc * (pj.velocity - p.velocity) / pj.density * viscLap;
+
+               // Cohesion: liquid-liquid only — attracts particles toward each other at mid-range
+               if (p.phase == 0 && pj.phase == 0 && params.cohesionStrength > 0.0)
+               {
+                  float ck = cohesionKernel(r, h);
+                  fCohesion += -params.cohesionStrength * params.particleMass * ck * dir;
+               }
             }
          }
          idx++;
       }
    }
 
-   float3 sphAccel = (fPressure + fViscosity) / p.density;
+   float3 sphAccel = (fPressure + fViscosity + fCohesion) / p.density;
    p.acceleration = sphAccel;
 
    // ── Buoyancy: gas particles always rise at full strength ──
