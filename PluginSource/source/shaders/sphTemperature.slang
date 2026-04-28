@@ -107,20 +107,47 @@ void computeMain(uint3 threadId: SV_DispatchThreadID)
     float randHash = frac(sin(float(i) * 12.9898 + 78.233) * 43758.5453);
     float randScale = 0.5 + randHash; // range [0.5, 1.5]
 
-    if (p.phase == 0 && p.temperature + deltaT > params.boilingTemperature)
-    {
-        // Surface factor: only surface particles accumulate latent heat
-        // 0 above = full rate, 1 = reduced, 2+ = blocked (no pre-charging)
-        float surfaceFactor = max(1.0 - float(liquidAbove) * 0.5, 0.0);
+    // Effective boiling point rises with local pressure (Clausius-Clapeyron approximation):
+    // deep/high-pressure particles are harder to boil than surface/low-pressure particles.
+    float effectiveBoilingTemp = params.boilingTemperature
+                               + max(p.pressure, 0.0) * params.pressureBoilingScale;
 
-        // Liquid at or above boiling: excess energy goes into latent heat accumulator
-        float excess = (p.temperature + deltaT) - params.boilingTemperature;
-        p.temperature = params.boilingTemperature;
-        p.latentHeatAccum += excess * surfaceFactor;
-        if (p.latentHeatAccum >= params.latentHeat)
+    if (p.phase == 0 && p.temperature + deltaT > effectiveBoilingTemp)
+    {
+        if (liquidAbove > 0)
         {
-            p.phase = 1; // transition to gas
-            p.latentHeatAccum = params.latentHeat; // cap at max
+            // Buried particle: clamp at effective boiling, no evaporation.
+            p.temperature = effectiveBoilingTemp;
+        }
+        else
+        {
+            // Surface particle: stochastic nucleation driven by superheat.
+            float superheat = (p.temperature + deltaT) - effectiveBoilingTemp;
+
+            // Nucleation probability scales with superheat relative to boiling temp.
+            // A particle far above boiling snaps to gas quickly; one just at the threshold waits.
+            float nucleationChance = clamp(superheat / max(effectiveBoilingTemp, 1e-6), 0.0, 1.0)
+                                   * params.dt * 10.0;
+
+            // Time-varying per-particle random seed for stochastic nucleation
+            float seed = float(i) * 12.9898 + params.dt * float(i % 256u) * 43.758 + 1.618;
+            float randNuc = frac(sin(seed) * 43758.5453);
+
+            p.temperature = effectiveBoilingTemp;
+            p.latentHeatAccum += superheat;
+
+            // Nucleation fires when: random roll passes AND at least half the latent heat is stored.
+            if (randNuc < nucleationChance && p.latentHeatAccum >= params.latentHeat * 0.5)
+            {
+                p.phase = 1;
+                p.latentHeatAccum = params.latentHeat;
+            }
+            else if (p.latentHeatAccum >= params.latentHeat)
+            {
+                // Deterministic fallback: always evaporate once fully charged.
+                p.phase = 1;
+                p.latentHeatAccum = params.latentHeat;
+            }
         }
     }
     else if (p.phase == 1)
@@ -129,22 +156,23 @@ void computeMain(uint3 threadId: SV_DispatchThreadID)
         if (!insideHeatSource)
             p.temperature += deltaT;
 
-        // Drain latent heat when at or below boiling (condensation)
-        if (p.temperature <= params.boilingTemperature)
+        float coolingDrain = params.coolingRate
+                           * (effectiveBoilingTemp - params.ambientTemperature)
+                           * params.dt
+                           * randScale;
+
+        // Drain latent heat at a controlled rate only.
+        // Using the raw temperature deficit caused instant condensation when surrounded
+        // by cool liquid — the conduction spike could drain all latent heat in one frame.
+        if (p.temperature <= effectiveBoilingTemp)
         {
-            float coolingDrain = params.coolingRate
-                               * (params.boilingTemperature - params.ambientTemperature)
-                               * params.dt
-                               * randScale; // per-particle variation
-            // For cold heat sources, the large temperature gap drains faster
-            float deficit = params.boilingTemperature - p.temperature;
-            p.latentHeatAccum -= max(coolingDrain, deficit);
-            p.temperature = params.boilingTemperature;
+            p.latentHeatAccum -= coolingDrain;
+            p.temperature = effectiveBoilingTemp;
         }
 
         if (p.latentHeatAccum <= 0.0)
         {
-            p.phase = 0; // condense back to liquid
+            p.phase = 0;
             p.latentHeatAccum = 0.0;
         }
     }

@@ -161,6 +161,11 @@ public class UseComputePlugin : MonoBehaviour
     [Tooltip("Upward buoyancy acceleration for gas particles")]
     public float gasBuoyancy = 15f;
 
+    [Tooltip("How much local SPH pressure raises the effective boiling point. " +
+             "0 = pressure has no effect. ~0.1 = deep particles are harder to boil.")]
+    [Range(0f, 1f)]
+    public float pressureBoilingScale = 0.1f;
+
     [Header("Init")]
     [Tooltip("Upload particles automatically on Start")]
     public bool autoInitialize = true;
@@ -520,6 +525,7 @@ public class UseComputePlugin : MonoBehaviour
         p.gasRestDensity = gasRestDensity;
         p.gasViscosity = gasViscosity;
         p.gasBuoyancy = gasBuoyancy;
+        p.pressureBoilingScale = pressureBoilingScale;
 
         SetSimParams(p);
     }
@@ -968,6 +974,7 @@ public class UseComputePlugin : MonoBehaviour
         public float  gasRestDensity;
         public float  gasViscosity;
         public float  gasBuoyancy;
+        public float  pressureBoilingScale;
     }
 
     
