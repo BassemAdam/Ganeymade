@@ -44,10 +44,10 @@ Shader "Custom/WaterRaymarching"
             #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Core.hlsl"
             #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Lighting.hlsl"
             #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/DeclareDepthTexture.hlsl"
-            #include "../Includes/RayMarching/RayMarchGeometry.hlsl"
-            #include "../Includes/RayMarching/RayMarchDensity.hlsl"
-            #include "../Includes/RayMarching/RayMarchLighting.hlsl"
-            #include "../Includes/RayMarching/RayMarchSurface.hlsl"
+            #include "RayMarching Includes/RayMarchGeometry.hlsl"
+            #include "RayMarching Includes/RayMarchDensity.hlsl"
+            #include "RayMarching Includes/RayMarchLighting.hlsl"
+            #include "RayMarching Includes/RayMarchSurface.hlsl"
 
             struct WaterRaymarchMeshInput
             {
@@ -87,9 +87,9 @@ Shader "Custom/WaterRaymarching"
             TEXTURE2D(_CameraOpaqueTexture);
             SAMPLER(sampler_CameraOpaqueTexture);
 
-            #include "../Includes/RayMarching/WaterRaymarchView.hlsl"
-            #include "../Includes/RayMarching/WaterRaymarchVolume.hlsl"
-            #include "../Includes/RayMarching/WaterRaymarchBackground.hlsl"
+            #include "RayMarching Includes/WaterRaymarchView.hlsl"
+            #include "RayMarching Includes/WaterRaymarchVolume.hlsl"
+            #include "RayMarching Includes/WaterRaymarchBackground.hlsl"
 
             WaterRaymarchVaryings vert(WaterRaymarchMeshInput IN)
             {

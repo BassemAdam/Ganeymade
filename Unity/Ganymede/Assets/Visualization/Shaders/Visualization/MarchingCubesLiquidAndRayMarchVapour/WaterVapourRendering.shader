@@ -62,7 +62,7 @@ Shader "Custom/VapourVolume"
 
             #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Core.hlsl"
             #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Lighting.hlsl"
-            #include "../Includes/WaterPhase/WaterPhaseHelpers.hlsl"
+            #include "WaterPhase/WaterPhaseHelpers.hlsl"
 
             struct MeshInput
             {
