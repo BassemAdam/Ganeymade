@@ -25,7 +25,7 @@
             return 0.0;
 
         float2 rg = _PhysicsDensityGrid.SampleLevel(sampler_PhysicsDensityGrid, uvw, 0);
-        return (_PhysicsUseVapourChannel > 0.5) ? rg.g : rg.r;
+        return rg.g ;
     }
 
     float Hash3D(float3 p)
@@ -143,6 +143,42 @@
         float physicsGridDensity = SamplePhysicsDensityGrid(worldPos);
         float physicsFieldDensity = physicsGridDensity * physicsDensity;
         return saturate(lerp(noiseDensity, physicsFieldDensity, physicsBlend));
+    }
+
+    // Vapour-only sample used by the raymarched vapour box: physics grid acts
+    // purely as a "where is there vapour?" positional mask (low-frequency, since
+    // it's voxel-resolution), and the visible detail is generated per ray-march
+    // sample by world-space domain-warped FBM. This restores wispy steam detail
+    // that a baked voxel grid cannot represent.
+    //
+    //   density = saturate( noise01 * maskSoft )
+    //
+    //   noise01 = pow(saturate(FBM(driftedWorldPos / noiseScale)), densityPower)
+    //   maskSoft = smoothstep(0, 0.2, physicsMask)
+    float SampleVapourDensityProcedural(float3 worldPos, float time,
+    float3 driftDir, float driftSpeed,
+    float noiseScale, int octaves,
+    float densityPower)
+    {
+        float mask = SamplePhysicsDensityGrid(worldPos);
+        if (mask < 0.0001)
+        return 0.0;
+
+        float3 driftedPos = worldPos + driftDir * (time * driftSpeed);
+        float3 p = driftedPos / max(noiseScale, 1e-5);
+
+        float3 warpOffset = float3(
+            ValueNoise3D(p * 0.7 + float3(1.72, 9.23, 5.41)),
+            ValueNoise3D(p * 0.7 + float3(8.31, 2.84, 3.26)),
+            ValueNoise3D(p * 0.7 + float3(4.17, 6.73, 1.92))
+        ) * 2.0 - 1.0;
+
+        float3 warpedP = p + warpOffset * 0.35;
+        float rawNoise = FBM(warpedP, octaves, 2.0, 0.5);
+        float noise01  = pow(saturate(rawNoise), max(densityPower, 0.01));
+
+        float maskSoft = smoothstep(0.0, 0.2, mask);
+        return saturate(noise01 * maskSoft);
     }
 
 #endif

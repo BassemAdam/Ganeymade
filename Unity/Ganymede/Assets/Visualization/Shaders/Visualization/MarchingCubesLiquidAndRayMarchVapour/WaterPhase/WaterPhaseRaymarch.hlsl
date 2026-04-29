@@ -25,16 +25,13 @@
     float phaseThreshold, float phaseWidth,
     float time,
     float3 driftDir, float driftSpeed,
-    float noiseScale, int octaves,
-    float densityPower,
-    float physicsDensity, float physicsBlend,
+    float noiseScale, int octaves, float densityPower,
     float sceneLinearDepth,
     float3 boundsMinOS, float3 boundsMaxOS,
     float edgeSoftness,
     float2 screenUV,
     float2 blueNoiseRG,
     float blueNoiseStrength,
-    float noiseDetailStrength = 0.0,
     float densityMultiplier = 1.0,
     float densityOffset = 0.0)
     {
@@ -101,13 +98,12 @@
             if (shapeMask <= 0.001)
             continue;
 
-            float density = SampleDensity(
-            samplePos, time,
-            driftDir, driftSpeed,
-            noiseScale, octaves,
-            densityPower,
-            physicsDensity, physicsBlend,
-            noiseDetailStrength
+            // Per-march vapour density: physics grid is a low-frequency presence
+            // mask, world-space FBM provides the visible wispy detail. This is
+            // the "Option B" pipeline — no baked enhancement in the compute pass.
+            float density = SampleVapourDensityProcedural(
+                samplePos, time, driftDir, driftSpeed,
+                noiseScale, octaves, densityPower
             ) * shapeMask;
 
             density = saturate(density * densityMultiplier + densityOffset);

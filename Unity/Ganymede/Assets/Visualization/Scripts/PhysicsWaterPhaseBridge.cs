@@ -27,7 +27,6 @@ public class PhysicsWaterPhaseBridge : MonoBehaviour
     [SerializeField, HideInInspector] private Material vapourRaymarchMaterial;
     [SerializeField, HideInInspector] private bool useMarchingCubes;
     [SerializeField, HideInInspector] private float marchingCubesIsoLevel = 0.2f;
-    [SerializeField, HideInInspector] private bool enhanceVapourDensity = true;
     [SerializeField, HideInInspector] private bool blurVapourDensity = true;
     [SerializeField, HideInInspector] private bool blurLiquidDensity;
     [SerializeField, HideInInspector] private int liquidBlurRadius = 1;
@@ -36,12 +35,6 @@ public class PhysicsWaterPhaseBridge : MonoBehaviour
     [SerializeField, HideInInspector] private int blurRadius = 1;
     [SerializeField, HideInInspector] private float blurSigma = 1.0f;
     [SerializeField, HideInInspector] private float blurDetailPreserve = 0.25f;
-    [SerializeField, HideInInspector] private float vapourNoiseScale = 3.0f;
-    [SerializeField, HideInInspector] private Vector3 vapourNoiseDriftDir = new Vector3(0f, -1f, 0f);
-    [SerializeField, HideInInspector] private float vapourNoiseDriftSpeed = 0.85f;
-    [SerializeField, HideInInspector] private int vapourNoiseOctaves = 4;
-    [SerializeField, HideInInspector] private float vapourNoiseDomainWarpStrength = 0.8f;
-    [SerializeField, HideInInspector] private float vapourNoiseDetailStrength = 0.5f;
     [SerializeField, HideInInspector] private bool _settingsMigrated;
 
     private UseComputePlugin _computePlugin;
@@ -287,17 +280,10 @@ public class PhysicsWaterPhaseBridge : MonoBehaviour
         settings.LiquidBlur.sigma = liquidBlurSigma;
         settings.LiquidBlur.detailPreserve = liquidBlurDetailPreserve;
 
-        settings.Vapour.enabled = enhanceVapourDensity;
-        settings.Vapour.blurBeforeEnhance = blurVapourDensity;
+        settings.Vapour.enabled = blurVapourDensity;
         settings.Vapour.blurRadius = blurRadius;
         settings.Vapour.blurSigma = blurSigma;
         settings.Vapour.blurDetailPreserve = blurDetailPreserve;
-        settings.Vapour.noiseScale = vapourNoiseScale;
-        settings.Vapour.noiseDriftDirection = vapourNoiseDriftDir;
-        settings.Vapour.noiseDriftSpeed = vapourNoiseDriftSpeed;
-        settings.Vapour.noiseOctaves = vapourNoiseOctaves;
-        settings.Vapour.domainWarpStrength = vapourNoiseDomainWarpStrength;
-        settings.Vapour.detailStrength = vapourNoiseDetailStrength;
 
         settings.Rendering.mode = useMarchingCubes
             ? WaterSurfaceRenderMode.MarchingCubesLiquidWithVapour
@@ -325,11 +311,6 @@ public class PhysicsWaterPhaseBridge : MonoBehaviour
         settings.Vapour.blurRadius = Mathf.Clamp(settings.Vapour.blurRadius, 1, 4);
         settings.Vapour.blurSigma = Mathf.Clamp(settings.Vapour.blurSigma, 0.1f, 4.0f);
         settings.Vapour.blurDetailPreserve = Mathf.Clamp01(settings.Vapour.blurDetailPreserve);
-        settings.Vapour.noiseScale = Mathf.Max(0.1f, settings.Vapour.noiseScale);
-        settings.Vapour.noiseDriftSpeed = Mathf.Max(0f, settings.Vapour.noiseDriftSpeed);
-        settings.Vapour.noiseOctaves = Mathf.Clamp(settings.Vapour.noiseOctaves, 1, 8);
-        settings.Vapour.domainWarpStrength = Mathf.Clamp(settings.Vapour.domainWarpStrength, 0f, 2f);
-        settings.Vapour.detailStrength = Mathf.Clamp01(settings.Vapour.detailStrength);
 
         settings.Rendering.marchingCubesIsoLevel = Mathf.Clamp01(settings.Rendering.marchingCubesIsoLevel);
     }

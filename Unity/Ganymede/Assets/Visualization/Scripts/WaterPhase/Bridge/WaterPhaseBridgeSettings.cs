@@ -78,6 +78,21 @@ public class WaterPhaseDensityGridSettings
     [Range(0.05f, 4f)]
     public float adaptiveDensityCurve = 0.4f;
 
+    [Header("Adaptive — speed term")]
+    [Tooltip("Blend weight of the speed/stillness term in the per-particle bulk weight.\n" +
+             " 0 = ignore speed (density-only behavior, old default).\n" +
+             " 1 = a STILL low-density particle is treated as fully bulk (smooth normals on calm water surfaces).\n" +
+             "Combines with the density term via max(), so fast splash particles still stay crisp regardless.")]
+    [Range(0f, 1f)]
+    public float adaptiveSpeedWeight = 1.0f;
+
+    [Tooltip("Particle speed (world units / second) at which the stillness contribution drops to zero. " +
+             "Particles faster than this are treated as 'fully moving' (no stillness boost). " +
+             "Tune this to roughly the speed of your typical splash particles. " +
+             "Set to 0 to disable the speed term entirely.")]
+    [Min(0f)]
+    public float adaptiveSpeedReference = 1.5f;
+
     [Tooltip("Hard cap on the splat loop half-size in voxels. The loop runs (2r+1)^3 times per particle, " +
              "so r=4 → 729 taps, r=6 → 2197 taps, r=8 → 4913 taps. Larger bulk radii get TRUNCATED to this " +
              "cap rather than blowing up the GPU cost. If the truncation looks too small, raise this carefully.")]
@@ -107,11 +122,11 @@ public class WaterPhaseLiquidBlurSettings
 [Serializable]
 public class WaterPhaseVapourEnhancementSettings
 {
-    [Tooltip("Enable GPU-side domain-warped FBM on the vapour density slab before raymarching.")]
+    [Tooltip("Gaussian-blur the vapour density slab to smooth out individual particle dots into a " +
+             "continuous presence mask. The visible wispy detail is generated per-fragment in the " +
+             "raymarch shader (Option-B pipeline) — this slab acts only as a low-frequency \"where is " +
+             "there vapour?\" mask.")]
     public bool enabled = true;
-
-    [Tooltip("Gaussian-blur the vapour slab before noise enhancement to smooth out individual particle dots.")]
-    public bool blurBeforeEnhance = true;
 
     [Tooltip("Kernel half-size in voxels (1=3^3 taps, 2=5^3 taps, 3=7^3 taps). Larger = smoother but heavier.")]
     [Range(1, 4)]
@@ -124,29 +139,6 @@ public class WaterPhaseVapourEnhancementSettings
     [Tooltip("0 = pure smooth, 1 = original high-frequency detail fully added back on top of the blur.")]
     [Range(0f, 1f)]
     public float blurDetailPreserve = 0.25f;
-
-    [Tooltip("Noise periods across the volume (e.g. 3 = three waves side-to-side). Higher = finer detail.")]
-    [Min(0.1f)]
-    public float noiseScale = 3.0f;
-
-    [Tooltip("Direction the noise pattern drifts over time (will be normalized).")]
-    public Vector3 noiseDriftDirection = new Vector3(0f, -1f, 0f);
-
-    [Tooltip("Speed the noise drifts.")]
-    [Min(0f)]
-    public float noiseDriftSpeed = 0.85f;
-
-    [Tooltip("Number of FBM octaves (1 = cheap, 6 = detailed).")]
-    [Range(1, 8)]
-    public int noiseOctaves = 4;
-
-    [Tooltip("How strongly the domain warp displaces the sample position. Larger = more curling.")]
-    [Range(0f, 2f)]
-    public float domainWarpStrength = 0.8f;
-
-    [Tooltip("Blend weight of the noise on top of the raw physics density. 0 = pure physics, 1 = maximum shaping.")]
-    [Range(0f, 1f)]
-    public float detailStrength = 0.5f;
 }
 
 [Serializable]

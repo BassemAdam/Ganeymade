@@ -12,7 +12,6 @@ public sealed class WaterPhaseDensityPipeline
     private readonly int _normalizeKernel;
     private readonly int _blurVapourKernel;
     private readonly int _blurLiquidKernel;
-    private readonly int _enhanceVapourKernel;
     private readonly int _bakeNormalsKernel;
 
     private static readonly int ID_VolumeDims = Shader.PropertyToID("_VolumeDims");
@@ -26,16 +25,11 @@ public sealed class WaterPhaseDensityPipeline
     private static readonly int ID_AdaptiveDensitySurface = Shader.PropertyToID("_AdaptiveDensitySurface");
     private static readonly int ID_AdaptiveDensityBulk = Shader.PropertyToID("_AdaptiveDensityBulk");
     private static readonly int ID_AdaptiveDensityCurve = Shader.PropertyToID("_AdaptiveDensityCurve");
+    private static readonly int ID_AdaptiveSpeedReference = Shader.PropertyToID("_AdaptiveSpeedReference");
+    private static readonly int ID_AdaptiveSpeedWeight = Shader.PropertyToID("_AdaptiveSpeedWeight");
     private static readonly int ID_KernelRadiusVoxels = Shader.PropertyToID("_KernelRadiusVoxels");
     private static readonly int ID_RestDensity = Shader.PropertyToID("_RestDensity");
     private static readonly int ID_InvDensityScaleRG = Shader.PropertyToID("_InvDensityScaleRG");
-    private static readonly int ID_VapourNoiseScale = Shader.PropertyToID("_VapourNoiseScale");
-    private static readonly int ID_VapourNoiseTime = Shader.PropertyToID("_VapourNoiseTime");
-    private static readonly int ID_VapourNoiseDriftDir = Shader.PropertyToID("_VapourNoiseDriftDir");
-    private static readonly int ID_VapourNoiseDriftSpeed = Shader.PropertyToID("_VapourNoiseDriftSpeed");
-    private static readonly int ID_VapourNoiseOctaves = Shader.PropertyToID("_VapourNoiseOctaves");
-    private static readonly int ID_VapourNoiseDomainWarpStrength = Shader.PropertyToID("_VapourNoiseDomainWarpStrength");
-    private static readonly int ID_VapourNoiseDetailStrength = Shader.PropertyToID("_VapourNoiseDetailStrength");
     private static readonly int ID_BlurRadius = Shader.PropertyToID("_BlurRadius");
     private static readonly int ID_BlurSigma = Shader.PropertyToID("_BlurSigma");
     private static readonly int ID_BlurDetailPreserve = Shader.PropertyToID("_BlurDetailPreserve");
@@ -51,7 +45,6 @@ public sealed class WaterPhaseDensityPipeline
         _normalizeKernel = _computeShader.FindKernel("NormalizeToTexture");
         _blurVapourKernel = _computeShader.FindKernel("BlurVapourDensity");
         _blurLiquidKernel = _computeShader.FindKernel("BlurLiquidDensity");
-        _enhanceVapourKernel = _computeShader.FindKernel("EnhanceVapourDensity");
         _bakeNormalsKernel = _computeShader.FindKernel("BakeNormals");
     }
 
@@ -147,6 +140,8 @@ public sealed class WaterPhaseDensityPipeline
             ID_AdaptiveDensityBulk,
             Mathf.Max(grid.adaptiveDensitySurface + 0.01f, grid.adaptiveDensityBulk));
         _computeShader.SetFloat(ID_AdaptiveDensityCurve, Mathf.Max(0.01f, grid.adaptiveDensityCurve));
+        _computeShader.SetFloat(ID_AdaptiveSpeedReference, Mathf.Max(0f, grid.adaptiveSpeedReference));
+        _computeShader.SetFloat(ID_AdaptiveSpeedWeight, Mathf.Clamp01(grid.adaptiveSpeedWeight));
         _computeShader.SetInt(
             ID_KernelRadiusVoxels,
             Mathf.Min(
@@ -200,39 +195,20 @@ public sealed class WaterPhaseDensityPipeline
         int groupsY,
         int groupsZ)
     {
+        // The vapour slab is now consumed directly by the raymarcher as a low-frequency
+        // physics presence mask; the procedural noise that produces wispy detail is
+        // generated per ray-march sample in the fragment shader (Option B pipeline).
+        // The only post-processing we still want here is an optional Gaussian blur
+        // to smooth out individual particle dots into a continuous mask.
         if (!settings.Vapour.enabled)
             return;
 
-        Vector3 driftDirection = settings.Vapour.noiseDriftDirection.sqrMagnitude > 1e-6f
-            ? settings.Vapour.noiseDriftDirection.normalized
-            : Vector3.up;
-
-        _computeShader.SetFloat(ID_VapourNoiseScale, settings.Vapour.noiseScale);
-        _computeShader.SetFloat(ID_VapourNoiseTime, Time.time);
-        _computeShader.SetVector(ID_VapourNoiseDriftDir, new Vector4(driftDirection.x, driftDirection.y, driftDirection.z, 0f));
-        _computeShader.SetFloat(ID_VapourNoiseDriftSpeed, settings.Vapour.noiseDriftSpeed);
-        _computeShader.SetInt(ID_VapourNoiseOctaves, settings.Vapour.noiseOctaves);
-        _computeShader.SetFloat(ID_VapourNoiseDomainWarpStrength, settings.Vapour.domainWarpStrength);
-        _computeShader.SetFloat(ID_VapourNoiseDetailStrength, settings.Vapour.detailStrength);
-
-        if (settings.Vapour.blurBeforeEnhance)
-        {
-            _computeShader.SetInt(ID_BlurRadius, settings.Vapour.blurRadius);
-            _computeShader.SetFloat(ID_BlurSigma, settings.Vapour.blurSigma);
-            _computeShader.SetFloat(ID_BlurDetailPreserve, settings.Vapour.blurDetailPreserve);
-            _computeShader.SetTexture(_blurVapourKernel, "_DensityTexture3D_Read", resources.PhaseDensityTexture);
-            _computeShader.SetTexture(_blurVapourKernel, "_DensityTexture3D_RG", resources.PhaseDensityScratchTexture);
-            _computeShader.Dispatch(_blurVapourKernel, groupsX, groupsY, groupsZ);
-
-            _computeShader.SetTexture(_enhanceVapourKernel, "_DensityTexture3D_Read", resources.PhaseDensityScratchTexture);
-            _computeShader.SetTexture(_enhanceVapourKernel, "_DensityTexture3D_RG", resources.PhaseDensityTexture);
-            _computeShader.Dispatch(_enhanceVapourKernel, groupsX, groupsY, groupsZ);
-            return;
-        }
-
-        _computeShader.SetTexture(_enhanceVapourKernel, "_DensityTexture3D_Read", resources.PhaseDensityTexture);
-        _computeShader.SetTexture(_enhanceVapourKernel, "_DensityTexture3D_RG", resources.PhaseDensityScratchTexture);
-        _computeShader.Dispatch(_enhanceVapourKernel, groupsX, groupsY, groupsZ);
+        _computeShader.SetInt(ID_BlurRadius, settings.Vapour.blurRadius);
+        _computeShader.SetFloat(ID_BlurSigma, settings.Vapour.blurSigma);
+        _computeShader.SetFloat(ID_BlurDetailPreserve, settings.Vapour.blurDetailPreserve);
+        _computeShader.SetTexture(_blurVapourKernel, "_DensityTexture3D_Read", resources.PhaseDensityTexture);
+        _computeShader.SetTexture(_blurVapourKernel, "_DensityTexture3D_RG", resources.PhaseDensityScratchTexture);
+        _computeShader.Dispatch(_blurVapourKernel, groupsX, groupsY, groupsZ);
         Graphics.CopyTexture(resources.PhaseDensityScratchTexture, resources.PhaseDensityTexture);
     }
 

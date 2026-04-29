@@ -16,7 +16,6 @@
 #pragma kernel NormalizeToTexture
 #pragma kernel BlurLiquidDensity
 #pragma kernel BlurVapourDensity
-#pragma kernel EnhanceVapourDensity
 #pragma kernel BakeNormals
 
 struct Particle
@@ -42,7 +41,7 @@ StructuredBuffer<Particle>  _ParticleBuffer;
 // N = _VolumeDims.x * _VolumeDims.y * _VolumeDims.z
 RWStructuredBuffer<uint>    _DensityGrid;
 RWTexture3D<float2>         _DensityTexture3D_RG;  // R = liquid, G = vapour
-// Read-only binding used by BlurVapourDensity and EnhanceVapourDensity to avoid
+// Read-only binding used by BlurVapourDensity to avoid
 // reading and writing the same texture in the same dispatch (hazard-free pipeline).
 Texture3D<float2>           _DensityTexture3D_Read;
 RWTexture3D<float4>         _NormalTexture3D;         // xyz = outward surface normal, w = unused
@@ -58,6 +57,8 @@ float  _SmoothingRadiusWS_Bulk; // world units, splat kernel size for BULK parti
 float  _AdaptiveDensitySurface; // SPH density value treated as "surface/lonely" → uses _SmoothingRadiusWS
 float  _AdaptiveDensityBulk;    // SPH density value treated as "fully bulk"     → uses _SmoothingRadiusWS_Bulk
 float  _AdaptiveDensityCurve;   // gamma applied to t before lerp. 1 = linear, <1 exaggerates low-density variation, >1 exaggerates high-density variation
+float  _AdaptiveSpeedReference; // particle speed (m/s) at which "stillness" weight reaches 0. <=0 disables the speed term.
+float  _AdaptiveSpeedWeight;    // [0..1] blend factor: how much speed contributes to the bulk weight (1 = full effect, 0 = ignore speed)
 int    _KernelRadiusVoxels;   // loop bound covering the LARGER of the two radii (bulk). Falloff zeroes smaller-h splats automatically.
 float2 _InvDensityScaleRG;    // x = liquid scale, y = vapour scale (vapour rest density is lower)
 
@@ -72,16 +73,6 @@ int    _LiquidBlurRadius;        // neighborhood half-size in voxels
 float  _LiquidBlurSigma;         // Gaussian sigma in voxels
 float  _LiquidBlurDetailPreserve;// 0 = pure smooth, 1 = original detail fully added back
 // ─────────────────────────────────────────────────────────────────────────────
-
-// ── Vapour enhancement noise params ────────────────────────────────────────────
-float  _VapourNoiseScale;        // world-space frequency of the base noise
-float  _VapourNoiseTime;         // time offset for animation (set from C# each frame)
-float3 _VapourNoiseDriftDir;     // drift direction (should be normalised)
-float  _VapourNoiseDriftSpeed;   // drift speed multiplier
-int    _VapourNoiseOctaves;      // FBM octave count (1–8)
-float  _VapourNoiseDomainWarpStrength; // how much the warp displaces the sample
-float  _VapourNoiseDetailStrength;     // blend weight of noise onto density [0..1]
-// ────────────────────────────────────────────────────────────────────────────────
 
 uint GridIndex(int3 v)
 {
@@ -154,25 +145,60 @@ void SplatParticles(uint id : SV_DispatchThreadID)
     }
 
     // ── Adaptive per-particle smoothing radius ─────────────────────────────────
-    // Map SPH density [_AdaptiveDensitySurface .. _AdaptiveDensityBulk] → [0..1],
-    // then bend the response with a gamma curve so small density differences in
-    // one end of the range still produce visibly different splat radii:
-    //   _AdaptiveDensityCurve = 1   → linear lerp
-    //   _AdaptiveDensityCurve < 1   → expand the LOW-density end (more variation between
-    //                                 splash / lonely particles whose densities cluster
-    //                                 tightly just above the rest density)
-    //   _AdaptiveDensityCurve > 1   → expand the HIGH-density end
-    //   t = 0  → fully surface / lonely → use _SmoothingRadiusWS (small or 0)
-    //   t = 1  → fully bulk             → use _SmoothingRadiusWS_Bulk (large)
-    float densitySpan = max(_AdaptiveDensityBulk - _AdaptiveDensitySurface, 1e-5);
-    float tLin  = saturate((p.density - _AdaptiveDensitySurface) / densitySpan);
-    float tCurv = pow(tLin, max(_AdaptiveDensityCurve, 1e-3));
-    float h     = lerp(_SmoothingRadiusWS, _SmoothingRadiusWS_Bulk, tCurv);
+    // Only meaningful for LIQUID (phase 0). Vapour particles have a much lower rest
+    // density and a different role here — the physics grid is just a low-frequency
+    // "where is there vapour?" mask consumed by the per-fragment FBM in the
+    // raymarcher. Forcing the bulk/surface heuristic on vapour produces patchy,
+    // density-dependent splat sizes that the noise then amplifies into artifacts.
+    // For vapour we always use the wider _SmoothingRadiusWS_Bulk so the slab is a
+    // smooth, uniform presence mask.
+    float h;
+    if (p.phase == 1)
+    {
+        h = _SmoothingRadiusWS_Bulk;
+    }
+    else
+    {
+        // Map SPH density [_AdaptiveDensitySurface .. _AdaptiveDensityBulk] → [0..1],
+        // then bend the response with a gamma curve so small density differences in
+        // one end of the range still produce visibly different splat radii:
+        //   _AdaptiveDensityCurve = 1   → linear lerp
+        //   _AdaptiveDensityCurve < 1   → expand the LOW-density end (more variation between
+        //                                 splash / lonely particles whose densities cluster
+        //                                 tightly just above the rest density)
+        //   _AdaptiveDensityCurve > 1   → expand the HIGH-density end
+        //   t = 0  → fully surface / lonely → use _SmoothingRadiusWS (small or 0)
+        //   t = 1  → fully bulk             → use _SmoothingRadiusWS_Bulk (large)
+        float densitySpan = max(_AdaptiveDensityBulk - _AdaptiveDensitySurface, 1e-5);
+        float tLin  = saturate((p.density - _AdaptiveDensitySurface) / densitySpan);
+        float tDensity = pow(tLin, max(_AdaptiveDensityCurve, 1e-3));
+
+        // Stillness term: a low-density particle that is also barely moving is most
+        // likely a *resting surface* particle, not a splash droplet. Treating it as
+        // "bulk" here gives it the wide splat radius, which produces smooth surface
+        // normals on calm water while still letting fast splash particles stay crisp.
+        //   speed = 0           → tStill = 1 (fully bulk weight from stillness)
+        //   speed >= speedRef   → tStill = 0 (fully surface — splash / fast motion)
+        //   _AdaptiveSpeedWeight = 0 disables the term entirely.
+        float tStill = 0.0;
+        if (_AdaptiveSpeedReference > 1e-5 && _AdaptiveSpeedWeight > 1e-5)
+        {
+            float speed = length(p.velocity.xz);   // horizontal only: avoids apex-zero artifact
+            tStill = 1.0 - saturate(speed / _AdaptiveSpeedReference);
+            tStill *= saturate(_AdaptiveSpeedWeight);
+        }
+
+        // Combine with max: a particle is "bulk" if EITHER its density is high OR it
+        // is still. This intentionally biases low-density-but-still particles (calm
+        // water surface) toward the smooth path, without affecting fast particles.
+        float tCurv = max(tDensity, tStill);
+        h = lerp(_SmoothingRadiusWS, _SmoothingRadiusWS_Bulk, tCurv);
+    }
 
     // Per-particle nearest-voxel fast path: if THIS particle's radius is ~zero,
     // splat it as a single voxel so very low-density particles render as crisp dots
     // (without disabling splatting for the rest of the simulation).
-    if (h <= 1e-5)
+    if (h < 0)
     {
         uint amt = (uint)round(baseAmount);
         AtomicAddDensity(base, slabOffset, amt);
@@ -333,121 +359,6 @@ void BlurVapourDensity(uint3 id : SV_DispatchThreadID)
 
     float liquid = _DensityTexture3D_Read[(int3)id].r;  // liquid stays exact
     _DensityTexture3D_RG[id] = float2(liquid, saturate(finalVapour));
-}
-
-// ── Noise helpers (HLSL port of standard FBM / gradient noise) ─────────────────
-
-// Simple 3-D hash used as a gradient source.
-float3 Hash3(float3 p)
-{
-    p = float3(dot(p, float3(127.1, 311.7, 74.7)),
-               dot(p, float3(269.5, 183.3, 246.1)),
-               dot(p, float3(113.5, 271.9, 124.6)));
-    return -1.0 + 2.0 * frac(sin(p) * 43758.5453123);
-}
-
-// Quintic-interpolated 3-D gradient noise, returns [-1, 1].
-float GradNoise3(float3 p)
-{
-    float3 i = floor(p);
-    float3 f = frac(p);
-    float3 u = f * f * f * (f * (f * 6.0 - 15.0) + 10.0); // quintic
-
-    return lerp(lerp(lerp(dot(Hash3(i + float3(0,0,0)), f - float3(0,0,0)),
-                          dot(Hash3(i + float3(1,0,0)), f - float3(1,0,0)), u.x),
-                     lerp(dot(Hash3(i + float3(0,1,0)), f - float3(0,1,0)),
-                          dot(Hash3(i + float3(1,1,0)), f - float3(1,1,0)), u.x), u.y),
-                lerp(lerp(dot(Hash3(i + float3(0,0,1)), f - float3(0,0,1)),
-                          dot(Hash3(i + float3(1,0,1)), f - float3(1,0,1)), u.x),
-                     lerp(dot(Hash3(i + float3(0,1,1)), f - float3(0,1,1)),
-                          dot(Hash3(i + float3(1,1,1)), f - float3(1,1,1)), u.x), u.y), u.z);
-}
-
-// Fractal Brownian Motion — octaves sum, each half amplitude / double frequency.
-float FBM3(float3 p, int octaves)
-{
-    float value = 0.0;
-    float amp   = 0.5;
-    float freq  = 1.0;
-    [loop]
-    for (int o = 0; o < octaves; o++)
-    {
-        value += amp * GradNoise3(p * freq);
-        amp   *= 0.5;
-        freq  *= 2.0;
-    }
-    return value; // range roughly [-1, 1]
-}
-
-// Domain-warped FBM: first evaluate a cheap warp offset, then evaluate FBM at
-// the displaced position. This creates the "curling / billowing" look.
-float WarpedFBM3(float3 p, int octaves, float warpStrength)
-{
-    // Single-pass warp: offset sample position by a cheap noise vector.
-    float3 warp = float3(
-        GradNoise3(p + float3(1.7, 9.2, 3.4)),
-        GradNoise3(p + float3(8.3, 2.8, 5.1)),
-        GradNoise3(p + float3(4.1, 6.7, 1.9))
-    );
-    return FBM3(p + warp * warpStrength, octaves);
-}
-
-// ── EnhanceVapourDensity kernel ────────────────────────────────────────────────
-// Runs AFTER NormalizeToTexture. Reads the normalised vapour density (G channel),
-// applies domain-warped FBM to sculpt the shape, then writes it back.
-// Liquid (R channel) is untouched.
-//
-// Strategy:
-//   noisy  = vapour + vapour * warpedNoise * strength   (centred noise → can add OR subtract)
-//   result = saturate(noisy)
-// Because vapour multiplies the noise, empty voxels (vapour==0) produce zero contribution.
-// ────────────────────────────────────────────────────────────────────────────────
-[numthreads(8, 8, 8)]
-void EnhanceVapourDensity(uint3 id : SV_DispatchThreadID)
-{
-    if (id.x >= (uint)_VolumeDims.x || id.y >= (uint)_VolumeDims.y || id.z >= (uint)_VolumeDims.z)
-        return;
-
-    // Read from the separate read-only slot (blurred temp texture bound by C#).
-    // This avoids a read/write hazard on the same RWTexture3D.
-    float2 rg = _DensityTexture3D_Read[id];
-    float vapour = rg.g;
-
-    // Fast-out: skip empty voxels entirely — noise must never create phantom vapour.
-    if (vapour < 0.0001)
-        return;
-
-    // World-space centre of this voxel.
-    float3 minWS  = _BoundsMinWS.xyz;
-    float3 maxWS  = _BoundsMaxWS.xyz;
-    float3 uvw    = ((float3)id + 0.5) / (float3)_VolumeDims;
-    float3 posWS  = minWS + uvw * (maxWS - minWS);
-
-    // Sample in normalised voxel UVW space so that _VapourNoiseScale means
-    // "noise periods across the volume" (e.g. 3 = three full waves side-to-side).
-    // This makes scale, octaves, and domain warp all have predictable visual effect
-    // regardless of how large the world-space volume is.
-    float3 drift   = _VapourNoiseDriftDir * (_VapourNoiseTime * _VapourNoiseDriftSpeed);
-    float3 sampleP = uvw * _VapourNoiseScale + drift;
-
-    // Domain-warped FBM in [-1, 1], remapped to [0, 1].
-    float rawNoise = WarpedFBM3(sampleP, clamp(_VapourNoiseOctaves, 1, 8), _VapourNoiseDomainWarpStrength);
-    float noise01  = rawNoise * 0.5 + 0.5;
-
-    // Power curve: squaring pushes low values toward zero, leaving isolated
-    // high-density wisps against empty space — creates a gas/steam look.
-    noise01 = noise01 * noise01;
-
-    // Physics presence mask — soft ramp so voxels just barely touched by physics
-    // don't produce a hard cutoff edge.
-    float mask = smoothstep(0.0, 0.2, vapour);
-
-    // Replace strategy: noise drives shape, physics boundary prevents bleeding.
-    // _VapourNoiseDetailStrength = 0 → pure physics blob, 1 → pure masked noise.
-    float noiseMasked = noise01 * mask;
-    float enhanced    = lerp(vapour, noiseMasked, _VapourNoiseDetailStrength);
-
-    _DensityTexture3D_RG[id] = float2(rg.r, saturate(enhanced));
 }
 
 // ── BakeNormals kernel ────────────────────────────────────────────────────────
