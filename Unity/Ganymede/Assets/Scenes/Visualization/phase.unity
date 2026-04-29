@@ -2318,7 +2318,7 @@ MonoBehaviour:
   fixedPointScale: 1024
   maxParticlesPerVoxel: 1
   vapourInvDensityScale: 0.33
-  smoothingRadiusWS: 0.01
+  smoothingRadiusWS: -1
   kernelRadiusVoxels: 3
   visualProxyTransform: {fileID: 0}
   rayMarchingMaterial: {fileID: 2100000, guid: 981a72c002f021c43bcf6a3e18c751a5, type: 2}
@@ -2328,12 +2328,12 @@ MonoBehaviour:
   marchingCubesIsoLevel: 0
   enhanceVapourDensity: 1
   blurVapourDensity: 1
-  blurLiquidDensity: 1
+  blurLiquidDensity: 0
   liquidBlurRadius: 1
-  liquidBlurSigma: 1.53
+  liquidBlurSigma: 1
   liquidBlurDetailPreserve: 0
-  blurRadius: 4
-  blurSigma: 4
+  blurRadius: 2
+  blurSigma: 1.5
   blurDetailPreserve: 0
   vapourNoiseScale: 28.1
   vapourNoiseDriftDir: {x: 0, y: -1, z: 0}
@@ -2506,7 +2506,7 @@ Transform:
   m_GameObject: {fileID: 1268717246}
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: 3.52, y: 6.42, z: -1.74}
+  m_LocalPosition: {x: 3.52, y: 0.43, z: -0.86}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
@@ -3523,7 +3523,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 4161998456328252244, guid: 18cf1fa5220a198409fde72db8b3e2a5, type: 3}
       propertyPath: boundsMax.z
-      value: 5
+      value: 0
       objectReference: {fileID: 0}
     - target: {fileID: 4161998456328252244, guid: 18cf1fa5220a198409fde72db8b3e2a5, type: 3}
       propertyPath: coolingRate
@@ -3539,7 +3539,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 4161998456328252244, guid: 18cf1fa5220a198409fde72db8b3e2a5, type: 3}
       propertyPath: perfTestMode
-      value: 0
+      value: 1
       objectReference: {fileID: 0}
     - target: {fileID: 4161998456328252244, guid: 18cf1fa5220a198409fde72db8b3e2a5, type: 3}
       propertyPath: subStepCount
