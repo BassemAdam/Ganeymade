@@ -85,6 +85,11 @@ void computeMain(uint3 threadId: SV_DispatchThreadID)
       return;
 
    Particle p = particlesIn[i];
+   if (p.phase == -1)
+   {
+      particlesOut[i] = p;
+      return;
+   }
    float h = params.smoothingRadius;
    float h2 = h * h;
    uint n = params.particleCount;

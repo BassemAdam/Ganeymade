@@ -77,7 +77,7 @@ public class SpawnManager : MonoBehaviour
     private List<int> _tapSlotList = null;
     private Particle[] _readbackBuffer;
     private int _tapEmitCount = 0;
-    private int _skipReadbackFrames = 1;
+    private int _skipReadbackFrames = 3;
 
     // ── Unity lifecycle ──────────────────────────────────────────────────
 
@@ -239,8 +239,18 @@ public class SpawnManager : MonoBehaviour
             for (int i = 0; i < _particleCount; i++)
             {
                 int id = _readbackBuffer[i].fixedId;
-                if (id < _particleCount)
-                    _cpuParticles[id] = _readbackBuffer[i];
+
+                // Guard against zeroed readback data (g_OutputData not yet populated).
+                // A valid particle always has fixedId == i after the reorder pass.
+                // If fixedId is out of range or doesn't match, the data is stale — skip it.
+                if (id < 0 || id >= _particleCount)
+                    continue;
+
+                // Never let GPU overwrite a tap slot's phase to -1 on the CPU mirror
+                if (_tapReservedSlots.Contains(id) && _readbackBuffer[i].phase == -1)
+                    continue;
+
+                _cpuParticles[id] = _readbackBuffer[i];
             }
         }
     }
@@ -271,9 +281,10 @@ public class SpawnManager : MonoBehaviour
         if (p.phase == -1) return true;
 
         float m = outOfBoundsMargin;
-        if (p.position.x < _boundsMin.x - m || p.position.x > _boundsMax.x + m) return true;
-        if (p.position.y < _boundsMin.y - m || p.position.y > _boundsMax.y + m) return true;
-        if (p.position.z < _boundsMin.z - m || p.position.z > _boundsMax.z + m) return true;
+        float reclaimMargin = m + 0.1f;
+        if (p.position.x < _boundsMin.x - reclaimMargin || p.position.x > _boundsMax.x + reclaimMargin) return true;
+        if (p.position.y < _boundsMin.y - reclaimMargin || p.position.y > _boundsMax.y + reclaimMargin) return true;
+        if (p.position.z < _boundsMin.z - reclaimMargin || p.position.z > _boundsMax.z + reclaimMargin) return true;
 
         return false;
     }
