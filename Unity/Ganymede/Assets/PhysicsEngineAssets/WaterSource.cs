@@ -7,6 +7,15 @@ using UnityEngine;
 /// </summary>
 public class WaterSource : MonoBehaviour
 {
+    public enum SpawnMode { Sphere, Tap }
+
+    [Header("Mode")]
+    [Tooltip("Sphere: pre-filled ball that recycles out-of-bounds particles. " +
+             "Tap: one-shot stream that fills the pool and then stops.")]
+    public SpawnMode spawnMode = SpawnMode.Sphere;
+
+    [HideInInspector] public bool tapExhausted = false;
+
     [Tooltip("Particles emitted per second when active.")]
     [Min(0)] public float emissionRate = 200f;
 
@@ -34,5 +43,11 @@ public class WaterSource : MonoBehaviour
         Gizmos.color = new Color(0f, 0.8f, 1f, 0.9f);
         Vector3 dir = emissionDirection.normalized;
         Gizmos.DrawRay(transform.position, dir * emissionRadius * 3f);
+
+        if (spawnMode == SpawnMode.Tap)
+        {
+            Gizmos.color = new Color(0f, 1f, 0.4f, 0.6f);
+            Gizmos.DrawWireSphere(transform.position, emissionRadius);
+        }
     }
 }

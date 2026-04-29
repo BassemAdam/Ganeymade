@@ -7,7 +7,6 @@ using UnityEngine.Serialization;
 /// Reads particle data via non-blocking readback (1-frame latency) and uploads to a ComputeBuffer.
 /// Attach to the same GameObject as UseComputePlugin.
 /// </summary>
-[RequireComponent(typeof(UseComputePlugin))]
 public class ParticleRenderer : MonoBehaviour
 {
     private const float TemperatureMinDefault = 0f;
@@ -60,12 +59,13 @@ public class ParticleRenderer : MonoBehaviour
     [Tooltip("Maximum selected value in the gradient (mapped to right edge)")]
     public float maxValue = 150f;
 
+    public UseComputePlugin computePlugin;
+
     private Texture2D gradientTexture;
     private ComputeBuffer particleBuffer;
     private ComputeBuffer argsBuffer;
     private Particle[] readbackData;
     private uint[] args = new uint[5];
-    private UseComputePlugin computePlugin;
     private Bounds renderBounds;
     private MaterialPropertyBlock mpb;
 
@@ -74,7 +74,13 @@ public class ParticleRenderer : MonoBehaviour
 
     void Start()
     {
-        computePlugin = GetComponent<UseComputePlugin>();
+        if (computePlugin == null)
+        {
+            Debug.LogError("[ParticleRenderer] computePlugin is not assigned! " +
+                           "Drag your simulation GameObject's UseComputePlugin into this field.");
+            enabled = false;
+            return;
+        }        
         int count = computePlugin.particleCount;
 
         if (maxValue <= minValue)
@@ -142,12 +148,12 @@ public class ParticleRenderer : MonoBehaviour
     {
         if (particleMaterial == null || particleMesh == null || particleBuffer == null)
             return;
-
         // Skip all readback and rendering in perf-test mode
         if (computePlugin != null && computePlugin.perfTestMode)
             return;
 
-        // Read from plugin (non-blocking, 1-frame latency)
+        // Read the full particle buffer — the shader handles dormant particles
+        // (phase < 0) by collapsing them to w=0 (point at infinity, no rasterization).
         GetComputeResult(readbackData, readbackData.Length);
         particleBuffer.SetData(readbackData);
 

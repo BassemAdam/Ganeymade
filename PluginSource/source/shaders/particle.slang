@@ -47,7 +47,7 @@
        float  temperature;
        int    phase;
        float  latentHeatAccum;   // energy absorbed/released during phase change
-       float  _pad1;
+       int    fixedId;
    };
 
    struct HeatSource

@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Runtime.InteropServices;
 using UnityEngine;
 
@@ -62,6 +63,24 @@ public class UseComputePlugin : MonoBehaviour
     [Tooltip("Number of particles simulated by the native plugin. Value is used as entered.")]
     [Min(1)]
     public int particleCount = 32768;
+
+    [Header("Spawn Pool")]
+    [Tooltip("How many particles to reserve as dormant (available for spawning). " +
+             "These are placed at dormantParkPosition on init and recycled by SpawnManager.")]
+    [Min(0)]
+    public int spawnPoolReserve = 2048;
+
+    [Tooltip("World-space position where dormant pool particles are parked. " +
+             "Must be outside the simulation bounds. Keep in sync with SpawnManager.dormantPosition.")]
+    public Vector3 dormantParkPosition = new Vector3(0f, -1000f, 0f);
+
+    [Tooltip("Override where the initial spawn-pool sphere is placed. " +
+             "When disabled the sphere is centred on each WaterSource (or the bounds centre if none exist). " +
+             "Has no effect when spawnPoolReserve == 0.")]
+    public bool overrideSpawnCenter = false;
+
+    [Tooltip("World-space position used as the spawn-pool sphere centre when overrideSpawnCenter is enabled.")]
+    public Vector3 spawnCenter = Vector3.zero;
 
     [Header("Simulation")]
     public Vector3 gravity = new Vector3(0f, -9.81f, 0f);
@@ -223,6 +242,7 @@ public class UseComputePlugin : MonoBehaviour
     private int _sdfDynamicFrameCounter;
     private bool _sdfUploaded;
 
+    public HashSet<int> TapReservedSlots { get; } = new HashSet<int>();
 
     // --------------------------------------------------------------------
 
@@ -232,6 +252,7 @@ public class UseComputePlugin : MonoBehaviour
 
     private Particle[] readbackData;  // for debug readback (keep reference to avoid GC)
     private int frameCount = 0;
+    [NonSerialized] public Particle[] InitialParticleSnapshot = null;
 
     private void Start()
     {
@@ -265,6 +286,7 @@ public class UseComputePlugin : MonoBehaviour
 
         // Create initial particle distribution (simple lattice in bounds)
         Particle[] particles = CreateInitialParticles(particleCount);
+        InitialParticleSnapshot = particles; 
         readbackData = new Particle[particleCount];
 
         // Upload to native plugin once
@@ -539,48 +561,127 @@ public class UseComputePlugin : MonoBehaviour
     private Particle[] CreateInitialParticles(int count)
     {
         GetBoundsWS(out Vector3 min, out Vector3 max);
-        Vector3 size = max - min;
 
-        int nx, ny, nz;
-        FindBestFactorGrid(count, size, out nx, out ny, out nz);
-
-        Vector3 safeSize = new Vector3(
-            Mathf.Max(size.x, 0.001f),
-            Mathf.Max(size.y, 0.001f),
-            Mathf.Max(size.z, 0.001f)
-        );
-
-        Vector3 spacing = new Vector3(
-            safeSize.x / Mathf.Max(nx, 1),
-            safeSize.y / Mathf.Max(ny, 1),
-            safeSize.z / Mathf.Max(nz, 1)
-        );
-
-        Vector3 start = min + spacing * 0.5f;
+        // How many particles go into the spawn-pool sphere vs the background lattice
+        int reservedForSpawn = Mathf.Clamp(spawnPoolReserve, 0, count);
+        int latticeCount = count - reservedForSpawn;
 
         Particle[] particles = new Particle[count];
         int idx = 0;
-        for (int z = 0; z < nz && idx < count; z++)
-        {
-            for (int y = 0; y < ny && idx < count; y++)
-            {
-                for (int x = 0; x < nx && idx < count; x++)
-                {
-                    Vector3 pos = start + new Vector3(x * spacing.x, y * spacing.y, z * spacing.z);
 
-                    particles[idx++] = Particle.Create(pos, Vector3.zero, particleMass);
+        // ── Spawn-pool sphere(s) ──────────────────────────────────────────
+        if (reservedForSpawn > 0)
+        {
+            WaterSource[] sources = FindObjectsByType<WaterSource>(FindObjectsSortMode.None);
+            if (overrideSpawnCenter || sources == null || sources.Length == 0)
+            {
+                float restSpacing = smoothingRadius * 0.5f;
+                float minRadius = restSpacing * Mathf.Pow(reservedForSpawn, 1f / 3f) * 0.6f;
+                float sphereRadius = Mathf.Max(smoothingRadius * 3f, minRadius);
+                Vector3 centre = overrideSpawnCenter ? spawnCenter : (min + max) * 0.5f;    
+                SpawnSphereAt(particles, ref idx, count, centre, sphereRadius, reservedForSpawn, particleMass);
+            }
+            else
+            {
+                int perSource = reservedForSpawn / sources.Length;
+                int remainder = reservedForSpawn - perSource * sources.Length;
+                float restSpacing = smoothingRadius * 0.5f;
+
+                for (int s = 0; s < sources.Length; s++)
+                {
+                    int thisCount = perSource + (s == sources.Length - 1 ? remainder : 0);
+                    if (thisCount <= 0) 
+                        continue;
+
+                    // ── TAP MODE ─────────────────────────────────────────────
+                    if (sources[s].spawnMode == WaterSource.SpawnMode.Tap)
+                    {
+                        Vector3 dir = sources[s].emissionDirection.normalized;
+                        float speed = sources[s].emissionSpeed;
+                        float radius = sources[s].emissionRadius;
+                        Vector3 origin = sources[s].transform.position;
+
+                        Vector3 right = Vector3.Cross(dir, Vector3.up);
+                        if (right.sqrMagnitude < 0.001f) right = Vector3.Cross(dir, Vector3.forward);
+                        right.Normalize();
+                        Vector3 up2 = Vector3.Cross(dir, right).normalized;
+                        Vector3 gravity = new Vector3(0f, Physics.gravity.y, 0f);
+
+                        int tapStartIdx = idx; // remember where tap slots begin
+
+                        for (int k = 0; k < thisCount && idx < count; k++)
+                        {
+                            Particle p = Particle.Create(dormantParkPosition, Vector3.zero, particleMass);
+                            p.fixedId = idx; 
+                            p.phase = -1;
+                            particles[idx++] = p;
+                        }
+                        // Register these indices so SpawnManager never recycles them
+                        for (int k = tapStartIdx; k < idx; k++)
+                            TapReservedSlots.Add(k);
+                    }
+                    // ── SPHERE MODE ───────────────────────────────────────────
+                    else
+                    {
+                        Vector3 centre = sources[s].transform.position;
+                        float emitRadius = sources[s].emissionRadius;
+                        float minRadius = restSpacing * Mathf.Pow(thisCount, 1f / 3f) * 0.6f;
+                        float sphereRadius = Mathf.Max(emitRadius, minRadius);
+                        SpawnSphereAt(particles, ref idx, count, centre, sphereRadius, thisCount, particleMass);
+                    }
                 }
             }
         }
 
+        // ── Background lattice for any remaining slots ────────────────────
+        // If the user sets spawnPoolReserve < particleCount, the leftover slots are filled with the usual bounds-filling lattice.
+        if (latticeCount > 0)
+        {
+            Vector3 size    = max - min;
+            FindBestFactorGrid(latticeCount, size, out int nx, out int ny, out int nz);
+
+            Vector3 safeSize = new Vector3(Mathf.Max(size.x, 0.001f),Mathf.Max(size.y, 0.001f),Mathf.Max(size.z, 0.001f));
+            Vector3 spacing = new Vector3(safeSize.x / Mathf.Max(nx, 1),safeSize.y / Mathf.Max(ny, 1),safeSize.z / Mathf.Max(nz, 1));
+            Vector3 start = min + spacing * 0.5f;
+
+            for (int z = 0; z < nz && idx < count; z++)
+                for (int y = 0; y < ny && idx < count; y++)
+                    for (int x = 0; x < nx && idx < count; x++)
+                    {
+                        Vector3 pos = start + new Vector3(x * spacing.x, y * spacing.y, z * spacing.z);
+                        particles[idx++] = Particle.Create(pos, Vector3.zero, particleMass);
+                    }
+        }
+
+        // Any slots still unfilled (rounding) get parked dormant.
+        while (idx < count)
+        {
+            Particle p = Particle.Create(dormantParkPosition, Vector3.zero, particleMass);
+            p.fixedId = idx; 
+            p.phase = -1;
+            particles[idx++] = p;
+        }
+
         if (verbose)
         {
-            // Debug.Log($"[UseComputePlugin] Initial particle grid: {nx} x {ny} x {nz} (= {nx * ny * nz}), spacing=({spacing.x:F4}, {spacing.y:F4}, {spacing.z:F4})");
+            // Debug.Log($"[UseComputePlugin] Init: {reservedForSpawn} sphere + {latticeCount} lattice particles.");
         }
 
         return particles;
     }
-
+    private static void SpawnSphereAt(Particle[] particles, ref int idx, int totalCount,Vector3 centre, float sphereRadius,int spawnCount, float mass)
+    {
+        for (int i = 0; i < spawnCount && idx < totalCount; i++)
+        {
+            float t = (float)i / Mathf.Max(1, spawnCount - 1);
+            float r = sphereRadius * Mathf.Pow(t, 1f / 3f);
+            float inclination = Mathf.Acos(1f - 2f * ((i + 0.5f) / spawnCount));
+            float azimuth = Mathf.PI * (1f + Mathf.Sqrt(5f)) * i;
+            Vector3 offset = new Vector3(r * Mathf.Sin(inclination) * Mathf.Cos(azimuth), r * Mathf.Cos(inclination), r * Mathf.Sin(inclination) * Mathf.Sin(azimuth));
+ 
+            particles[idx++] = Particle.Create(centre + offset, Vector3.zero, mass);
+        }
+    }
     private static void FindBestFactorGrid(int count, Vector3 boundsSize, out int nx, out int ny, out int nz)
     {
         nx = 1;
