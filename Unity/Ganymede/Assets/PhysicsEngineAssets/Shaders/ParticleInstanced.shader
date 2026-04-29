@@ -5,8 +5,8 @@ Shader "Custom/ParticleInstanced"
         _Size ("Particle Size", Float) = 0.05
         _GasScale ("Gas Particle Scale Multiplier", Float) = 1.5
         _GasAlpha ("Gas Particle Opacity", Range(0, 1)) = 0.4
-        _MinTemperature ("Min Temperature (for gradient)", Float) = 20.0
-        _MaxTemperature ("Max Temperature (for gradient)", Float) = 100.0
+        _MinValue ("Min Value (for gradient)", Float) = 20.0
+        _MaxValue ("Max Value (for gradient)", Float) = 100.0
         _GradientTex ("Gradient Texture", 2D) = "white" {}
     }
     SubShader
@@ -40,15 +40,16 @@ Shader "Custom/ParticleInstanced"
             float _Size;
             float _GasScale;
             float _GasAlpha;
-            float _MinTemperature;
-            float _MaxTemperature;
+            int _VisualizedField;
+            float _MinValue;
+            float _MaxValue;
             sampler2D _GradientTex;
 
             struct v2f
             {
                 float4 pos : SV_POSITION;
                 float3 normal : TEXCOORD0;
-                float temperature : TEXCOORD1;
+                float value : TEXCOORD1;
                 float isGas : TEXCOORD2;
             };
 
@@ -57,11 +58,19 @@ Shader "Custom/ParticleInstanced"
                 Particle p = _ParticleBuffer[instanceID];
                 float scale = (p.phase == 1) ? _Size * _GasScale : _Size;
                 float3 worldPos = p.position + v.vertex.xyz * scale;
+                float visualizedValue = p.temperature;
+
+                if (_VisualizedField == 1)
+                    visualizedValue = p.pressure;
+                else if (_VisualizedField == 2)
+                    visualizedValue = p.density;
+                else if (_VisualizedField == 3)
+                    visualizedValue = length(p.velocity);
 
                 v2f o;
                 o.pos = mul(UNITY_MATRIX_VP, float4(worldPos, 1.0));
                 o.normal = v.normal;
-                o.temperature = p.temperature;
+                o.value = visualizedValue;
                 o.isGas = (p.phase == 1) ? 1.0 : 0.0;
                 return o;
             }
@@ -71,31 +80,10 @@ Shader "Custom/ParticleInstanced"
                 float3 lightDir = normalize(float3(0.5, 1.0, 0.3));
                 float ndl = saturate(dot(i.normal, lightDir)) * 0.6 + 0.4;
 
-                // Map temperature to gradient: 0 = minTemp, 1 = maxTemp
-                float t = saturate((i.temperature - _MinTemperature) / (_MaxTemperature - _MinTemperature));
-                
-                // Direct color mapping (BLUE → RED) without texture
-                float3 col;
-                if (t < 0.25f)
-                {
-                    // Blue to Cyan
-                    col = lerp(float3(0, 0, 1), float3(0, 1, 1), t / 0.25f);
-                }
-                else if (t < 0.5f)
-                {
-                    // Cyan to Yellow
-                    col = lerp(float3(0, 1, 1), float3(1, 1, 0), (t - 0.25f) / 0.25f);
-                }
-                else if (t < 0.75f)
-                {
-                    // Yellow to Orange
-                    col = lerp(float3(1, 1, 0), float3(1, 0.5, 0), (t - 0.5f) / 0.25f);
-                }
-                else
-                {
-                    // Orange to Red
-                    col = lerp(float3(1, 0.5, 0), float3(1, 0, 0), (t - 0.75f) / 0.25f);
-                }
+                // Map selected scalar to gradient: 0 = minValue, 1 = maxValue
+                float range = max(_MaxValue - _MinValue, 1e-5);
+                float t = saturate((i.value - _MinValue) / range);
+                float3 col = tex2D(_GradientTex, float2(t, 0.5)).rgb;
                 
                 // Gas particles: blend toward white (steam-like) and reduce opacity
                 float alpha = 1.0;

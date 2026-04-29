@@ -31,7 +31,7 @@ Shader "Custom/DebugPhysicsDensity"
 
             #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Core.hlsl"
             #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Lighting.hlsl"
-            #include "../Includes/WaterPhase/WaterPhaseHelpers.hlsl"
+            #include "../MarchingCubesLiquidAndRayMarchVapour/WaterPhase/WaterPhaseHelpers.hlsl"
 
             struct MeshInput
             {

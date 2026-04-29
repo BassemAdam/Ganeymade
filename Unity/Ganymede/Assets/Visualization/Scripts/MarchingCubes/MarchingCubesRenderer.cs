@@ -135,6 +135,14 @@ public class MarchingCubesRenderer : IDisposable
         // Bind per-frame data
         _compute.SetBuffer(_kMarch, "drawArgs", _drawArgsBuffer);
         _compute.SetBuffer(_kMarch, PID_Vertices, _vertexBuffer);
+        // LUT buffers are also rebound every frame: Unity drops one-time kernel
+        // bindings whenever the compute shader is reimported (e.g. after an edit
+        // to any .compute file in the project triggers a cascade reimport), and
+        // the next Dispatch fails with "Property (lengths) at kernel index (0)
+        // is not set". Rebinding here is cheap and makes the renderer immune.
+        _compute.SetBuffer(_kMarch, PID_Lut,     _lutBuffer);
+        _compute.SetBuffer(_kMarch, PID_Offsets, _offsetsBuffer);
+        _compute.SetBuffer(_kMarch, PID_Lengths, _lengthsBuffer);
         _compute.SetTexture(_kMarch, PID_DensityTexture3D, densityTexture3D);
         _compute.SetTexture(_kMarch, PID_NormalTexture3D,  normalTexture3D);
         _compute.SetInts(PID_GridSize, dims.x, dims.y, dims.z);

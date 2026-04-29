@@ -102,7 +102,7 @@ Shader "Custom/WaterPhase"
             #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Core.hlsl"
             #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Lighting.hlsl"
             #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/DeclareOpaqueTexture.hlsl"
-            #include "../Includes/WaterPhase/WaterPhaseHelpers.hlsl"
+            #include "../MarchingCubesLiquidAndRayMarchVapour/WaterPhase/WaterPhaseHelpers.hlsl"
 
             struct MeshInput
             {
@@ -263,9 +263,9 @@ Shader "Custom/WaterPhase"
                     _VapourScatterG, _VapourAbsorption,
                     _LiquidOpacityCoeff,
                     _DensityPhaseThreshold, _PhaseTransitionWidth,
-                    _Time.y, driftDir, _NoiseDriftSpeed,
+                    _Time.y,
+                    driftDir, _NoiseDriftSpeed,
                     _NoiseScale, noiseOctaves, _DensityPower,
-                    _Density, _PhysicsBlend,
                     sceneLinearDepth, boundsMinOS, boundsMaxOS,
                     _EdgeSoftness, screenUV,
                     blueNoiseRG, _BlueNoiseStrength

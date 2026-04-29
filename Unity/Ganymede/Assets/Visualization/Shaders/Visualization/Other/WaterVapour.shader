@@ -94,7 +94,7 @@ Shader "Custom/WaterVapour"
 
             #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Core.hlsl"
             #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Lighting.hlsl"
-            #include "../Includes/WaterVapourHelpers.hlsl"
+            #include "../MarchingCubesLiquidAndRayMarchVapour/WaterPhase/WaterVapourHelpers.hlsl"
 
             #pragma multi_compile _ _MAIN_LIGHT_SHADOWS _MAIN_LIGHT_SHADOWS_CASCADE
 

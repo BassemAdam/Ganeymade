@@ -1,5 +1,6 @@
 using UnityEngine;
 using System.Runtime.InteropServices;
+using UnityEngine.Serialization;
 
 /// <summary>
 /// Renders particles using DrawMeshInstancedIndirect.
@@ -9,6 +10,23 @@ using System.Runtime.InteropServices;
 [RequireComponent(typeof(UseComputePlugin))]
 public class ParticleRenderer : MonoBehaviour
 {
+    private const float TemperatureMinDefault = 0f;
+    private const float TemperatureMaxDefault = 150f;
+    private const float PressureMinDefault = 10000f;
+    private const float PressureMaxDefault = 20000f;
+    private const float DensityMinDefault = 0f;
+    private const float DensityMaxDefault = 300f;
+    private const float SpeedMinDefault = 0f;
+    private const float SpeedMaxDefault = 5f;
+
+    public enum VisualizedField
+    {
+        Temperature = 0,
+        Pressure = 1,
+        Density = 2,
+        Speed = 3,
+    }
+
 #if (PLATFORM_IOS || PLATFORM_TVOS || PLATFORM_BRATWURST || PLATFORM_SWITCH) && !UNITY_EDITOR
     [DllImport("__Internal")]
 #else
@@ -26,17 +44,21 @@ public class ParticleRenderer : MonoBehaviour
     [Tooltip("Particle render size")]
     public float particleSize = 0.05f;
 
-    [Header("Temperature Gradient")]
-    [Tooltip("Color gradient mapped to particle temperature (left = cold, right = hot)")]
-    public Gradient temperatureGradient;
+    [Header("Visualization")]
+    [Tooltip("Which particle value is mapped to the gradient")]
+    public VisualizedField visualizedField = VisualizedField.Temperature;
 
-    [Tooltip("Minimum temperature in the gradient (mapped to left edge)")]
-    [Range(0f, 100f)]
-    public float minTemp = 20f;
+    [FormerlySerializedAs("temperatureGradient")]
+    [Tooltip("Color gradient mapped to the selected particle value (left = low, right = high)")]
+    public Gradient valueGradient;
 
-    [Tooltip("Maximum temperature in the gradient (mapped to right edge)")]
-    [Range(20f, 500f)]
-    public float maxTemp = 150f;
+    [FormerlySerializedAs("minTemp")]
+    [Tooltip("Minimum selected value in the gradient (mapped to left edge)")]
+    public float minValue = 20f;
+
+    [FormerlySerializedAs("maxTemp")]
+    [Tooltip("Maximum selected value in the gradient (mapped to right edge)")]
+    public float maxValue = 150f;
 
     private Texture2D gradientTexture;
     private ComputeBuffer particleBuffer;
@@ -47,10 +69,18 @@ public class ParticleRenderer : MonoBehaviour
     private Bounds renderBounds;
     private MaterialPropertyBlock mpb;
 
+    [SerializeField, HideInInspector]
+    private VisualizedField lastValidatedField = VisualizedField.Temperature;
+
     void Start()
     {
         computePlugin = GetComponent<UseComputePlugin>();
         int count = computePlugin.particleCount;
+
+        if (maxValue <= minValue)
+            ApplyFieldDefaultRange();
+
+        lastValidatedField = visualizedField;
 
         mpb = new MaterialPropertyBlock();
 
@@ -60,10 +90,10 @@ public class ParticleRenderer : MonoBehaviour
 
         // Set up default gradient if none was configured in the Inspector
         // Temperature gradient: Blue (cold) → Red (hot)
-        if (temperatureGradient == null || temperatureGradient.colorKeys.Length < 2)
+        if (valueGradient == null || valueGradient.colorKeys.Length < 2)
         {
-            temperatureGradient = new Gradient();
-            temperatureGradient.SetKeys(
+            valueGradient = new Gradient();
+            valueGradient.SetKeys(
                 new GradientColorKey[]
                 {
                     new GradientColorKey(new Color(0f, 0f, 1f), 0f),        // Blue (cold)
@@ -129,8 +159,9 @@ public class ParticleRenderer : MonoBehaviour
         mpb.Clear();
         mpb.SetBuffer("_ParticleBuffer", particleBuffer);
         mpb.SetFloat("_Size", particleSize);
-        mpb.SetFloat("_MinTemperature", minTemp);
-        mpb.SetFloat("_MaxTemperature", maxTemp);
+        mpb.SetInt("_VisualizedField", (int)visualizedField);
+        mpb.SetFloat("_MinValue", minValue);
+        mpb.SetFloat("_MaxValue", maxValue);
         mpb.SetTexture("_GradientTex", gradientTexture);
 
         Graphics.DrawMeshInstancedIndirect(particleMesh, 0, particleMaterial, renderBounds, argsBuffer, 0, mpb);
@@ -145,6 +176,15 @@ public class ParticleRenderer : MonoBehaviour
 
     void OnValidate()
     {
+        if (visualizedField != lastValidatedField)
+        {
+            ApplyFieldDefaultRange();
+            lastValidatedField = visualizedField;
+        }
+
+        if (maxValue <= minValue)
+            maxValue = minValue + 0.01f;
+
         gradientDirty = true;
     }
 
@@ -153,11 +193,39 @@ public class ParticleRenderer : MonoBehaviour
     /// <summary>Call when the gradient is changed at runtime (e.g. from Inspector).</summary>
     public void MarkGradientDirty() => gradientDirty = true;
 
+    [ContextMenu("Apply Field Default Range")]
+    public void ApplyFieldDefaultRange()
+    {
+        switch (visualizedField)
+        {
+            case VisualizedField.Pressure:
+                minValue = PressureMinDefault;
+                maxValue = PressureMaxDefault;
+                break;
+
+            case VisualizedField.Density:
+                minValue = DensityMinDefault;
+                maxValue = DensityMaxDefault;
+                break;
+
+            case VisualizedField.Speed:
+                minValue = SpeedMinDefault;
+                maxValue = SpeedMaxDefault;
+                break;
+
+            case VisualizedField.Temperature:
+            default:
+                minValue = TemperatureMinDefault;
+                maxValue = TemperatureMaxDefault;
+                break;
+        }
+    }
+
     private void BakeGradientTexture()
     {
         if (!gradientDirty) return;
         for (int i = 0; i < 256; i++)
-            gradientTexture.SetPixel(i, 0, temperatureGradient.Evaluate(i / 255f));
+            gradientTexture.SetPixel(i, 0, valueGradient.Evaluate(i / 255f));
         gradientTexture.Apply();
         gradientDirty = false;
     }

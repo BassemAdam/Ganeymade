@@ -39,7 +39,7 @@ Shader "Custom/WaterLiquid"
             #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Lighting.hlsl"
             #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/DeclareOpaqueTexture.hlsl"
             #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/DeclareDepthTexture.hlsl"
-            #include "Assets/Visualization/Shaders/Includes/WaterHelpers.hlsl"
+            #include "WaterPhase/WaterHelpers.hlsl"
 
             // ---- Mesh input (Procedural path) ----
             struct MeshInput
