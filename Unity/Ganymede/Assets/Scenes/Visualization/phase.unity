@@ -2319,13 +2319,13 @@ MonoBehaviour:
       volumeDims: {x: 128, y: 128, z: 128}
       smoothingRadiusWS: 0
       adaptiveRadiusEnabled: 1
-      bulkSmoothingRadiusWS: 1
-      adaptiveDensitySurface: 190
-      adaptiveDensityBulk: 300
-      adaptiveDensityCurve: 0.92
+      bulkSmoothingRadiusWS: 0.1
+      adaptiveDensitySurface: 170
+      adaptiveDensityBulk: 194
+      adaptiveDensityCurve: 0.7
       adaptiveSpeedWeight: 1
-      adaptiveSpeedReference: 1.5
-      maxKernelRadiusVoxels: 4
+      adaptiveSpeedReference: 2
+      maxKernelRadiusVoxels: 3
     liquidBlur:
       enabled: 1
       radius: 1
@@ -2333,16 +2333,9 @@ MonoBehaviour:
       detailPreserve: 0
     vapour:
       enabled: 1
-      blurBeforeEnhance: 0
       blurRadius: 1
       blurSigma: 1
       blurDetailPreserve: 0.25
-      noiseScale: 28.1
-      noiseDriftDirection: {x: 0, y: -1, z: 0}
-      noiseDriftSpeed: 0.9
-      noiseOctaves: 6
-      domainWarpStrength: 1.929
-      detailStrength: 1
     rendering:
       mode: 1
       rayMarchingMaterial: {fileID: 2100000, guid: 981a72c002f021c43bcf6a3e18c751a5, type: 2}
@@ -2360,7 +2353,6 @@ MonoBehaviour:
   vapourRaymarchMaterial: {fileID: 2100000, guid: ecfb9a36afdd6404e9a46793705c4a27, type: 2}
   useMarchingCubes: 0
   marchingCubesIsoLevel: 0
-  enhanceVapourDensity: 1
   blurVapourDensity: 1
   blurLiquidDensity: 0
   liquidBlurRadius: 1
@@ -2369,12 +2361,6 @@ MonoBehaviour:
   blurRadius: 1
   blurSigma: 1
   blurDetailPreserve: 0.25
-  vapourNoiseScale: 28.1
-  vapourNoiseDriftDir: {x: 0, y: -1, z: 0}
-  vapourNoiseDriftSpeed: 0.9
-  vapourNoiseOctaves: 6
-  vapourNoiseDomainWarpStrength: 1.929
-  vapourNoiseDetailStrength: 1
   _settingsMigrated: 1
 --- !u!23 &1188592649
 MeshRenderer:
