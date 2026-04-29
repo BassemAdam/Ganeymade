@@ -133,7 +133,7 @@ Material:
     - _GlossMapScale: 0
     - _Glossiness: 0
     - _GlossyReflections: 0
-    - _IsoLevel: 0.01
+    - _IsoLevel: 0.001
     - _Jitter: 1
     - _LightStepSize: 0.726
     - _MarchSteps: 64
@@ -150,9 +150,9 @@ Material:
     - _SpecularHighlights: 1
     - _SrcBlend: 1
     - _SrcBlendAlpha: 1
-    - _StepSize: 0.105
+    - _StepSize: 0.096
     - _Surface: 0
-    - _SurfaceDetectionMargin: 0
+    - _SurfaceDetectionMargin: 0.1
     - _VapourAOStepSize: 0.946
     - _VapourAOStrength: 7.4
     - _VapourAmbientStrength: 1

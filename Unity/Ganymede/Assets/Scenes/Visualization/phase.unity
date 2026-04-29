@@ -2305,7 +2305,7 @@ MonoBehaviour:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 1188592644}
-  m_Enabled: 0
+  m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: e9eb36d79300fe7428f1000517630b74, type: 3}
   m_Name: 
@@ -2332,9 +2332,9 @@ MonoBehaviour:
   liquidBlurRadius: 1
   liquidBlurSigma: 1
   liquidBlurDetailPreserve: 0
-  blurRadius: 2
-  blurSigma: 1.5
-  blurDetailPreserve: 0
+  blurRadius: 1
+  blurSigma: 1
+  blurDetailPreserve: 0.25
   vapourNoiseScale: 28.1
   vapourNoiseDriftDir: {x: 0, y: -1, z: 0}
   vapourNoiseDriftSpeed: 0.9
@@ -3443,7 +3443,7 @@ PrefabInstance:
     m_Modifications:
     - target: {fileID: 920208063865847605, guid: 18cf1fa5220a198409fde72db8b3e2a5, type: 3}
       propertyPath: m_Enabled
-      value: 1
+      value: 0
       objectReference: {fileID: 0}
     - target: {fileID: 920208063865847605, guid: 18cf1fa5220a198409fde72db8b3e2a5, type: 3}
       propertyPath: particleMaterial

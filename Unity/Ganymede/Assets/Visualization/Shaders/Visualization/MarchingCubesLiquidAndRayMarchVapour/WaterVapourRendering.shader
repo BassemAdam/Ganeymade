@@ -2,6 +2,18 @@ Shader "Custom/VapourVolume"
 {
     Properties
     {
+        [Header(Phase Control)]
+        _DensityPhaseThreshold ("Density Threshold (vapour->liquid)", Range(0.0, 1.0)) = 0.55
+        _PhaseTransitionWidth  ("Phase Transition Width", Range(0.01, 0.5)) = 0.15
+
+        [Header(Shared Density Field)]
+        _NoiseScale         ("Noise Scale", Range(0.1, 20.0)) = 2.0
+        _NoiseDriftDir      ("Drift Direction", Vector) = (0, 1, 0, 0)
+        _NoiseDriftSpeed    ("Drift Speed", Range(0.0, 5.0)) = 0.3
+        _NoiseOctaves       ("Noise Octaves", Range(1, 8)) = 5
+        _DensityPower       ("Density Sharpness", Range(0.1, 5.0)) = 1.5
+        _EdgeSoftness       ("Edge Softness", Range(0.0, 0.5)) = 0.2
+
         [Header(Blue Noise Raymarching)]
         _BlueNoiseTex       ("Blue Noise Texture", 2D) = "gray" {}
         _BlueNoiseScale     ("Blue Noise Tiling", Range(0.25, 8.0)) = 1.0
@@ -27,12 +39,6 @@ Shader "Custom/VapourVolume"
 
         [Header(Raymarch)]
         _MarchSteps          ("March Steps", Range(8, 96)) = 40
-        _EdgeSoftness        ("Edge Softness", Range(0.0, 0.5)) = 0.2
-
-        [Header(Physics Bridge)]
-        _Density             ("Density (physics-set)", Range(0.0, 1.0)) = 1.0
-        _DensityMultiplier   ("Density Multiplier", Range(0.0, 4.0)) = 1.0
-        _DensityOffset       ("Density Offset", Range(-1.0, 1.0)) = 0.0
 
         [Header(Voxel Bounds Object Space)]
         _VoxelBoundsMin      ("Bounds Min", Vector) = (-0.5, -0.5, -0.5, 0)
@@ -84,10 +90,19 @@ Shader "Custom/VapourVolume"
             float4 _BlueNoiseTex_TexelSize;
 
             CBUFFER_START(UnityPerMaterial)
+                float   _DensityPhaseThreshold;
+                float   _PhaseTransitionWidth;
+
+                float   _NoiseScale;
+                float4  _NoiseDriftDir;
+                float   _NoiseDriftSpeed;
+                int     _NoiseOctaves;
+                float   _DensityPower;
+                float   _EdgeSoftness;
+
                 float   _BlueNoiseScale;
                 float   _BlueNoiseStrength;
                 float   _BlueNoiseTimeSpeed;
-                float   _EdgeSoftness;
 
                 half4   _VapourBaseColor;
                 half4   _VapourWarmColor;
@@ -106,13 +121,9 @@ Shader "Custom/VapourVolume"
                 float   _VapourFresnelStrength;
 
                 int     _MarchSteps;
-                float   _Density;
-                float   _DensityMultiplier;
-                float   _DensityOffset;
                 float4  _VoxelBoundsMin;
                 float4  _VoxelBoundsMax;
             CBUFFER_END
-
             Interpolators vert(MeshInput IN)
             {
                 Interpolators OUT;
@@ -149,42 +160,38 @@ Shader "Custom/VapourVolume"
                 float2 screenUV = IN.screenPos.xy / IN.screenPos.w;
                 float rawDepth = SAMPLE_TEXTURE2D_X(_CameraDepthTexture, sampler_CameraDepthTexture, screenUV).r;
                 float sceneLinearDepth = LinearEyeDepth(rawDepth, _ZBufferParams);
-                
+
                 Light mainLight = GetMainLight();
                 float3 lightDir = normalize(mainLight.direction);
                 half3 lightColor = mainLight.color;
-                
-                int marchSteps = _MarchSteps;
 
-                // Blue Noise
+                int marchSteps = _MarchSteps;
+                int noiseOctaves = _NoiseOctaves;
+                float3 driftDir = normalize((float3)_NoiseDriftDir.xyz);
+
                 float2 blueNoiseUV = frac(screenUV * _ScreenParams.xy * _BlueNoiseTex_TexelSize.xy * _BlueNoiseScale);
-                float2 blueNoiseTimeOffset = float2(0.75487766, 0.56984029) * frac(_Time.y * _BlueNoiseTimeSpeed);
-                float2 blueNoiseSampleUV = frac(blueNoiseUV + blueNoiseTimeOffset);
+                float2 blueNoiseTimeOff = float2(0.75487766, 0.56984029) * frac(_Time.y * _BlueNoiseTimeSpeed);
+                float2 blueNoiseSampleUV = frac(blueNoiseUV + blueNoiseTimeOff);
                 float2 blueNoiseRG = SAMPLE_TEXTURE2D(_BlueNoiseTex, sampler_BlueNoiseTex, blueNoiseSampleUV).rg;
 
-                // physicsBlend=1.0 → fast path in SampleDensity: reads physics texture directly,
-                // no procedural noise. Stub values for unused noise params.
                 WaterPhaseMarchResult phaseResult = RaymarchWaterPhase(
                 entryWS, rayDir, lightDir, lightColor,
                 marchSteps, marchDistance,
                 _VapourScatterG, _VapourAbsorption,
-                1.0,       // liquidOpacityCoeff (unused: liquidPhase always 0)
-                1.0, 0.01, // phaseThreshold / phaseWidth: all density is vapour
-                _Time.y, float3(0,1,0), 0.0,  // time, driftDir, driftSpeed (unused in fast path)
-                1.0, 1, 1.0,                  // noiseScale, octaves, densityPower (unused in fast path)
-                _Density, 1.0,                // physicsDensity, physicsBlend=1 → always fast path
+                1.0,
+                _DensityPhaseThreshold, _PhaseTransitionWidth,
+                _Time.y, driftDir, _NoiseDriftSpeed,
+                _NoiseScale, noiseOctaves, _DensityPower,
+                0.0, 0.0,
                 sceneLinearDepth, boundsMinOS, boundsMaxOS,
                 _EdgeSoftness, screenUV,
-                blueNoiseRG, _BlueNoiseStrength,
-                0.0,                          // noiseDetailStrength=0 → skip per-step FBM
-                _DensityMultiplier, _DensityOffset
+                blueNoiseRG, _BlueNoiseStrength
                 );
 
-                half3 tempTint = lerp((half3)_VapourCoolColor.rgb, (half3)_VapourWarmColor.rgb, _TemperatureBlend);
                 float3 viewDirWS = normalize(IN.viewDirWS);
-
+                half3 tempTint = lerp((half3)_VapourCoolColor.rgb, (half3)_VapourWarmColor.rgb, _TemperatureBlend);
                 half3 vapourColMain = phaseResult.vapourScatter * _VapourBaseColor.rgb * tempTint;
-                half3 vapourColAdd  = phaseResult.vapourScatterAdditional * _VapourBaseColor.rgb * tempTint;
+                half3 vapourColAdd = phaseResult.vapourScatterAdditional * _VapourBaseColor.rgb * tempTint;
 
                 float vapourLitness = phaseResult.vapourLitness;
                 half3 vapourCol = lerp((half3)_VapourShadowColor.rgb * phaseResult.vapourAlpha, vapourColMain, vapourLitness);
@@ -197,19 +204,19 @@ Shader "Custom/VapourVolume"
                 float backPhase = HenyeyGreenstein(cosTheta, _VapourScatterG);
                 float hgNorm = HenyeyGreenstein(0.0, _VapourScatterG);
                 float backGlow = saturate(backPhase / (hgNorm * 8.0));
-
                 vapourCol += backGlow * _VapourBackscatter * lightColor * phaseResult.vapourAlpha * vapourLitness;
+
                 vapourCol += (half3)_VapourEmissionColor.rgb * _VapourEmissionStrength * vapourLitness * phaseResult.vapourAlpha;
 
                 float vapourFresnel = FresnelEdge(viewDirWS, -rayDir, _VapourFresnelPower);
                 vapourCol += vapourFresnel * _VapourFresnelStrength * lightColor * phaseResult.vapourAlpha * vapourLitness;
+
                 vapourCol += vapourColAdd;
 
                 float vapourAlpha = saturate(phaseResult.vapourAlpha * (1.0 + vapourFresnel * _VapourFresnelStrength * 0.35));
 
                 return half4(vapourCol, vapourAlpha);
             }
-
 
             ENDHLSL
         }
