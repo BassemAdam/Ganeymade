@@ -42,8 +42,47 @@ public class WaterPhaseDensityGridSettings
     [Tooltip("Voxel resolution of the physics density volume.")]
     public Vector3Int volumeDims = new Vector3Int(64, 64, 64);
 
-    [Tooltip("World-space radius of the splat kernel. If < 0, reads from UseComputePlugin.smoothingRadius.")]
+    [Tooltip("World-space radius used for SURFACE / lonely particles (low SPH density). " +
+             "Keep small so splash droplets and thin sheets stay crisp. " +
+             "If < 0, falls back to UseComputePlugin.smoothingRadius.")]
     public float smoothingRadiusWS = 1f;
+
+    [Header("Adaptive (density-driven) smoothing")]
+    [Tooltip("When ON, per-particle smoothing radius is lerped between 'smoothingRadiusWS' " +
+             "(at adaptiveDensitySurface) and 'bulkSmoothingRadiusWS' (at adaptiveDensityBulk). " +
+             "This gives splashes/droplets a small footprint and bulk water a wide, smooth one.")]
+    public bool adaptiveRadiusEnabled = true;
+
+    [Tooltip("World-space radius used for BULK particles (high SPH density). " +
+             "Make this noticeably larger than 'smoothingRadiusWS' for a smoother body and normals. " +
+             "Ignored when 'adaptiveRadiusEnabled' is OFF.")]
+    [Min(0f)]
+    public float bulkSmoothingRadiusWS = 2.5f;
+
+    [Tooltip("SPH density value treated as 'surface / lonely' (uses surface radius). " +
+             "Tune from your visualizer: pick the density observed on splash / surface particles (e.g. ~175).")]
+    [Min(0f)]
+    public float adaptiveDensitySurface = 175f;
+
+    [Tooltip("SPH density value treated as 'fully bulk' (uses bulk radius). " +
+             "Tune from your visualizer: pick the density observed deep inside the water body (e.g. ~300).")]
+    [Min(0f)]
+    public float adaptiveDensityBulk = 300f;
+
+    [Tooltip("Gamma curve applied to the density→radius mapping.\n" +
+             " 1.0  = linear interpolation (default).\n" +
+             " < 1  = EXAGGERATE differences among LOW-density particles (splashes, lonely / moving particles, " +
+                     "thin sheets). Recommended 0.25–0.5 to give visible radius variation across particles whose " +
+                     "densities cluster tightly just above the rest density.\n" +
+             " > 1  = exaggerate differences among HIGH-density bulk particles instead.")]
+    [Range(0.05f, 4f)]
+    public float adaptiveDensityCurve = 0.4f;
+
+    [Tooltip("Hard cap on the splat loop half-size in voxels. The loop runs (2r+1)^3 times per particle, " +
+             "so r=4 → 729 taps, r=6 → 2197 taps, r=8 → 4913 taps. Larger bulk radii get TRUNCATED to this " +
+             "cap rather than blowing up the GPU cost. If the truncation looks too small, raise this carefully.")]
+    [Range(1, 8)]
+    public int maxKernelRadiusVoxels = 4;
 }
 
 [Serializable]

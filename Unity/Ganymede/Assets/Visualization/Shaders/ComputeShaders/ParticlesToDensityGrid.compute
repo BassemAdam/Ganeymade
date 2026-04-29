@@ -53,8 +53,12 @@ float4 _BoundsMinWS;          // xyz
 float4 _BoundsMaxWS;          // xyz
 float  _ParticleContribution;  // unitless, per particle
 float  _FixedPointScale;      // e.g. 1024
-float  _SmoothingRadiusWS;    // world units, controls splat kernel falloff
-int    _KernelRadiusVoxels;   // 0 = nearest voxel only, 1 = 27-voxel neighborhood, etc.
+float  _SmoothingRadiusWS;    // world units, splat kernel size for SURFACE/lonely particles (low SPH density). 0 = single-voxel dot.
+float  _SmoothingRadiusWS_Bulk; // world units, splat kernel size for BULK particles (high SPH density)
+float  _AdaptiveDensitySurface; // SPH density value treated as "surface/lonely" → uses _SmoothingRadiusWS
+float  _AdaptiveDensityBulk;    // SPH density value treated as "fully bulk"     → uses _SmoothingRadiusWS_Bulk
+float  _AdaptiveDensityCurve;   // gamma applied to t before lerp. 1 = linear, <1 exaggerates low-density variation, >1 exaggerates high-density variation
+int    _KernelRadiusVoxels;   // loop bound covering the LARGER of the two radii (bulk). Falloff zeroes smaller-h splats automatically.
 float2 _InvDensityScaleRG;    // x = liquid scale, y = vapour scale (vapour rest density is lower)
 
 // ── Gaussian blur params (vapour) ───────────────────────────────────────────
@@ -141,19 +145,47 @@ void SplatParticles(uint id : SV_DispatchThreadID)
     // isolated particles have low p.density. _ParticleContribution is now just a display scale.
     float baseAmount = max(0.0, p.density * _ParticleContribution) * max(_FixedPointScale, 1.0);
 
-    // Fast path: nearest voxel only.
-    if (_KernelRadiusVoxels <= 0 || _SmoothingRadiusWS <= 1e-5)
+    // Fast path: when the loop bound is zero, every particle reduces to a 1-voxel splat.
+    if (_KernelRadiusVoxels <= 0)
     {
         uint amt = (uint)round(baseAmount);
         AtomicAddDensity(base, slabOffset, amt);
         return;
     }
 
-    float h     = _SmoothingRadiusWS;
+    // ── Adaptive per-particle smoothing radius ─────────────────────────────────
+    // Map SPH density [_AdaptiveDensitySurface .. _AdaptiveDensityBulk] → [0..1],
+    // then bend the response with a gamma curve so small density differences in
+    // one end of the range still produce visibly different splat radii:
+    //   _AdaptiveDensityCurve = 1   → linear lerp
+    //   _AdaptiveDensityCurve < 1   → expand the LOW-density end (more variation between
+    //                                 splash / lonely particles whose densities cluster
+    //                                 tightly just above the rest density)
+    //   _AdaptiveDensityCurve > 1   → expand the HIGH-density end
+    //   t = 0  → fully surface / lonely → use _SmoothingRadiusWS (small or 0)
+    //   t = 1  → fully bulk             → use _SmoothingRadiusWS_Bulk (large)
+    float densitySpan = max(_AdaptiveDensityBulk - _AdaptiveDensitySurface, 1e-5);
+    float tLin  = saturate((p.density - _AdaptiveDensitySurface) / densitySpan);
+    float tCurv = pow(tLin, max(_AdaptiveDensityCurve, 1e-3));
+    float h     = lerp(_SmoothingRadiusWS, _SmoothingRadiusWS_Bulk, tCurv);
+
+    // Per-particle nearest-voxel fast path: if THIS particle's radius is ~zero,
+    // splat it as a single voxel so very low-density particles render as crisp dots
+    // (without disabling splatting for the rest of the simulation).
+    if (h <= 1e-5)
+    {
+        uint amt = (uint)round(baseAmount);
+        AtomicAddDensity(base, slabOffset, amt);
+        return;
+    }
+
     float invH2 = 1.0 / max(h * h, 1e-6);
 
     // Splat into a small voxel neighborhood using a cheap poly6-ish falloff:
     // w = (1 - (r/h)^2)^3 for r<=h.
+    // _KernelRadiusVoxels is sized for the BULK (largest) h; smaller per-particle
+    // h naturally produces w == 0 outside its own footprint, so we don't need
+    // per-particle loop bounds.
     int r = _KernelRadiusVoxels;
 
     [loop]

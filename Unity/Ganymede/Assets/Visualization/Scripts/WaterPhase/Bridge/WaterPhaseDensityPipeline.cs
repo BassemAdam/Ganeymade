@@ -22,6 +22,10 @@ public sealed class WaterPhaseDensityPipeline
     private static readonly int ID_ParticleContribution = Shader.PropertyToID("_ParticleContribution");
     private static readonly int ID_FixedPointScale = Shader.PropertyToID("_FixedPointScale");
     private static readonly int ID_SmoothingRadiusWS = Shader.PropertyToID("_SmoothingRadiusWS");
+    private static readonly int ID_SmoothingRadiusWS_Bulk = Shader.PropertyToID("_SmoothingRadiusWS_Bulk");
+    private static readonly int ID_AdaptiveDensitySurface = Shader.PropertyToID("_AdaptiveDensitySurface");
+    private static readonly int ID_AdaptiveDensityBulk = Shader.PropertyToID("_AdaptiveDensityBulk");
+    private static readonly int ID_AdaptiveDensityCurve = Shader.PropertyToID("_AdaptiveDensityCurve");
     private static readonly int ID_KernelRadiusVoxels = Shader.PropertyToID("_KernelRadiusVoxels");
     private static readonly int ID_RestDensity = Shader.PropertyToID("_RestDensity");
     private static readonly int ID_InvDensityScaleRG = Shader.PropertyToID("_InvDensityScaleRG");
@@ -117,14 +121,37 @@ public sealed class WaterPhaseDensityPipeline
         Vector3 boundsMin,
         Vector3 boundsMax)
     {
-        float requestedRadius = settings.DensityGrid.smoothingRadiusWS >= 0f
-            ? settings.DensityGrid.smoothingRadiusWS
-            : computePlugin.smoothingRadius;
+        var grid = settings.DensityGrid;
 
-        _computeShader.SetFloat(ID_SmoothingRadiusWS, Mathf.Max(0f, requestedRadius));
+        float surfaceRadius = grid.smoothingRadiusWS >= 0f
+            ? grid.smoothingRadiusWS
+            : computePlugin.smoothingRadius;
+        surfaceRadius = Mathf.Max(0f, surfaceRadius);
+
+        // Bulk radius is only meaningful when adaptive mode is enabled; otherwise
+        // collapse it to the surface radius so the per-particle lerp degenerates
+        // into a single uniform radius (preserving previous behavior).
+        float bulkRadius = grid.adaptiveRadiusEnabled
+            ? Mathf.Max(surfaceRadius, grid.bulkSmoothingRadiusWS)
+            : surfaceRadius;
+
+        // Loop bound on the GPU must cover the LARGER footprint, otherwise bulk
+        // particles get clipped. The poly6 falloff zeroes out smaller-h splats
+        // automatically, so it's safe for surface particles too.
+        float loopRadius = Mathf.Max(surfaceRadius, bulkRadius);
+
+        _computeShader.SetFloat(ID_SmoothingRadiusWS, surfaceRadius);
+        _computeShader.SetFloat(ID_SmoothingRadiusWS_Bulk, bulkRadius);
+        _computeShader.SetFloat(ID_AdaptiveDensitySurface, Mathf.Max(0f, grid.adaptiveDensitySurface));
+        _computeShader.SetFloat(
+            ID_AdaptiveDensityBulk,
+            Mathf.Max(grid.adaptiveDensitySurface + 0.01f, grid.adaptiveDensityBulk));
+        _computeShader.SetFloat(ID_AdaptiveDensityCurve, Mathf.Max(0.01f, grid.adaptiveDensityCurve));
         _computeShader.SetInt(
             ID_KernelRadiusVoxels,
-            ComputeKernelRadiusVoxels(requestedRadius, volumeDims, boundsMin, boundsMax));
+            Mathf.Min(
+                Mathf.Max(1, grid.maxKernelRadiusVoxels),
+                ComputeKernelRadiusVoxels(loopRadius, volumeDims, boundsMin, boundsMax)));
         _computeShader.SetFloat(ID_RestDensity, Mathf.Max(0.01f, computePlugin.restDensity));
     }
 
