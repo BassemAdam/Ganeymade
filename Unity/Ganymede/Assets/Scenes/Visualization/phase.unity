@@ -2451,7 +2451,7 @@ MonoBehaviour:
       marchingCubesLUT: {fileID: 4900000, guid: 711f0eebef002a84e95e6dc230c006be, type: 3}
     densityGrid:
       volumeDims: {x: 128, y: 128, z: 128}
-      liquidSmoothingRadiusWS: 0.12
+      liquidSmoothingRadiusWS: 0.1
       adaptiveRadiusEnabled: 0
       liquidBulkSmoothingRadiusWS: 1
       vapourSmoothingRadiusWS: 2.5
@@ -2459,9 +2459,11 @@ MonoBehaviour:
       adaptiveDensityBulk: 300
       adaptiveDensityCurve: 0.92
       maxKernelRadiusVoxels: 2
+      splashRejectDensityBelow: 194.3
+      splashRejectSpeedAbove: 0.34
     liquidBlur:
       enabled: 1
-      radius: 4
+      radius: 2
       sigma: 3.95
       detailPreserve: 0
     vapour:

@@ -35,6 +35,8 @@ public sealed class WaterPhaseDensityPipeline
     private static readonly int ID_LiquidBlurRadius = Shader.PropertyToID("_LiquidBlurRadius");
     private static readonly int ID_LiquidBlurSigma = Shader.PropertyToID("_LiquidBlurSigma");
     private static readonly int ID_LiquidBlurDetailPreserve = Shader.PropertyToID("_LiquidBlurDetailPreserve");
+    private static readonly int ID_SplashRejectDensityBelow = Shader.PropertyToID("_SplashRejectDensityBelow");
+    private static readonly int ID_SplashRejectSpeedAbove = Shader.PropertyToID("_SplashRejectSpeedAbove");
 
     public WaterPhaseDensityPipeline(ComputeShader computeShader)
     {
@@ -148,6 +150,8 @@ public sealed class WaterPhaseDensityPipeline
                 Mathf.Max(1, grid.maxKernelRadiusVoxels),
                 ComputeKernelRadiusVoxels(loopRadius, volumeDims, boundsMin, boundsMax)));
         _computeShader.SetFloat(ID_RestDensity, Mathf.Max(0.01f, computePlugin.restDensity));
+        _computeShader.SetFloat(ID_SplashRejectDensityBelow, Mathf.Max(0f, grid.splashRejectDensityBelow));
+        _computeShader.SetFloat(ID_SplashRejectSpeedAbove, Mathf.Max(0f, grid.splashRejectSpeedAbove));
     }
 
     private static int ComputeKernelRadiusVoxels(float smoothingRadiusWS, Vector3Int volumeDims, Vector3 boundsMin, Vector3 boundsMax)

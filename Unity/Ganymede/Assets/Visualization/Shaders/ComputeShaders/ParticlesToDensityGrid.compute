@@ -61,6 +61,17 @@ float  _AdaptiveDensityCurve;   // gamma applied to t before lerp. 1 = linear, <
 int    _KernelRadiusVoxels;   // loop bound covering the LARGER of the two radii (bulk). Falloff zeroes smaller-h splats automatically.
 float2 _InvDensityScaleRG;    // x = liquid scale, y = vapour scale (vapour rest density is lower)
 
+// ── Splash rejection (debug/test) ───────────────────────────────────────────
+// LIQUID-ONLY (phase 0). A particle is fully skipped (contributes nothing to the
+// density grid) if either condition is met:
+//   p.density < _SplashRejectDensityBelow      (isolated / low-neighbor → likely splash)
+//   length(p.velocity) > _SplashRejectSpeedAbove (fast → likely splash)
+// Each test is disabled when its threshold is <= 0, so set both to 0 to keep
+// the previous behaviour. Vapour particles are always unaffected.
+float  _SplashRejectDensityBelow;
+float  _SplashRejectSpeedAbove;
+// ─────────────────────────────────────────────────────────────────────────────
+
 // ── Gaussian blur params (vapour) ───────────────────────────────────────────
 int    _BlurRadius;              // neighborhood half-size in voxels (1 = 3^3, 2 = 5^3, etc.)
 float  _BlurSigma;               // Gaussian sigma in voxels; controls falloff rate
@@ -115,6 +126,20 @@ void SplatParticles(uint id : SV_DispatchThreadID)
     //   anything else (e.g. -1 = boundary/inactive)  →  skip
     if (p.phase < 0 || p.phase > 1)
         return;
+
+    // Splash-rejection test. Liquid only — vapour is a separate presence mask.
+    // ANDed: a particle must satisfy BOTH conditions to be rejected (low density AND high speed).
+    // Either threshold set to <= 0 disables that side of the AND (treated as "always true"),
+    // so setting both to 0 keeps the previous behaviour (no rejection).
+    // Compares squared speed against squared threshold to avoid a sqrt.
+    if (p.phase == 0)
+    {
+        bool densityHit = (p.density < _SplashRejectDensityBelow);
+        bool speedHit   =  (dot(p.velocity, p.velocity) > _SplashRejectSpeedAbove * _SplashRejectSpeedAbove);
+        bool anyEnabled = (_SplashRejectDensityBelow > 0.0) || (_SplashRejectSpeedAbove > 0.0);
+        if (anyEnabled && densityHit && speedHit)
+            return;
+    }
 
     uint N          = (uint)(_VolumeDims.x * _VolumeDims.y * _VolumeDims.z);
     uint slabOffset = (p.phase == 1) ? N : 0u;

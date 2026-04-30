@@ -92,6 +92,19 @@ public class WaterPhaseDensityGridSettings
              "cap rather than blowing up the GPU cost. If the truncation looks too small, raise this carefully.")]
     [Range(1, 8)]
     public int maxKernelRadiusVoxels = 4;
+
+    [Header("Splash rejection (debug)")]
+    [Tooltip("LIQUID-ONLY. Liquid particles whose SPH density is BELOW this value are " +
+             "fully skipped during splat (no contribution to the density grid). " +
+             "Set to 0 to disable. Use this together with adaptiveDensitySurface from your visualizer.")]
+    [Min(0f)]
+    public float splashRejectDensityBelow = 0f;
+
+    [Tooltip("LIQUID-ONLY. Liquid particles whose speed (|velocity|, world units / sec) " +
+             "is ABOVE this value are fully skipped during splat. " +
+             "Set to 0 to disable. Combine with splashRejectDensityBelow to test the splash hypothesis.")]
+    [Min(0f)]
+    public float splashRejectSpeedAbove = 0f;
 }
 
 [Serializable]
