@@ -22,21 +22,21 @@ SurfaceHit FindWaterSurfaceHit(
 
     if (!cameraStartsInsideVolume)
     {
-        float entryDensity = SampleLiquidDensityWS(volumeData.entryPositionWS);
+        float entryDensity = SampleAdjustedLiquidDensityWS(volumeData.entryPositionWS);
         if (entryDensity >= isoLevel)
             return MakeSurfaceHit(volumeData.entryPositionWS, viewData.viewRayDirectionWS, true);
     }
 
     SurfaceHit surfaceHit = NoSurfaceHit();
     float sampleDistance = volumeData.distanceToVolume + safeStepSize * viewData.blueNoiseValue;
-    float previousDensity = SampleLiquidDensityWS(
+    float previousDensity = SampleAdjustedLiquidDensityWS(
         viewData.cameraPositionWS + viewData.viewRayDirectionWS * sampleDistance
     );
 
     while (!surfaceHit.hit && sampleDistance < maxSearchDistance)
     {
         float3 samplePositionWS = viewData.cameraPositionWS + viewData.viewRayDirectionWS * sampleDistance;
-        float currentDensity = SampleLiquidDensityWS(samplePositionWS);
+        float currentDensity = SampleAdjustedLiquidDensityWS(samplePositionWS);
 
         bool enteringWater = previousDensity < surfaceThreshold && currentDensity >= surfaceThreshold;
         bool leavingWater = previousDensity >= surfaceThreshold && currentDensity < surfaceThreshold;
@@ -73,8 +73,8 @@ WaterRaymarchBackgroundData BuildWaterRaymarchBackgroundData(
     // {
     //     float3 midPointWS = volumeData.entryPositionWS
     //         + viewData.viewRayDirectionWS * (volumeData.distanceInsideVolume * 0.5);
-    //     bool hasLiquid = SampleLiquidDensityWS(volumeData.entryPositionWS) > 0.0
-    //                   || SampleLiquidDensityWS(midPointWS)                 > 0.0;
+    //     bool hasLiquid = SampleAdjustedLiquidDensityWS(volumeData.entryPositionWS) > 0.0
+    //                   || SampleAdjustedLiquidDensityWS(midPointWS)                 > 0.0;
     //     if (!hasLiquid)
     //         return backgroundData;
     // }

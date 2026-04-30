@@ -2452,19 +2452,19 @@ MonoBehaviour:
     densityGrid:
       volumeDims: {x: 128, y: 128, z: 128}
       liquidSmoothingRadiusWS: 0.1
-      adaptiveRadiusEnabled: 0
-      liquidBulkSmoothingRadiusWS: 1
+      adaptiveRadiusEnabled: 1
+      liquidBulkSmoothingRadiusWS: 9
       vapourSmoothingRadiusWS: 2.5
       adaptiveDensitySurface: 190
-      adaptiveDensityBulk: 300
+      adaptiveDensityBulk: 250
       adaptiveDensityCurve: 0.92
       maxKernelRadiusVoxels: 2
-      splashRejectDensityBelow: 194.3
+      splashRejectDensityBelow: 264.9
       splashRejectSpeedAbove: 0.34
     liquidBlur:
       enabled: 1
       radius: 2
-      sigma: 3.95
+      sigma: 2.7
       detailPreserve: 0
     vapour:
       enabled: 0
@@ -2473,7 +2473,7 @@ MonoBehaviour:
       blurDetailPreserve: 0.25
     rendering:
       mode: 0
-      rayMarchingMaterial: {fileID: 2100000, guid: 981a72c002f021c43bcf6a3e18c751a5, type: 2}
+      rayMarchingMaterial: {fileID: 2100000, guid: 03c4cd8b0ea45e14190b02d13513c0d9, type: 2}
       marchingCubesMaterial: {fileID: 2100000, guid: a5f165da16e6e4a4e8b93a9c48ecc59b, type: 2}
       vapourRaymarchMaterial: {fileID: 2100000, guid: ecfb9a36afdd6404e9a46793705c4a27, type: 2}
       marchingCubesIsoLevel: 0

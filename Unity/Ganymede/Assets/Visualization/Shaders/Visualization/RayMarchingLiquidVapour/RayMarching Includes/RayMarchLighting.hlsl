@@ -29,9 +29,10 @@ float3 CalculateTransmittedSunLightRG(
 
     while (dist < dstToSunExit)
     {
-        float2 d = SampleDensityRG_WS(posWS + sunDir * dist);
-        float  dl = max(d.x, 0.0);
-        float  dv = max(d.y, 0.0);
+        float3 samplePositionWS = posWS + sunDir * dist;
+        float2 adjustedDensity = SampleAdjustedDensityRG_WS(samplePositionWS);
+        float  dl = adjustedDensity.x;
+        float  dv = adjustedDensity.y;
         opticalDepth += (liquidExtinction * dl + vapourExtinction * dv) * lightStepSize;
         dist += lightStepSize;
     }

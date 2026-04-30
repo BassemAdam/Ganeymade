@@ -43,14 +43,14 @@ SurfaceHit MakeSurfaceHit(float3 posWS, float3 rayDir, bool enteringWater)
     s.posWS = posWS;
 
     float3 n = GetSurfaceNormalWS(posWS, rayDir);
-    // A zero normal means the baked gradient was below threshold — this density
+    // A zero normal means the local density gradient was below threshold — this
     // crossing is not a real surface (e.g. noise, interior bulk, or thin wisp).
     // Discard it so the ray loop can continue searching for a genuine surface.
     if (dot(n, n) < 1e-8)
         return NoSurfaceHit();
 
-    // The pre-baked outward normal may still point into the liquid from the
-    // viewer's side. Flip it if needed so Fresnel/reflection/refraction are correct.
+    // The outward normal may still point into the liquid from the viewer's side.
+    // Flip it if needed so Fresnel/reflection/refraction are correct.
     if (dot(n, rayDir) > 0.0)
         n = -n;
     s.normal = n;

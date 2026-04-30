@@ -127,19 +127,7 @@ void SplatParticles(uint id : SV_DispatchThreadID)
     if (p.phase < 0 || p.phase > 1)
         return;
 
-    // Splash-rejection test. Liquid only — vapour is a separate presence mask.
-    // ANDed: a particle must satisfy BOTH conditions to be rejected (low density AND high speed).
-    // Either threshold set to <= 0 disables that side of the AND (treated as "always true"),
-    // so setting both to 0 keeps the previous behaviour (no rejection).
-    // Compares squared speed against squared threshold to avoid a sqrt.
-    if (p.phase == 0)
-    {
-        bool densityHit = (p.density < _SplashRejectDensityBelow);
-        bool speedHit   =  (dot(p.velocity, p.velocity) > _SplashRejectSpeedAbove * _SplashRejectSpeedAbove);
-        bool anyEnabled = (_SplashRejectDensityBelow > 0.0) || (_SplashRejectSpeedAbove > 0.0);
-        if (anyEnabled && densityHit && speedHit)
-            return;
-    }
+
 
     uint N          = (uint)(_VolumeDims.x * _VolumeDims.y * _VolumeDims.z);
     uint slabOffset = (p.phase == 1) ? N : 0u;

@@ -16,6 +16,9 @@ Shader "Custom/WaterRaymarching"
         _RefractionStrength ("Refraction Strength", Range(0.0, 0.5)) = 0.05
         _ReflectionStrength ("Reflection Strength", Range(0.0, 1.0)) = 0.5
         _SurfaceDetectionMargin ("Surface Detection Margin", Float) = 0.0
+        _NormalSampleRadiusVoxels ("Normal Sample Radius (Voxels)", Range(0.5, 6.0)) = 1.0
+        _BoundaryNormalBlendDistance ("Boundary Normal Blend Distance", Range(0.0, 2.0)) = 0.3
+        _BoundaryNormalUpBiasPower ("Boundary Up Bias Power", Range(1.0, 12.0)) = 5.0
         [Header(Vapour Phase)]
         _VapourScatteringCoefficients ("Vapour Extinction sigma_t (RGB)", Color) = (0.05, 0.05, 0.05, 1.0)
         _VapourScatterColor ("Vapour Scatter Albedo (RGB)", Color) = (0.9, 0.9, 0.9, 1.0)
@@ -45,9 +48,6 @@ Shader "Custom/WaterRaymarching"
             #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Lighting.hlsl"
             #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/DeclareDepthTexture.hlsl"
             #include "RayMarching Includes/RayMarchGeometry.hlsl"
-            #include "RayMarching Includes/RayMarchDensity.hlsl"
-            #include "RayMarching Includes/RayMarchLighting.hlsl"
-            #include "RayMarching Includes/RayMarchSurface.hlsl"
 
             struct WaterRaymarchMeshInput
             {
@@ -65,8 +65,8 @@ Shader "Custom/WaterRaymarching"
                 // Liquid volumetric
                 float3 _ScatteringCoefficients;      // sigma_t for liquid (extinction = scatter + absorb)
                 float3 _LiquidScatterColor;          // scatter albedo tint
-                float  _DensityMultiplier;           // volumetric scale only (not used for surface)
-                float  _DensityOffset;               // volumetric bias only (not used for surface)
+                float  _DensityMultiplier;           // liquid density scale for volume, surface detection, and normals
+                float  _DensityOffset;               // liquid density bias for volume, surface detection, and normals
                 float  _LightStepSize;
                 // Surface optics
                 float  _StepSize;
@@ -74,6 +74,9 @@ Shader "Custom/WaterRaymarching"
                 float  _RefractionStrength;
                 float  _ReflectionStrength;
                 float  _SurfaceDetectionMargin;
+                float  _NormalSampleRadiusVoxels;
+                float  _BoundaryNormalBlendDistance;
+                float  _BoundaryNormalUpBiasPower;
                 // Vapour volumetric
                 float3 _VapourScatteringCoefficients; // sigma_t for vapour
                 float3 _VapourScatterColor;
@@ -87,6 +90,9 @@ Shader "Custom/WaterRaymarching"
             TEXTURE2D(_CameraOpaqueTexture);
             SAMPLER(sampler_CameraOpaqueTexture);
 
+            #include "RayMarching Includes/RayMarchDensity.hlsl"
+            #include "RayMarching Includes/RayMarchLighting.hlsl"
+            #include "RayMarching Includes/RayMarchSurface.hlsl"
             #include "RayMarching Includes/WaterRaymarchView.hlsl"
             #include "RayMarching Includes/WaterRaymarchVolume.hlsl"
             #include "RayMarching Includes/WaterRaymarchBackground.hlsl"
@@ -141,9 +147,9 @@ Shader "Custom/WaterRaymarching"
                     currentDistance += safeStepSize;
 
                     // Scale each channel independently; offset applies to liquid only.
-                    float2 raw = SampleDensityRG_WS(samplePositionWS);
-                    float  dl  = max(raw.x * _DensityMultiplier + _DensityOffset, 0.0); // liquid
-                    float  dv  = max(raw.y * _VapourDensityMultiplier,            0.0); // vapour
+                    float2 adjustedDensity = SampleAdjustedDensityRG_WS(samplePositionWS);
+                    float  dl = adjustedDensity.x; // liquid
+                    float  dv = adjustedDensity.y; // vapour
 
                     // Skip empty steps without paying for a shadow march.
                     if (dl + dv < 1e-6)
@@ -193,7 +199,7 @@ Shader "Custom/WaterRaymarching"
                 float3 finalColor = accumulatedScatteredLight
                                   + backgroundColor * remainingViewTransmittance;
 
-                // // DEBUG: visualize surface normal — remap [-1,1] → [0,1]
+                // // // DEBUG: visualize surface normal — remap [-1,1] → [0,1]
                 // if (backgroundData.surfaceHit.hit)
                 //     return half4(backgroundData.surfaceHit.normal * 0.5 + 0.5, 1.0);
 
