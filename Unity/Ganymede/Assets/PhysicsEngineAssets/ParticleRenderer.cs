@@ -96,7 +96,15 @@ public class ParticleRenderer : MonoBehaviour
 
         // Set up default gradient if none was configured in the Inspector
         // Temperature gradient: Blue (cold) → Red (hot)
-        if (valueGradient == null || valueGradient.colorKeys.Length < 2)
+        bool allWhite = true;
+        foreach (var key in valueGradient.colorKeys)
+            if (key.color != Color.white) 
+            { 
+                allWhite = false; 
+                break; 
+            }
+
+        if (allWhite)
         {
             valueGradient = new Gradient();
             valueGradient.SetKeys(

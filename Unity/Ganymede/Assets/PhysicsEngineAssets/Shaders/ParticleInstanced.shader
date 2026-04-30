@@ -33,7 +33,7 @@ Shader "Custom/ParticleInstanced"
                 float temperature;
                 int phase;
                 float latentHeatAccum;
-                float _pad1;
+                float _fixedId;
             };
 
             StructuredBuffer<Particle> _ParticleBuffer;
@@ -63,7 +63,7 @@ Shader "Custom/ParticleInstanced"
                     v2f dead;
                     dead.pos = float4(0, 0, 1, 0); // point at infinity
                     dead.normal= float3(0, 1, 0);
-                    dead.temperature = 0;
+                    dead.value = 0;
                     dead.isGas = 0;
                     return dead;
                 }
