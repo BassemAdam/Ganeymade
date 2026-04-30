@@ -99,10 +99,23 @@ public class PhysicsWaterPhaseBridge : MonoBehaviour
         _computePlugin.GetBoundsWS(out Vector3 boundsMin, out Vector3 boundsMax);
         _densityPipeline.Execute(_computePlugin, settings, _resources, boundsMin, boundsMax);
         RenderActivePresentation(boundsMin, boundsMax);
+
+        // Publish particle buffer & sphere radius to the URP screen-space water feature.
+        // Sphere radius defaults to half the SPH smoothing radius (a common choice for
+        // splat-as-sphere rendering — keeps neighbouring particles overlapping just enough
+        // to form a continuous depth surface without inflating the silhouette).
+        ScreenSpaceWaterRegistry.Publish(
+            _resources.ParticleOutputBuffer,
+            _computePlugin.particleCount,
+            settings.DensityGrid.smoothingRadiusWS * 0.5f,
+            boundsMin,
+            boundsMax);
     }
 
     private void OnDestroy()
     {
+        ScreenSpaceWaterRegistry.Clear();
+
         if (_particleOutputBridge != null)
             _particleOutputBridge.ClearRegistration();
 
@@ -186,6 +199,9 @@ public class PhysicsWaterPhaseBridge : MonoBehaviour
             return false;
         }
 
+        if (settings.Rendering.mode == WaterSurfaceRenderMode.ScreenSpaceFluid)
+            return true; // no extra assets required — driven by the URP RendererFeature
+
         if (settings.Rendering.mode == WaterSurfaceRenderMode.RaymarchVolume)
         {
             if (settings.Rendering.rayMarchingMaterial == null)
@@ -231,6 +247,17 @@ public class PhysicsWaterPhaseBridge : MonoBehaviour
                 _marchingRenderer.SetInactive();
 
             _lastRenderMode = settings.Rendering.mode;
+        }
+
+        // Screen-space mode: disable all proxy renderers — the URP RendererFeature
+        // draws everything via RenderGraph passes; no proxy mesh is needed.
+        if (settings.Rendering.mode == WaterSurfaceRenderMode.ScreenSpaceFluid)
+        {
+            if (_raymarchRenderer != null)
+                _raymarchRenderer.SetInactive();
+            if (_marchingRenderer != null)
+                _marchingRenderer.SetInactive();
+            return;
         }
 
         if (settings.Rendering.mode == WaterSurfaceRenderMode.RaymarchVolume)

@@ -385,12 +385,41 @@ void BakeNormals(uint3 id : SV_DispatchThreadID)
     // outward gradient even when the liquid is pressed against the volume edge.
     #define SAMPLE_OR_AIR(p) (any((p) < int3(0,0,0)) || any((p) >= dims) ? 0.0 : _DensityTexture3D_Read[(p)].r)
 
-    // Central-difference gradient of the liquid density field (R channel).
-    // Uses out-of-bounds=0 (air) instead of clamping so that liquid touching the
-    // volume boundary still gets a correct outward normal on all six faces.
-    float dx = SAMPLE_OR_AIR(c + int3(1,0,0)) - SAMPLE_OR_AIR(c - int3(1,0,0));
-    float dy = SAMPLE_OR_AIR(c + int3(0,1,0)) - SAMPLE_OR_AIR(c - int3(0,1,0));
-    float dz = SAMPLE_OR_AIR(c + int3(0,0,1)) - SAMPLE_OR_AIR(c - int3(0,0,1));
+    // Wide-stencil 3D Sobel-like gradient of the liquid density field (R channel).
+    // A 1-voxel central difference on a noisy SPH-derived density field produces
+    // facetted, near-zero normals in the bulk. Averaging the central difference over
+    // a 3x3 transverse plane (Sobel-3D, normalized weights) low-passes the gradient
+    // for the same number of taps as a few wide central differences and gives
+    // visibly smoother normals on close-up surfaces.
+    // At voxels within 1 of the AABB boundary, the wide stencil pulls 9+ taps from
+    // out-of-bounds (=air=0), which biases the gradient toward the box face and
+    // produces flickering boundary normals during particle interactions. Fall back
+    // to a plain 1-voxel central difference there — simpler, but stable.
+    float dx, dy, dz;
+    bool nearBoundary = any(c < int3(2, 2, 2)) || any(c >= dims - int3(2, 2, 2));
+    if (nearBoundary)
+    {
+        dx = SAMPLE_OR_AIR(c + int3(1,0,0)) - SAMPLE_OR_AIR(c - int3(1,0,0));
+        dy = SAMPLE_OR_AIR(c + int3(0,1,0)) - SAMPLE_OR_AIR(c - int3(0,1,0));
+        dz = SAMPLE_OR_AIR(c + int3(0,0,1)) - SAMPLE_OR_AIR(c - int3(0,0,1));
+    }
+    else
+    {
+        dx = 0.0; dy = 0.0; dz = 0.0;
+        float wSum = 0.0;
+        [unroll] for (int a = -1; a <= 1; a++)
+        [unroll] for (int b = -1; b <= 1; b++)
+        {
+            // Smoothing kernel weights in the transverse plane: 1-2-1 along each axis.
+            float w = (2.0 - abs((float)a)) * (2.0 - abs((float)b));
+            dx += w * (SAMPLE_OR_AIR(c + int3(1, a, b)) - SAMPLE_OR_AIR(c + int3(-1, a, b)));
+            dy += w * (SAMPLE_OR_AIR(c + int3(a, 1, b)) - SAMPLE_OR_AIR(c + int3(a, -1, b)));
+            dz += w * (SAMPLE_OR_AIR(c + int3(a, b, 1)) - SAMPLE_OR_AIR(c + int3(a, b, -1)));
+            wSum += w;
+        }
+        float invW = 1.0 / max(wSum, 1e-6);
+        dx *= invW; dy *= invW; dz *= invW;
+    }
 
     float3 grad = float3(dx, dy, dz);
     float  len  = length(grad);

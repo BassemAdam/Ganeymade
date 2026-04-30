@@ -2323,7 +2323,7 @@ MonoBehaviour:
       adaptiveDensitySurface: 170
       adaptiveDensityBulk: 194
       adaptiveDensityCurve: 0.7
-      adaptiveSpeedWeight: 1
+      adaptiveSpeedWeight: 0
       adaptiveSpeedReference: 2
       maxKernelRadiusVoxels: 3
     liquidBlur:

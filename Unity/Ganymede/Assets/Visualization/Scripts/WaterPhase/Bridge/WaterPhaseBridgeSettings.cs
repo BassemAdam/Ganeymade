@@ -4,7 +4,14 @@ using UnityEngine;
 public enum WaterSurfaceRenderMode
 {
     RaymarchVolume,
-    MarchingCubesLiquidWithVapour
+    MarchingCubesLiquidWithVapour,
+    /// <summary>
+    /// Screen-space fluid rendering (van der Laan / Truong &amp; Yuksel).
+    /// Renders particles as spheres, filters depth with the narrow-range
+    /// bilateral filter, then reconstructs normals and composites a shaded
+    /// water surface. Driven by the ScreenSpaceWaterFeature URP renderer feature.
+    /// </summary>
+    ScreenSpaceFluid
 }
 
 [Serializable]
@@ -80,11 +87,11 @@ public class WaterPhaseDensityGridSettings
 
     [Header("Adaptive — speed term")]
     [Tooltip("Blend weight of the speed/stillness term in the per-particle bulk weight.\n" +
-             " 0 = ignore speed (density-only behavior, old default).\n" +
+             " 0 = ignore speed (density-only behavior). Default — leave at 0 while tuning the density curve, otherwise the stillness term will pin every calm particle to the bulk radius via max() and the density sliders will appear to do nothing.\n" +
              " 1 = a STILL low-density particle is treated as fully bulk (smooth normals on calm water surfaces).\n" +
              "Combines with the density term via max(), so fast splash particles still stay crisp regardless.")]
     [Range(0f, 1f)]
-    public float adaptiveSpeedWeight = 1.0f;
+    public float adaptiveSpeedWeight = 0.0f;
 
     [Tooltip("Particle speed (world units / second) at which the stillness contribution drops to zero. " +
              "Particles faster than this are treated as 'fully moving' (no stillness boost). " +

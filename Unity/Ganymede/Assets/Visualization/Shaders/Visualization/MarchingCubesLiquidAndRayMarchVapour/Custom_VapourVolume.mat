@@ -1,0 +1,52 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!21 &2100000
+Material:
+  serializedVersion: 8
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_Name: Custom_VapourVolume
+  m_Shader: {fileID: 4800000, guid: c6b836d42f7eebd4f9610f7565350ca9, type: 3}
+  m_Parent: {fileID: 0}
+  m_ModifiedSerializedProperties: 0
+  m_ValidKeywords: []
+  m_InvalidKeywords: []
+  m_LightmapFlags: 4
+  m_EnableInstancingVariants: 0
+  m_DoubleSidedGI: 0
+  m_CustomRenderQueue: -1
+  stringTagMap: {}
+  disabledShaderPasses: []
+  m_LockedProperties: 
+  m_SavedProperties:
+    serializedVersion: 3
+    m_TexEnvs:
+    - _BlueNoiseTex:
+        m_Texture: {fileID: 0}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
+    m_Ints: []
+    m_Floats:
+    - _BlueNoiseScale: 1
+    - _BlueNoiseStrength: 1
+    - _BlueNoiseTimeSpeed: 1
+    - _DensityPower: 1.5
+    - _EdgeSoftness: 0.2
+    - _MarchSteps: 40
+    - _NoiseDriftSpeed: 0.3
+    - _NoiseOctaves: 5
+    - _NoiseScale: 2
+    - _VapourAbsorption: 8
+    - _VapourBackscatter: 0.4
+    - _VapourScatterG: 0.5
+    - _VapourShadowStrength: 1
+    m_Colors:
+    - _NoiseDriftDir: {r: 0, g: 1, b: 0, a: 0}
+    - _VapourBaseColor: {r: 1, g: 1, b: 1, a: 1}
+    - _VapourShadowColor: {r: 0.17999998, g: 0.21999997, b: 0.31999996, a: 1}
+    - _VoxelBoundsMax: {r: 0.5, g: 0.5, b: 0.5, a: 0}
+    - _VoxelBoundsMin: {r: -0.5, g: -0.5, b: -0.5, a: 0}
+  m_BuildTextureStacks: []
+  m_AllowLocking: 1

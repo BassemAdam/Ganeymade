@@ -16,6 +16,7 @@ Shader "Custom/WaterRaymarching"
         _RefractionStrength ("Refraction Strength", Range(0.0, 0.5)) = 0.05
         _ReflectionStrength ("Reflection Strength", Range(0.0, 1.0)) = 0.5
         _SurfaceDetectionMargin ("Surface Detection Margin", Float) = 0.0
+        _LiquidNormalStencilWS ("Liquid Normal Stencil (m)", Range(0.005, 0.5)) = 0.06
         [Header(Vapour Phase)]
         _VapourScatteringCoefficients ("Vapour Extinction sigma_t (RGB)", Color) = (0.05, 0.05, 0.05, 1.0)
         _VapourScatterColor ("Vapour Scatter Albedo (RGB)", Color) = (0.9, 0.9, 0.9, 1.0)
@@ -29,7 +30,7 @@ Shader "Custom/WaterRaymarching"
         Tags { "RenderType"="Transparent" "Queue"="Transparent+100" "RenderPipeline"="UniversalPipeline" }
 
         ZWrite Off
-        Cull Front
+        Cull Off
         ZTest Always
         Blend SrcAlpha OneMinusSrcAlpha
 
@@ -186,8 +187,12 @@ Shader "Custom/WaterRaymarching"
 
                 float3 backgroundColor = ComposeWaterBackgroundColor(
                     backgroundData,
+                    viewData,
                     viewData.screenUV,
-                    _ReflectionStrength
+                    _ReflectionStrength,
+                    _ScatteringCoefficients,
+                    _VapourScatteringCoefficients,
+                    shadowStep
                 );
 
                 float3 finalColor = accumulatedScatteredLight

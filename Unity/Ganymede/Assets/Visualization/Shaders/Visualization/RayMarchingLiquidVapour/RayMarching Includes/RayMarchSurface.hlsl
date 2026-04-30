@@ -59,7 +59,11 @@ SurfaceHit MakeSurfaceHit(float3 posWS, float3 rayDir, bool enteringWater)
     float iorTransmit = enteringWater ? IOR_WATER : IOR_AIR;
 
     float cosI    = saturate(dot(-rayDir, n));
-    s.fresnel     = FresnelSchlick(cosI, iorIncident, iorTransmit);
+    // Cap Fresnel to 0.85: at extreme grazing angles the Schlick term goes to 1.0,
+    // which combined with a noisy SPH-derived normal can pulse the surface to
+    // a 100% mirror for a single frame and saturate the environment reflection
+    // (sky → white flash). Real water still transmits ~15% of light at grazing.
+    s.fresnel     = min(FresnelSchlick(cosI, iorIncident, iorTransmit), 0.85);
     s.reflectDir  = reflect(rayDir, n);
 
     float  iorRatio           = iorIncident / iorTransmit;
