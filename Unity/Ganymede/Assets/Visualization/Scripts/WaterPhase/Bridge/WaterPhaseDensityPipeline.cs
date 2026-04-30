@@ -20,13 +20,12 @@ public sealed class WaterPhaseDensityPipeline
     private static readonly int ID_BoundsMaxWS = Shader.PropertyToID("_BoundsMaxWS");
     private static readonly int ID_ParticleContribution = Shader.PropertyToID("_ParticleContribution");
     private static readonly int ID_FixedPointScale = Shader.PropertyToID("_FixedPointScale");
-    private static readonly int ID_SmoothingRadiusWS = Shader.PropertyToID("_SmoothingRadiusWS");
-    private static readonly int ID_SmoothingRadiusWS_Bulk = Shader.PropertyToID("_SmoothingRadiusWS_Bulk");
+    private static readonly int ID_SmoothingRadiusWS_LiquidSmall = Shader.PropertyToID("_SmoothingRadiusWS_LiquidSmall");
+    private static readonly int ID_SmoothingRadiusWS_LiquidBulk = Shader.PropertyToID("_SmoothingRadiusWS_LiquidBulk");
+    private static readonly int ID_SmoothingRadiusWS_Vapour = Shader.PropertyToID("_SmoothingRadiusWS_Vapour");
     private static readonly int ID_AdaptiveDensitySurface = Shader.PropertyToID("_AdaptiveDensitySurface");
     private static readonly int ID_AdaptiveDensityBulk = Shader.PropertyToID("_AdaptiveDensityBulk");
     private static readonly int ID_AdaptiveDensityCurve = Shader.PropertyToID("_AdaptiveDensityCurve");
-    private static readonly int ID_AdaptiveSpeedReference = Shader.PropertyToID("_AdaptiveSpeedReference");
-    private static readonly int ID_AdaptiveSpeedWeight = Shader.PropertyToID("_AdaptiveSpeedWeight");
     private static readonly int ID_KernelRadiusVoxels = Shader.PropertyToID("_KernelRadiusVoxels");
     private static readonly int ID_RestDensity = Shader.PropertyToID("_RestDensity");
     private static readonly int ID_InvDensityScaleRG = Shader.PropertyToID("_InvDensityScaleRG");
@@ -116,8 +115,8 @@ public sealed class WaterPhaseDensityPipeline
     {
         var grid = settings.DensityGrid;
 
-        float surfaceRadius = grid.smoothingRadiusWS >= 0f
-            ? grid.smoothingRadiusWS
+        float surfaceRadius = grid.liquidSmoothingRadiusWS >= 0f
+            ? grid.liquidSmoothingRadiusWS
             : computePlugin.smoothingRadius;
         surfaceRadius = Mathf.Max(0f, surfaceRadius);
 
@@ -125,23 +124,24 @@ public sealed class WaterPhaseDensityPipeline
         // collapse it to the surface radius so the per-particle lerp degenerates
         // into a single uniform radius (preserving previous behavior).
         float bulkRadius = grid.adaptiveRadiusEnabled
-            ? Mathf.Max(surfaceRadius, grid.bulkSmoothingRadiusWS)
+            ? Mathf.Max(surfaceRadius, grid.liquidBulkSmoothingRadiusWS)
             : surfaceRadius;
 
-        // Loop bound on the GPU must cover the LARGER footprint, otherwise bulk
-        // particles get clipped. The poly6 falloff zeroes out smaller-h splats
-        // automatically, so it's safe for surface particles too.
-        float loopRadius = Mathf.Max(surfaceRadius, bulkRadius);
+        float vapourRadius = Mathf.Max(0f, grid.vapourSmoothingRadiusWS);
 
-        _computeShader.SetFloat(ID_SmoothingRadiusWS, surfaceRadius);
-        _computeShader.SetFloat(ID_SmoothingRadiusWS_Bulk, bulkRadius);
+        // Loop bound on the GPU must cover the LARGEST footprint across all phases,
+        // otherwise particles get clipped. The poly6 falloff zeroes out smaller-h
+        // splats automatically, so it's safe for surface / vapour particles too.
+        float loopRadius = Mathf.Max(Mathf.Max(surfaceRadius, bulkRadius), vapourRadius);
+
+        _computeShader.SetFloat(ID_SmoothingRadiusWS_LiquidSmall, surfaceRadius);
+        _computeShader.SetFloat(ID_SmoothingRadiusWS_LiquidBulk, bulkRadius);
+        _computeShader.SetFloat(ID_SmoothingRadiusWS_Vapour, vapourRadius);
         _computeShader.SetFloat(ID_AdaptiveDensitySurface, Mathf.Max(0f, grid.adaptiveDensitySurface));
         _computeShader.SetFloat(
             ID_AdaptiveDensityBulk,
             Mathf.Max(grid.adaptiveDensitySurface + 0.01f, grid.adaptiveDensityBulk));
         _computeShader.SetFloat(ID_AdaptiveDensityCurve, Mathf.Max(0.01f, grid.adaptiveDensityCurve));
-        _computeShader.SetFloat(ID_AdaptiveSpeedReference, Mathf.Max(0f, grid.adaptiveSpeedReference));
-        _computeShader.SetFloat(ID_AdaptiveSpeedWeight, Mathf.Clamp01(grid.adaptiveSpeedWeight));
         _computeShader.SetInt(
             ID_KernelRadiusVoxels,
             Mathf.Min(

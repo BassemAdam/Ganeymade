@@ -1,5 +1,6 @@
 using System;
 using UnityEngine;
+using UnityEngine.Serialization;
 
 public enum WaterSurfaceRenderMode
 {
@@ -42,22 +43,30 @@ public class WaterPhaseDensityGridSettings
     [Tooltip("Voxel resolution of the physics density volume.")]
     public Vector3Int volumeDims = new Vector3Int(64, 64, 64);
 
-    [Tooltip("World-space radius used for SURFACE / lonely particles (low SPH density). " +
+    [Tooltip("World-space radius used for LIQUID SURFACE / lonely particles (low SPH density). " +
              "Keep small so splash droplets and thin sheets stay crisp. " +
              "If < 0, falls back to UseComputePlugin.smoothingRadius.")]
-    public float smoothingRadiusWS = 1f;
+    [FormerlySerializedAs("smoothingRadiusWS")]
+    public float liquidSmoothingRadiusWS = 1f;
 
     [Header("Adaptive (density-driven) smoothing")]
-    [Tooltip("When ON, per-particle smoothing radius is lerped between 'smoothingRadiusWS' " +
-             "(at adaptiveDensitySurface) and 'bulkSmoothingRadiusWS' (at adaptiveDensityBulk). " +
+    [Tooltip("When ON, per-particle smoothing radius is lerped between 'liquidSmoothingRadiusWS' " +
+             "(at adaptiveDensitySurface) and 'liquidBulkSmoothingRadiusWS' (at adaptiveDensityBulk). " +
              "This gives splashes/droplets a small footprint and bulk water a wide, smooth one.")]
     public bool adaptiveRadiusEnabled = true;
 
-    [Tooltip("World-space radius used for BULK particles (high SPH density). " +
-             "Make this noticeably larger than 'smoothingRadiusWS' for a smoother body and normals. " +
+    [Tooltip("World-space radius used for LIQUID BULK particles (high SPH density). " +
+             "Make this noticeably larger than 'liquidSmoothingRadiusWS' for a smoother body and normals. " +
              "Ignored when 'adaptiveRadiusEnabled' is OFF.")]
     [Min(0f)]
-    public float bulkSmoothingRadiusWS = 2.5f;
+    [FormerlySerializedAs("bulkSmoothingRadiusWS")]
+    public float liquidBulkSmoothingRadiusWS = 2.5f;
+
+    [Tooltip("World-space radius used for VAPOUR particles. The vapour grid is consumed as a " +
+             "low-frequency presence mask (procedural detail is added per-fragment), so a wider " +
+             "radius produces a smoother, more uniform mask independent of the liquid radii.")]
+    [Min(0f)]
+    public float vapourSmoothingRadiusWS = 2.5f;
 
     [Tooltip("SPH density value treated as 'surface / lonely' (uses surface radius). " +
              "Tune from your visualizer: pick the density observed on splash / surface particles (e.g. ~175).")]
@@ -77,21 +86,6 @@ public class WaterPhaseDensityGridSettings
              " > 1  = exaggerate differences among HIGH-density bulk particles instead.")]
     [Range(0.05f, 4f)]
     public float adaptiveDensityCurve = 0.4f;
-
-    [Header("Adaptive — speed term")]
-    [Tooltip("Blend weight of the speed/stillness term in the per-particle bulk weight.\n" +
-             " 0 = ignore speed (density-only behavior, old default).\n" +
-             " 1 = a STILL low-density particle is treated as fully bulk (smooth normals on calm water surfaces).\n" +
-             "Combines with the density term via max(), so fast splash particles still stay crisp regardless.")]
-    [Range(0f, 1f)]
-    public float adaptiveSpeedWeight = 1.0f;
-
-    [Tooltip("Particle speed (world units / second) at which the stillness contribution drops to zero. " +
-             "Particles faster than this are treated as 'fully moving' (no stillness boost). " +
-             "Tune this to roughly the speed of your typical splash particles. " +
-             "Set to 0 to disable the speed term entirely.")]
-    [Min(0f)]
-    public float adaptiveSpeedReference = 1.5f;
 
     [Tooltip("Hard cap on the splat loop half-size in voxels. The loop runs (2r+1)^3 times per particle, " +
              "so r=4 → 729 taps, r=6 → 2197 taps, r=8 → 4913 taps. Larger bulk radii get TRUNCATED to this " +

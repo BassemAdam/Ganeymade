@@ -273,7 +273,7 @@ public class PhysicsWaterPhaseBridge : MonoBehaviour
         settings.References.marchingCubesLUT = marchingCubesLUT;
 
         settings.DensityGrid.volumeDims = volumeDims;
-        settings.DensityGrid.smoothingRadiusWS = smoothingRadiusWS;
+        settings.DensityGrid.liquidSmoothingRadiusWS = smoothingRadiusWS;
 
         settings.LiquidBlur.enabled = blurLiquidDensity;
         settings.LiquidBlur.radius = liquidBlurRadius;

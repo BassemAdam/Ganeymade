@@ -52,13 +52,12 @@ float4 _BoundsMinWS;          // xyz
 float4 _BoundsMaxWS;          // xyz
 float  _ParticleContribution;  // unitless, per particle
 float  _FixedPointScale;      // e.g. 1024
-float  _SmoothingRadiusWS;    // world units, splat kernel size for SURFACE/lonely particles (low SPH density). 0 = single-voxel dot.
-float  _SmoothingRadiusWS_Bulk; // world units, splat kernel size for BULK particles (high SPH density)
-float  _AdaptiveDensitySurface; // SPH density value treated as "surface/lonely" → uses _SmoothingRadiusWS
-float  _AdaptiveDensityBulk;    // SPH density value treated as "fully bulk"     → uses _SmoothingRadiusWS_Bulk
+float  _SmoothingRadiusWS_LiquidSmall; // world units, splat kernel size for LIQUID SURFACE/lonely particles (low SPH density). 0 = single-voxel dot.
+float  _SmoothingRadiusWS_LiquidBulk;  // world units, splat kernel size for LIQUID BULK particles (high SPH density)
+float  _SmoothingRadiusWS_Vapour;      // world units, splat kernel size for VAPOUR particles (uniform — vapour grid is a low-frequency presence mask)
+float  _AdaptiveDensitySurface; // SPH density value treated as "surface/lonely" → uses _SmoothingRadiusWS_LiquidSmall
+float  _AdaptiveDensityBulk;    // SPH density value treated as "fully bulk"     → uses _SmoothingRadiusWS_LiquidBulk
 float  _AdaptiveDensityCurve;   // gamma applied to t before lerp. 1 = linear, <1 exaggerates low-density variation, >1 exaggerates high-density variation
-float  _AdaptiveSpeedReference; // particle speed (m/s) at which "stillness" weight reaches 0. <=0 disables the speed term.
-float  _AdaptiveSpeedWeight;    // [0..1] blend factor: how much speed contributes to the bulk weight (1 = full effect, 0 = ignore speed)
 int    _KernelRadiusVoxels;   // loop bound covering the LARGER of the two radii (bulk). Falloff zeroes smaller-h splats automatically.
 float2 _InvDensityScaleRG;    // x = liquid scale, y = vapour scale (vapour rest density is lower)
 
@@ -150,12 +149,12 @@ void SplatParticles(uint id : SV_DispatchThreadID)
     // "where is there vapour?" mask consumed by the per-fragment FBM in the
     // raymarcher. Forcing the bulk/surface heuristic on vapour produces patchy,
     // density-dependent splat sizes that the noise then amplifies into artifacts.
-    // For vapour we always use the wider _SmoothingRadiusWS_Bulk so the slab is a
-    // smooth, uniform presence mask.
+    // For vapour we use a dedicated _SmoothingRadiusWS_Vapour so the slab is a
+    // smooth, uniform presence mask, independent of the liquid radii.
     float h;
     if (p.phase == 1)
     {
-        h = _SmoothingRadiusWS_Bulk;
+        h = _SmoothingRadiusWS_Vapour;
     }
     else
     {
@@ -167,32 +166,13 @@ void SplatParticles(uint id : SV_DispatchThreadID)
         //                                 splash / lonely particles whose densities cluster
         //                                 tightly just above the rest density)
         //   _AdaptiveDensityCurve > 1   → expand the HIGH-density end
-        //   t = 0  → fully surface / lonely → use _SmoothingRadiusWS (small or 0)
-        //   t = 1  → fully bulk             → use _SmoothingRadiusWS_Bulk (large)
+        //   t = 0  → fully surface / lonely → use _SmoothingRadiusWS_LiquidSmall (small or 0)
+        //   t = 1  → fully bulk             → use _SmoothingRadiusWS_LiquidBulk (large)
         float densitySpan = max(_AdaptiveDensityBulk - _AdaptiveDensitySurface, 1e-5);
         float tLin  = saturate((p.density - _AdaptiveDensitySurface) / densitySpan);
-        float tDensity = pow(tLin, max(_AdaptiveDensityCurve, 1e-3));
+        float tCurv = pow(tLin, max(_AdaptiveDensityCurve, 1e-3));
 
-        // Stillness term: a low-density particle that is also barely moving is most
-        // likely a *resting surface* particle, not a splash droplet. Treating it as
-        // "bulk" here gives it the wide splat radius, which produces smooth surface
-        // normals on calm water while still letting fast splash particles stay crisp.
-        //   speed = 0           → tStill = 1 (fully bulk weight from stillness)
-        //   speed >= speedRef   → tStill = 0 (fully surface — splash / fast motion)
-        //   _AdaptiveSpeedWeight = 0 disables the term entirely.
-        float tStill = 0.0;
-        if (_AdaptiveSpeedReference > 1e-5 && _AdaptiveSpeedWeight > 1e-5)
-        {
-            float speed = length(p.velocity.xz);   // horizontal only: avoids apex-zero artifact
-            tStill = 1.0 - saturate(speed / _AdaptiveSpeedReference);
-            tStill *= saturate(_AdaptiveSpeedWeight);
-        }
-
-        // Combine with max: a particle is "bulk" if EITHER its density is high OR it
-        // is still. This intentionally biases low-density-but-still particles (calm
-        // water surface) toward the smooth path, without affecting fast particles.
-        float tCurv = max(tDensity, tStill);
-        h = lerp(_SmoothingRadiusWS, _SmoothingRadiusWS_Bulk, tCurv);
+        h = lerp(_SmoothingRadiusWS_LiquidSmall, _SmoothingRadiusWS_LiquidBulk, tCurv);
     }
 
     // Per-particle nearest-voxel fast path: if THIS particle's radius is ~zero,
