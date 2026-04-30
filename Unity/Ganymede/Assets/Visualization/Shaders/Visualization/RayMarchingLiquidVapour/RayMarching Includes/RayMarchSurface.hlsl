@@ -16,7 +16,8 @@ struct SurfaceHit
 {
     bool   hit;
     float3 posWS;
-    float3 normal;
+    float3 normal;        // View-facing optical normal used by Fresnel/refraction.
+    float3 outwardNormal; // Raw density/bounds normal, stable for debugging surface shape.
     float3 reflectDir;
     float3 refractDir;
     float  fresnel;
@@ -29,6 +30,7 @@ SurfaceHit NoSurfaceHit()
     s.hit                     = false;
     s.posWS                   = float3(0, 0, 0);
     s.normal                  = float3(0, 0, 0);
+    s.outwardNormal           = float3(0, 0, 0);
     s.reflectDir              = float3(0, 0, 0);
     s.refractDir              = float3(0, 0, 0);
     s.fresnel                 = 0.0;
@@ -48,6 +50,8 @@ SurfaceHit MakeSurfaceHit(float3 posWS, float3 rayDir, bool enteringWater)
     // Discard it so the ray loop can continue searching for a genuine surface.
     if (dot(n, n) < 1e-8)
         return NoSurfaceHit();
+
+    s.outwardNormal = n;
 
     // The outward normal may still point into the liquid from the viewer's side.
     // Flip it if needed so Fresnel/reflection/refraction are correct.

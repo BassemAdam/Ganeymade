@@ -199,9 +199,9 @@ Shader "Custom/WaterRaymarching"
                 float3 finalColor = accumulatedScatteredLight
                                   + backgroundColor * remainingViewTransmittance;
 
-                // // // DEBUG: visualize surface normal — remap [-1,1] → [0,1]
+                // // // DEBUG: visualize stable outward surface normal — remap [-1,1] → [0,1]
                 // if (backgroundData.surfaceHit.hit)
-                //     return half4(backgroundData.surfaceHit.normal * 0.5 + 0.5, 1.0);
+                //     return half4(backgroundData.surfaceHit.outwardNormal * 0.5 + 0.5, 1.0);
 
                 return half4(finalColor, 1.0);
             }

@@ -18,20 +18,33 @@ SurfaceHit FindWaterSurfaceHit(
 {
     float safeStepSize = max(stepSize, 1e-4);
     float surfaceThreshold = isoLevel + surfaceDetectionMargin;
-    bool cameraStartsInsideVolume = (volumeData.distanceToVolume < 1e-5);
+    bool rayStartsInsideVolume = (volumeData.distanceToVolume < 1e-5);
+    bool rayStartsInsideWater = rayStartsInsideVolume
+        && SampleAdjustedLiquidDensityWS(viewData.cameraPositionWS) >= surfaceThreshold;
 
-    if (!cameraStartsInsideVolume)
+    if (!rayStartsInsideVolume)
     {
         float entryDensity = SampleAdjustedLiquidDensityWS(volumeData.entryPositionWS);
-        if (entryDensity >= isoLevel)
+        if (entryDensity >= surfaceThreshold)
             return MakeSurfaceHit(volumeData.entryPositionWS, viewData.viewRayDirectionWS, true);
     }
 
     SurfaceHit surfaceHit = NoSurfaceHit();
-    float sampleDistance = volumeData.distanceToVolume + safeStepSize * viewData.blueNoiseValue;
-    float previousDensity = SampleAdjustedLiquidDensityWS(
-        viewData.cameraPositionWS + viewData.viewRayDirectionWS * sampleDistance
-    );
+    float sampleDistance = volumeData.distanceToVolume;
+    float previousDensity = rayStartsInsideWater
+        ? SampleAdjustedLiquidDensityWS(viewData.cameraPositionWS)
+        : SampleAdjustedLiquidDensityWS(viewData.cameraPositionWS + viewData.viewRayDirectionWS * sampleDistance);
+    float3 previousPositionWS = rayStartsInsideWater
+        ? viewData.cameraPositionWS
+        : viewData.cameraPositionWS + viewData.viewRayDirectionWS * sampleDistance;
+    float3 lastInsideWaterPositionWS = rayStartsInsideWater
+        ? viewData.cameraPositionWS
+        : viewData.cameraPositionWS + viewData.viewRayDirectionWS * sampleDistance;
+
+    // Jitter only after establishing whether the ray begins inside water. If the
+    // camera is just under the surface, starting the state check at a blue-noise
+    // offset can skip over the exit crossing and make underwater normals unstable.
+    sampleDistance += safeStepSize * viewData.blueNoiseValue;
 
     while (!surfaceHit.hit && sampleDistance < maxSearchDistance)
     {
@@ -41,11 +54,29 @@ SurfaceHit FindWaterSurfaceHit(
         bool enteringWater = previousDensity < surfaceThreshold && currentDensity >= surfaceThreshold;
         bool leavingWater = previousDensity >= surfaceThreshold && currentDensity < surfaceThreshold;
         if (enteringWater || leavingWater)
-            surfaceHit = MakeSurfaceHit(samplePositionWS, viewData.viewRayDirectionWS, enteringWater);
+        {
+            float densityDelta = currentDensity - previousDensity;
+            float crossingT = (abs(densityDelta) > 1e-5)
+                ? saturate((surfaceThreshold - previousDensity) / densityDelta)
+                : 1.0;
+            float3 surfacePositionWS = lerp(previousPositionWS, samplePositionWS, crossingT);
+            surfaceHit = MakeSurfaceHit(surfacePositionWS, viewData.viewRayDirectionWS, enteringWater);
+        }
+
+        if (currentDensity >= surfaceThreshold)
+            lastInsideWaterPositionWS = samplePositionWS;
 
         sampleDistance += safeStepSize;
         previousDensity = currentDensity;
+        previousPositionWS = samplePositionWS;
     }
+
+    // If the camera/ray is inside liquid and the liquid reaches the simulation
+    // box edge, there may be no density drop before the volume exit. Treat the
+    // last in-water sample as a Water→Air exit so boundary normals and IOR are
+    // still valid instead of returning no/garbage surface.
+    if (!surfaceHit.hit && previousDensity >= surfaceThreshold)
+        surfaceHit = MakeSurfaceHit(lastInsideWaterPositionWS, viewData.viewRayDirectionWS, false);
 
     return surfaceHit;
 }
