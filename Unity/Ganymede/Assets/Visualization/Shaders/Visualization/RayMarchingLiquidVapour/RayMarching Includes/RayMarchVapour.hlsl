@@ -84,6 +84,33 @@ float RaymarchVapourFBM(float3 p, int octaves, float lacunarity, float gain)
     return value / max(maxValue, 1e-5);
 }
 
+float3 RaymarchVapourVectorNoise3D(float3 p)
+{
+    return float3(
+        RaymarchVapourValueNoise3D(p + float3(1.72, 9.23, 5.41)),
+        RaymarchVapourValueNoise3D(p + float3(8.31, 2.84, 3.26)),
+        RaymarchVapourValueNoise3D(p + float3(4.17, 6.73, 1.92))
+    ) * 2.0 - 1.0;
+}
+
+float CalculateVapourPhysicalMask(float rawVapourDensity)
+{
+    float threshold = max(_VapourPresenceThreshold, 1e-6);
+    float fullDensity = max(_VapourFullDensity, threshold + 1e-5);
+    return smoothstep(threshold, fullDensity, rawVapourDensity);
+}
+
+float CalculateVapourHeightFadeWS(float3 posWS)
+{
+    float dissipation = max(_VapourHeightDissipation, 0.0);
+    if (dissipation <= 1e-5)
+        return 1.0;
+
+    float heightSize = max(_PhysicsBoundsMaxWS.y - _PhysicsBoundsMinWS.y, 1e-5);
+    float height01 = saturate((posWS.y - _PhysicsBoundsMinWS.y) / heightSize);
+    return exp2(-height01 * dissipation);
+}
+
 float SampleVapourDensityProceduralWS(float3 posWS, float rawVapourDensity)
 {
     if (!HasPhysicalVapour(rawVapourDensity))
@@ -92,19 +119,32 @@ float SampleVapourDensityProceduralWS(float3 posWS, float rawVapourDensity)
     float3 driftDir = GetVapourNoiseDriftDirectionWS();
     float3 driftedPos = posWS + driftDir * (_Time.y * _NoiseDriftSpeed);
     float3 p = driftedPos / max(_NoiseScale, 1e-5);
+    p.y /= max(_VapourVerticalStretch, 0.05);
 
-    float3 warpOffset = float3(
-        RaymarchVapourValueNoise3D(p * 0.7 + float3(1.72, 9.23, 5.41)),
-        RaymarchVapourValueNoise3D(p * 0.7 + float3(8.31, 2.84, 3.26)),
-        RaymarchVapourValueNoise3D(p * 0.7 + float3(4.17, 6.73, 1.92))
-    ) * 2.0 - 1.0;
+    // Two nested vector-noise warps give the vapour a rolling, turbulent flow
+    // instead of a single drifting noise field. It is cheaper than true curl
+    // noise but produces a similar art-directable gas motion in the raymarch.
+    float3 flowA = RaymarchVapourVectorNoise3D(p * 0.7);
+    float3 flowB = RaymarchVapourVectorNoise3D(p * 1.37 + flowA * 0.55 + _Time.y * 0.07);
+    float3 flow = flowA * 0.65 + flowB * 0.35;
+    float3 warpedP = p + flow * max(_VapourWarpStrength, 0.0);
 
-    float3 warpedP = p + warpOffset * 0.35;
-    float rawNoise = RaymarchVapourFBM(warpedP, clamp(_NoiseOctaves, 1, 8), 2.0, 0.5);
-    float noise01 = pow(saturate(rawNoise), max(_DensityPower, 0.01));
+    int octaves = clamp(_NoiseOctaves, 1, 8);
+    float baseNoise = RaymarchVapourFBM(warpedP, octaves, 2.0, 0.5);
+    float erosionNoise = RaymarchVapourFBM(
+        warpedP * max(_VapourErosionScale, 0.01) + flow * 0.5,
+        min(octaves + 1, 8),
+        2.0,
+        0.5
+    );
 
-    float maskSoft = smoothstep(0.0, 0.2, rawVapourDensity);
-    return saturate(noise01 * maskSoft);
+    float erodedNoise = baseNoise - erosionNoise * max(_VapourErosionStrength, 0.0);
+    float wispyNoise = smoothstep(_VapourCutoff, _VapourCutoff + max(_VapourSoftness, 1e-3), erodedNoise);
+    float noise01 = pow(saturate(wispyNoise), max(_DensityPower, 0.01));
+
+    float physicalMask = CalculateVapourPhysicalMask(rawVapourDensity);
+    float heightFade = CalculateVapourHeightFadeWS(posWS);
+    return saturate(noise01 * physicalMask * heightFade);
 }
 
 float BuildVapourDensityWS(float3 posWS, float rawVapourDensity)
@@ -122,11 +162,31 @@ float3 EvaluateSimpleVapourExtinction(float vapourDensity)
     return _VapourAbsorption * vapourDensity;
 }
 
+float EvaluateVapourPhase(float3 viewRayDirectionWS, float3 lightDirectionWS)
+{
+    float3 viewDir = normalize(viewRayDirectionWS);
+    float3 lightDir = normalize(lightDirectionWS);
+    float g = clamp(_VapourScatterG, -0.85, 0.85);
+    float g2 = g * g;
+    float cosTheta = clamp(dot(lightDir, viewDir), -1.0, 1.0);
+
+    // Henyey-Greenstein without the 1 / 4pi term so g = 0 remains exactly 1.
+    // Blending by |g| keeps the control stable for look-dev while still giving
+    // forward-lit steam a bright silver edge when viewed toward the light.
+    float hg = (1.0 - g2) / pow(max(1.0 + g2 - 2.0 * g * cosTheta, 1e-4), 1.5);
+    float phase = lerp(1.0, hg, saturate(abs(g)));
+
+    float rim = pow(saturate(-cosTheta), 4.0) * max(_VapourBackscatter, 0.0);
+    return max(phase + rim, 0.0);
+}
+
 float3 EvaluateVapourDirectScatter(
     float vapourDensity,
     float stepSize,
     float shadowAtten,
-    float3 lightColor)
+    float3 lightColor,
+    float3 viewRayDirectionWS,
+    float3 lightDirectionWS)
 {
     if (vapourDensity <= 1e-6)
         return 0.0;
@@ -135,7 +195,8 @@ float3 EvaluateVapourDirectScatter(
     // but a floor keeps shadowed vapour visible instead of crushing to black.
     float shadowWithFloor = lerp(saturate(_VapourShadowFloor), 1.0, saturate(shadowAtten));
     float godRayFactor = lerp(1.0, shadowWithFloor, saturate(_VapourGodRayStrength));
-    return vapourDensity * stepSize * godRayFactor * lightColor * _VapourBaseColor.rgb;
+    float phaseFactor = EvaluateVapourPhase(viewRayDirectionWS, lightDirectionWS);
+    return vapourDensity * stepSize * godRayFactor * phaseFactor * lightColor * _VapourBaseColor.rgb;
 }
 
 #endif

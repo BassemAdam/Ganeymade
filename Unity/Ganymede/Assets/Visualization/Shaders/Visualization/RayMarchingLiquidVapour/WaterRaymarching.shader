@@ -31,8 +31,11 @@ Shader "Custom/WaterRaymarching"
         _VapourAbsorption ("Vapour Absorption (density -> opacity)", Range(0.1, 20.0)) = 8.0
         _VapourGodRayStrength ("Vapour God Ray Strength", Range(0.0, 1.0)) = 1.0
         _VapourShadowFloor ("Vapour Shadow Visibility Floor", Range(0.0, 1.0)) = 0.25
+        _VapourScatterG ("Vapour Forward Scatter", Range(-0.8, 0.8)) = 0.35
+        _VapourBackscatter ("Vapour Backscatter Rim", Range(0.0, 2.0)) = 0.25
         [Header(Vapour Physics Gate)]
         _VapourPresenceThreshold ("Physical Vapour Presence Threshold", Range(0.0, 0.1)) = 0.0001
+        _VapourFullDensity ("Physical Vapour Full Density", Range(0.001, 1.0)) = 0.2
         _VapourDensityMultiplier ("Final Vapour Density Multiplier", Float) = 1.0
         [Header(Vapour Structure)]
         _NoiseScale ("Noise Scale", Range(0.1, 20.0)) = 2.0
@@ -40,6 +43,13 @@ Shader "Custom/WaterRaymarching"
         _NoiseDriftSpeed ("Drift Speed", Range(0.0, 5.0)) = 0.3
         _NoiseOctaves ("Noise Octaves", Range(1, 8)) = 5
         _DensityPower ("Vapour Density Sharpness", Range(0.1, 5.0)) = 1.5
+        _VapourWarpStrength ("Flow Warp Strength", Range(0.0, 2.0)) = 0.65
+        _VapourErosionScale ("Erosion Noise Scale", Range(0.25, 8.0)) = 2.75
+        _VapourErosionStrength ("Erosion Strength", Range(0.0, 2.0)) = 0.35
+        _VapourCutoff ("Wispy Cutoff", Range(0.0, 1.0)) = 0.12
+        _VapourSoftness ("Wispy Softness", Range(0.01, 1.0)) = 0.45
+        _VapourVerticalStretch ("Vertical Stretch", Range(0.1, 6.0)) = 1.75
+        _VapourHeightDissipation ("Height Dissipation", Range(0.0, 6.0)) = 0.25
         _EdgeSoftness ("Vapour Bounds Edge Softness", Range(0.0, 0.5)) = 0.2
         _BlueNoiseScale ("Blue Noise Tiling", Range(0.25, 8.0)) = 1.0
         _BlueNoiseStrength ("Blue Noise Jitter Strength", Range(0.0, 1.0)) = 1.0
@@ -110,7 +120,10 @@ Shader "Custom/WaterRaymarching"
                 float  _VapourAbsorption;
                 float  _VapourGodRayStrength;
                 float  _VapourShadowFloor;
+                float  _VapourScatterG;
+                float  _VapourBackscatter;
                 float  _VapourPresenceThreshold;
+                float  _VapourFullDensity;
                 float  _VapourDensityMultiplier;
                 // Vapour procedural structure — same defaults/formula family as Custom/VapourVolume.
                 float  _NoiseScale;
@@ -118,6 +131,13 @@ Shader "Custom/WaterRaymarching"
                 float  _NoiseDriftSpeed;
                 int    _NoiseOctaves;
                 float  _DensityPower;
+                float  _VapourWarpStrength;
+                float  _VapourErosionScale;
+                float  _VapourErosionStrength;
+                float  _VapourCutoff;
+                float  _VapourSoftness;
+                float  _VapourVerticalStretch;
+                float  _VapourHeightDissipation;
                 float  _EdgeSoftness;
                 float  _BlueNoiseScale;
                 float  _BlueNoiseStrength;
@@ -261,7 +281,9 @@ Shader "Custom/WaterRaymarching"
                         dv,
                         safeStepSize,
                         shadowAtten,
-                        _MainLightColor.rgb
+                        _MainLightColor.rgb,
+                        viewData.viewRayDirectionWS,
+                        normalize(_MainLightPosition.xyz)
                     );
 
                     #if defined(_ADDITIONAL_LIGHTS)
@@ -276,7 +298,9 @@ Shader "Custom/WaterRaymarching"
                                     dv,
                                     safeStepSize,
                                     1.0,
-                                    radiance
+                                    radiance,
+                                    viewData.viewRayDirectionWS,
+                                    additionalLight.direction
                                 );
                             LIGHT_LOOP_END
                         }

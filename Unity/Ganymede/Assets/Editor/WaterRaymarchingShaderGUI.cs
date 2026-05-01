@@ -102,11 +102,14 @@ public sealed class WaterRaymarchingShaderGUI : ShaderGUI
                 Draw("_VapourAbsorption");
                 Draw("_VapourGodRayStrength");
                 Draw("_VapourShadowFloor");
+                Draw("_VapourScatterG");
+                Draw("_VapourBackscatter");
             });
 
             DrawSubSection("Physics Gate", ref s_VapourGate, () =>
             {
                 Draw("_VapourPresenceThreshold");
+                Draw("_VapourFullDensity");
                 Draw("_VapourDensityMultiplier");
             });
 
@@ -117,6 +120,13 @@ public sealed class WaterRaymarchingShaderGUI : ShaderGUI
                 Draw("_NoiseDriftSpeed");
                 Draw("_NoiseOctaves");
                 Draw("_DensityPower");
+                Draw("_VapourWarpStrength");
+                Draw("_VapourErosionScale");
+                Draw("_VapourErosionStrength");
+                Draw("_VapourCutoff");
+                Draw("_VapourSoftness");
+                Draw("_VapourVerticalStretch");
+                Draw("_VapourHeightDissipation");
                 Draw("_EdgeSoftness");
             });
         });
