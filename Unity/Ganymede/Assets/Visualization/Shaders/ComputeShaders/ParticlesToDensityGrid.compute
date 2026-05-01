@@ -361,8 +361,8 @@ void BlurVapourDensity(uint3 id : SV_DispatchThreadID)
 // Both MarchingCubesCompute and WaterRaymarching sample this instead of computing
 // per-vertex / per-fragment gradients at runtime.
 //
-// 4-voxel half-span matches the raymarcher's eps = 4/gridSize for consistent
-// smoothness across both renderers on a 128^3 volume.
+// Use a slightly wider stencil than a 1-voxel central difference so the baked
+// fallback normals are smoother and less prone to voxel-to-voxel flip noise.
 // ─────────────────────────────────────────────────────────────────────────────
 [numthreads(8, 8, 8)]
 void BakeNormals(uint3 id : SV_DispatchThreadID)
@@ -381,9 +381,10 @@ void BakeNormals(uint3 id : SV_DispatchThreadID)
     // Central-difference gradient of the liquid density field (R channel).
     // Uses out-of-bounds=0 (air) instead of clamping so that liquid touching the
     // volume boundary still gets a correct outward normal on all six faces.
-    float dx = SAMPLE_OR_AIR(c + int3(1,0,0)) - SAMPLE_OR_AIR(c - int3(1,0,0));
-    float dy = SAMPLE_OR_AIR(c + int3(0,1,0)) - SAMPLE_OR_AIR(c - int3(0,1,0));
-    float dz = SAMPLE_OR_AIR(c + int3(0,0,1)) - SAMPLE_OR_AIR(c - int3(0,0,1));
+    const int normalHalfSpan = 2;
+    float dx = SAMPLE_OR_AIR(c + int3(normalHalfSpan,0,0)) - SAMPLE_OR_AIR(c - int3(normalHalfSpan,0,0));
+    float dy = SAMPLE_OR_AIR(c + int3(0,normalHalfSpan,0)) - SAMPLE_OR_AIR(c - int3(0,normalHalfSpan,0));
+    float dz = SAMPLE_OR_AIR(c + int3(0,0,normalHalfSpan)) - SAMPLE_OR_AIR(c - int3(0,0,normalHalfSpan));
 
     float3 grad = float3(dx, dy, dz);
     float  len  = length(grad);

@@ -8,6 +8,44 @@ struct WaterRaymarchBackgroundData
     SurfaceHit surfaceHit;
 };
 
+float3 RefineLiquidSurfacePositionWS(
+    float3 outsidePositionWS,
+    float3 insidePositionWS,
+    float surfaceThreshold,
+    int refinementIterations)
+{
+    float3 aWS = outsidePositionWS;
+    float3 bWS = insidePositionWS;
+    float da = SampleAdjustedLiquidDensityWS(aWS) - surfaceThreshold;
+    float db = SampleAdjustedLiquidDensityWS(bWS) - surfaceThreshold;
+
+    [loop]
+    for (int iteration = 0; iteration < refinementIterations; iteration++)
+    {
+        float weightDenominator = abs(da) + abs(db);
+        float midpointWeight = (weightDenominator > 1e-5)
+            ? saturate(abs(da) / weightDenominator)
+            : 0.5;
+        float3 midpointWS = lerp(aWS, bWS, midpointWeight);
+        float midpointDensity = SampleAdjustedLiquidDensityWS(midpointWS) - surfaceThreshold;
+
+        bool midpointMatchesA = (da < 0.0 && midpointDensity < 0.0)
+                             || (da >= 0.0 && midpointDensity >= 0.0);
+        if (midpointMatchesA)
+        {
+            aWS = midpointWS;
+            da = midpointDensity;
+        }
+        else
+        {
+            bWS = midpointWS;
+            db = midpointDensity;
+        }
+    }
+
+    return 0.5 * (aWS + bWS);
+}
+
 float2 CalculateRefractedSceneUV(
     WaterRaymarchViewData viewData,
     WaterRaymarchVolumeData volumeData,
@@ -94,8 +132,17 @@ SurfaceHit FindWaterSurfaceHit(
             float densityDelta = currentDensity - previousDensity;
             float crossingT = (abs(densityDelta) > 1e-5)
                 ? saturate((surfaceThreshold - previousDensity) / densityDelta)
-                : 1.0;
-            float3 surfacePositionWS = lerp(previousPositionWS, samplePositionWS, crossingT);
+                : 0.5;
+            float3 outsidePositionWS = enteringWater ? previousPositionWS : samplePositionWS;
+            float3 insidePositionWS = enteringWater ? samplePositionWS : previousPositionWS;
+            int refineIterations = clamp((int)round(_SurfaceRefineIterations), 0, 8);
+            float3 surfacePositionWS = (refineIterations > 0)
+                ? RefineLiquidSurfacePositionWS(
+                    outsidePositionWS,
+                    insidePositionWS,
+                    surfaceThreshold,
+                    refineIterations)
+                : lerp(previousPositionWS, samplePositionWS, crossingT);
             surfaceHit = MakeSurfaceHit(surfacePositionWS, viewData.viewRayDirectionWS, enteringWater);
         }
 

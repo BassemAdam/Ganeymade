@@ -19,9 +19,13 @@ Shader "Custom/WaterRaymarching"
         _ReflectionVisibilityBoost ("Reflection Visibility Boost", Range(1.0, 16.0)) = 1.0
         _ReflectionVisibilityFloor ("Reflection Visibility Floor", Range(0.0, 1.0)) = 0.0
         _SurfaceDetectionMargin ("Surface Detection Margin", Float) = 0.0
+        _SurfaceRefineIterations ("Surface Refine Iterations", Range(0, 8)) = 4
         _NormalSampleRadiusVoxels ("Normal Sample Radius (Voxels)", Range(0.5, 6.0)) = 1.0
+        _BakedNormalBlend ("Baked Normal Blend", Range(0.0, 1.0)) = 0.0
         _BoundaryNormalBlendDistance ("Boundary Normal Blend Distance", Range(0.0, 2.0)) = 0.3
         _BoundaryNormalUpBiasPower ("Boundary Up Bias Power", Range(1.0, 12.0)) = 5.0
+        [Header(Debug)]
+        _DebugNormalMode ("Debug Normal Mode (0 Off, 1 Baked, 2 Runtime, 3 Difference)", Range(0, 3)) = 0
         [Header(Vapour Phase)]
         _VapourScatteringCoefficients ("Vapour Extinction sigma_t (RGB)", Color) = (0.05, 0.05, 0.05, 1.0)
         _VapourScatterColor ("Vapour Scatter Albedo (RGB)", Color) = (0.9, 0.9, 0.9, 1.0)
@@ -92,9 +96,12 @@ Shader "Custom/WaterRaymarching"
                 float  _ReflectionVisibilityBoost;
                 float  _ReflectionVisibilityFloor;
                 float  _SurfaceDetectionMargin;
+                float  _SurfaceRefineIterations;
                 float  _NormalSampleRadiusVoxels;
+                float  _BakedNormalBlend;
                 float  _BoundaryNormalBlendDistance;
                 float  _BoundaryNormalUpBiasPower;
+                float  _DebugNormalMode;
                 // Vapour volumetric
                 float3 _VapourScatteringCoefficients; // sigma_t for vapour
                 float3 _VapourScatterColor;
@@ -159,6 +166,30 @@ Shader "Custom/WaterRaymarching"
 
                 if (backgroundData.sceneDistanceAlongRay <= volumeData.distanceToVolume)
                     discard;
+
+                // DEBUG ONLY: compare baked normals vs runtime gradient normals.
+                // Keep _DebugNormalMode = 0 for normal rendering. When disabled,
+                // this early branch is skipped and the shader stays on the normal
+                // fast path. You can comment out this whole block after debugging
+                // if you want the shader source to stay extra lean.
+                if (_DebugNormalMode > 0.5 && backgroundData.surfaceHit.hit)
+                {
+                    float3 debugPositionWS = backgroundData.surfaceHit.posWS;
+                    float3 bakedNormal = SampleBakedSurfaceNormalWS(debugPositionWS);
+                    float3 runtimeNormal = CalculateLiquidGradientNormalWS(debugPositionWS);
+
+                    // Mode 1 = baked normal volume sampled from _PhysicsNormalGrid.
+                    if (_DebugNormalMode < 1.5)
+                        return half4(bakedNormal * 0.5 + 0.5, 1.0);
+
+                    // Mode 2 = per-fragment runtime gradient from the density field.
+                    if (_DebugNormalMode < 2.5)
+                        return half4(runtimeNormal * 0.5 + 0.5, 1.0);
+
+                    // Mode 3 = absolute directional difference. Brighter means the
+                    // two normal sources disagree more strongly at this surface hit.
+                    return half4(abs(bakedNormal - runtimeNormal), 1.0);
+                }
 
                 float3 accumulatedScatteredLight  = 0.0;
                 float3 remainingViewTransmittance = 1.0;
@@ -236,10 +267,6 @@ Shader "Custom/WaterRaymarching"
 
                 float3 finalColor = accumulatedScatteredLight
                                   + backgroundColor * remainingViewTransmittance;
-
-                // // // DEBUG: visualize stable outward surface normal — remap [-1,1] → [0,1]
-                // if (backgroundData.surfaceHit.hit)
-                //     return half4(backgroundData.surfaceHit.outwardNormal * 0.5 + 0.5, 1.0);
 
                 return half4(finalColor, 1.0);
             }
