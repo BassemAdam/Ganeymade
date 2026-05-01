@@ -8,6 +8,42 @@ struct WaterRaymarchBackgroundData
     SurfaceHit surfaceHit;
 };
 
+float2 CalculateRefractedSceneUV(
+    WaterRaymarchViewData viewData,
+    WaterRaymarchVolumeData volumeData,
+    SurfaceHit surfaceHit,
+    float refractionStrength)
+{
+    if (!surfaceHit.hit || surfaceHit.totalInternalReflection || refractionStrength <= 1e-5)
+        return viewData.screenUV;
+
+    // Nudge the origin along the refracted ray so the ray-box test starts inside
+    // the water volume instead of immediately re-hitting the same surface.
+    float3 refractDir = normalize(surfaceHit.refractDir);
+    float3 refractOriginWS = surfaceHit.posWS + refractDir * 1e-3;
+    float2 refractBounds = RayBoxDst(
+        refractOriginWS,
+        refractDir,
+        _PhysicsBoundsMinWS.xyz,
+        _PhysicsBoundsMaxWS.xyz
+    );
+
+    float distanceToExit = refractBounds.x + refractBounds.y;
+    if (distanceToExit <= 1e-5)
+        return viewData.screenUV;
+
+    float3 refractedExitPositionWS = refractOriginWS + refractDir * distanceToExit;
+    float2 physicallyRefractedUV = ProjectWorldPositionToScreenUV(refractedExitPositionWS);
+
+    // Let _RefractionStrength art-direct the bend amount while keeping the bend
+    // direction based on the real refracted ray leaving the cube/volume bounds.
+    return clamp(
+        lerp(viewData.screenUV, physicallyRefractedUV, saturate(refractionStrength)),
+        0.001,
+        0.999
+    );
+}
+
 SurfaceHit FindWaterSurfaceHit(
     WaterRaymarchViewData viewData,
     WaterRaymarchVolumeData volumeData,
@@ -122,15 +158,11 @@ WaterRaymarchBackgroundData BuildWaterRaymarchBackgroundData(
 
     if (backgroundData.surfaceHit.hit)
     {
-        float3 refractedDirectionVS = mul((float3x3)UNITY_MATRIX_V, backgroundData.surfaceHit.refractDir);
-        backgroundData.backgroundScreenUV = clamp(
-            viewData.screenUV + refractedDirectionVS.xy * refractionStrength,
-            0.001,
-            0.999
-        );
-        backgroundData.sceneDistanceAlongRay = SampleSceneDistanceAlongRay(
-            backgroundData.backgroundScreenUV,
-            viewData.viewDepthDenominator
+        backgroundData.backgroundScreenUV = CalculateRefractedSceneUV(
+            viewData,
+            volumeData,
+            backgroundData.surfaceHit,
+            refractionStrength
         );
     }
 
@@ -140,7 +172,10 @@ WaterRaymarchBackgroundData BuildWaterRaymarchBackgroundData(
 float3 ComposeWaterBackgroundColor(
     WaterRaymarchBackgroundData backgroundData,
     float2 originalScreenUV,
-    float reflectionStrength)
+    float reflectionStrength,
+    float2 reflectionScreenOffset,
+    float reflectionVisibilityBoost,
+    float reflectionVisibilityFloor)
 {
     float3 refractedSceneColor = SAMPLE_TEXTURE2D(
         _CameraOpaqueTexture,
@@ -153,7 +188,9 @@ float3 ComposeWaterBackgroundColor(
 
     float3 reflectedDirectionVS = mul((float3x3)UNITY_MATRIX_V, backgroundData.surfaceHit.reflectDir);
     float2 reflectedScreenUV = clamp(
-        originalScreenUV + reflectedDirectionVS.xy * 0.08 * reflectionStrength,
+        // Sampling is inverse to apparent image movement, so subtract the
+        // artist offset: positive X/Y moves the reflection right/up on screen.
+        originalScreenUV + reflectedDirectionVS.xy * 0.08 * reflectionStrength - reflectionScreenOffset,
         0.001,
         0.999
     );
@@ -174,7 +211,8 @@ float3 ComposeWaterBackgroundColor(
     float reflectedEnvironmentLuminance = dot(reflectedEnvironmentColor, float3(0.2126, 0.7152, 0.0722));
     float environmentReflectionWeight = saturate(reflectedEnvironmentLuminance * 4.0);
     float3 reflectedColor = lerp(reflectedSceneColor, reflectedEnvironmentColor, environmentReflectionWeight);
-    float reflectionWeight = saturate(backgroundData.surfaceHit.fresnel * reflectionStrength);
+    float boostedFresnel = saturate(backgroundData.surfaceHit.fresnel * max(reflectionVisibilityBoost, 1.0));
+    float reflectionWeight = saturate(max(boostedFresnel, reflectionVisibilityFloor) * reflectionStrength);
 
     return lerp(
         refractedSceneColor,
