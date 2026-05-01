@@ -264,6 +264,18 @@ float3 LiquidTransmittance(float opticalDepth, float3 extinctionCoefficients)
     return exp(-opticalDepth * extinctionCoefficients);
 }
 
+// Direct skybox/probe cubemap sample. URP's GlossyEnvironmentReflection often
+// returns near-black for scenes without a baked reflection probe contribution,
+// which makes Fresnel reflections invisible. Sampling unity_SpecCube0 directly
+// gives us the actual skybox the scene is rendering, so reflections always have
+// a real environment color regardless of probe baking state.
+float3 SampleReflectionEnvironment(float3 reflectDirWS)
+{
+    float4 encoded = SAMPLE_TEXTURECUBE_LOD(unity_SpecCube0, samplerunity_SpecCube0, reflectDirWS, 0);
+    float3 envColor = DecodeHDREnvironment(encoded, unity_SpecCube0_HDR);
+    return envColor;
+}
+
 float3 ComposeWaterBackgroundColor(
     WaterRaymarchBackgroundData backgroundData,
     float2 originalScreenUV,
@@ -284,17 +296,11 @@ float3 ComposeWaterBackgroundColor(
         return refractedSceneColor;
 
     // Reflection environment: equivalent of the reference's Light(reflectDir)
-    // for the weak/loser path. We do NOT sample _CameraOpaqueTexture for the
-    // reflected ray because that would re-introduce the unrefracted on-screen
-    // silhouette of the geometry behind the water. URP's environment probe is
-    // the correct single-bounce environment for the reflected direction.
-    float3 reflectedEnvironmentColor = GlossyEnvironmentReflection(
-        backgroundData.surfaceHit.reflectDir,
-        backgroundData.surfaceHit.posWS,
-        0.0h,
-        1.0h,
-        originalScreenUV
-    ) * reflectionStrength;
+    // for the weak/loser path. Direct skybox cubemap sample so the reflection
+    // contribution is always physically visible at grazing angles, instead of
+    // collapsing to black when no reflection probe is baked.
+    float3 reflectedEnvironmentColor = SampleReflectionEnvironment(backgroundData.surfaceHit.reflectDir)
+                                     * reflectionStrength;
 
     float reflectWeight = backgroundData.surfaceHit.reflectWeight;
     float refractWeight = backgroundData.surfaceHit.refractWeight;
