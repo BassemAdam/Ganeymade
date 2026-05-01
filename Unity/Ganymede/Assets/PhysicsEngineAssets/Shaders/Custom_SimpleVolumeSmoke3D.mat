@@ -1,0 +1,74 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!21 &2100000
+Material:
+  serializedVersion: 8
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_Name: Custom_SimpleVolumeSmoke3D
+  m_Shader: {fileID: 4800000, guid: 7010e39826ddc064cad8dc30d4366fa1, type: 3}
+  m_Parent: {fileID: 0}
+  m_ModifiedSerializedProperties: 0
+  m_ValidKeywords: []
+  m_InvalidKeywords: []
+  m_LightmapFlags: 4
+  m_EnableInstancingVariants: 0
+  m_DoubleSidedGI: 0
+  m_CustomRenderQueue: -1
+  stringTagMap: {}
+  disabledShaderPasses: []
+  m_LockedProperties: 
+  m_SavedProperties:
+    serializedVersion: 3
+    m_TexEnvs:
+    - _DetailVolumeTex:
+        m_Texture: {fileID: 11700000, guid: c34323848582ac24893ee04636919daf, type: 3}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
+    - _FineDetailVolumeTex:
+        m_Texture: {fileID: 11700000, guid: 32a9a08c3ecfa884089748b2bd206174, type: 3}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
+    - _ShapeVolumeTex:
+        m_Texture: {fileID: 11700000, guid: 7db5dd7a51f921a409318f6f24d0864d, type: 3}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
+    - _VolumeTex:
+        m_Texture: {fileID: 11700000, guid: 75240210bebfec74ba991ee9ec0fdd5f, type: 3}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
+    m_Ints: []
+    m_Floats:
+    - _AnimationSpeed: 0.5
+    - _AutoAnimate: 1
+    - _Brightness: 1.5
+    - _Contrast: 1.36
+    - _Cutoff: 0
+    - _Density: 6.66
+    - _DetailAnimationSpeed: 0.8
+    - _DetailStrength: 1
+    - _DetailTiling: 1.07
+    - _EdgeFade: 0.183
+    - _EvolutionSpeed: 4
+    - _EvolutionStrength: 0.164
+    - _FineDetailAnimationSpeed: 0.28
+    - _FineDetailStrength: 0.945
+    - _FineDetailTiling: 1
+    - _InvertSequence: 0
+    - _ManualOffset: 0.669
+    - _Opacity: 1.319
+    - _ShapeAnimationSpeed: 0.3
+    - _ShapeBlendStrength: 0.912
+    - _ShapeTiling: 1.35
+    - _Steps: 48
+    m_Colors:
+    - _AnimationDirection: {r: 0, g: -1, b: 0, a: 0}
+    - _DetailDirection: {r: 0.35, g: -1, b: 0.2, a: 0}
+    - _FineDetailDirection: {r: -0.2, g: -1, b: 0.35, a: 0}
+    - _ShadowColor: {r: 0.19999996, g: 0.23999995, b: 0.29999998, a: 1}
+    - _ShapeDirection: {r: 0.15, g: -1, b: -0.08, a: 0}
+    - _SmokeColor: {r: 0.85, g: 0.9, b: 1, a: 1}
+  m_BuildTextureStacks: []
+  m_AllowLocking: 1
