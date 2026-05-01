@@ -4,12 +4,44 @@
 #define IOR_AIR   1.0003
 #define IOR_WATER 1.3330
 
-// Fresnel-Schlick: returns [0=refract, 1=reflect] weight.
-float FresnelSchlick(float cosTheta, float n1, float n2)
+// Exact unpolarized Fresnel reflectance, matching the reference raymarcher:
+// average of perpendicular and parallel polarization reflectance.
+float CalculateReflectance(float3 inDir, float3 normal, float iorA, float iorB)
 {
-    float r0 = (n1 - n2) / (n1 + n2);
-    r0 *= r0;
-    return r0 + (1.0 - r0) * pow(1.0 - cosTheta, 5.0);
+    float refractRatio = iorA / iorB;
+    float cosAngleIn = saturate(-dot(inDir, normal));
+    float sinSqrAngleOfRefraction = refractRatio * refractRatio * (1.0 - cosAngleIn * cosAngleIn);
+    if (sinSqrAngleOfRefraction >= 1.0)
+        return 1.0;
+
+    float cosAngleOfRefraction = sqrt(max(0.0, 1.0 - sinSqrAngleOfRefraction));
+
+    float rPerpendicular = (iorA * cosAngleIn - iorB * cosAngleOfRefraction)
+                         / max(iorA * cosAngleIn + iorB * cosAngleOfRefraction, 1e-6);
+    rPerpendicular *= rPerpendicular;
+
+    float rParallel = (iorB * cosAngleIn - iorA * cosAngleOfRefraction)
+                    / max(iorB * cosAngleIn + iorA * cosAngleOfRefraction, 1e-6);
+    rParallel *= rParallel;
+
+    return saturate((rPerpendicular + rParallel) * 0.5);
+}
+
+float3 RefractExact(float3 inDir, float3 normal, float iorA, float iorB)
+{
+    float refractRatio = iorA / iorB;
+    float cosAngleIn = saturate(-dot(inDir, normal));
+    float sinSqrAngleOfRefraction = refractRatio * refractRatio * (1.0 - cosAngleIn * cosAngleIn);
+    if (sinSqrAngleOfRefraction > 1.0)
+        return float3(0.0, 0.0, 0.0);
+
+    return refractRatio * inDir
+         + (refractRatio * cosAngleIn - sqrt(max(0.0, 1.0 - sinSqrAngleOfRefraction))) * normal;
+}
+
+float3 ReflectExact(float3 inDir, float3 normal)
+{
+    return inDir - 2.0 * dot(inDir, normal) * normal;
 }
 
 struct SurfaceHit
@@ -20,7 +52,8 @@ struct SurfaceHit
     float3 outwardNormal; // Raw density/bounds normal, stable for debugging surface shape.
     float3 reflectDir;
     float3 refractDir;
-    float  fresnel;
+    float  reflectWeight;
+    float  refractWeight;
     bool   totalInternalReflection;
 };
 
@@ -33,7 +66,8 @@ SurfaceHit NoSurfaceHit()
     s.outwardNormal           = float3(0, 0, 0);
     s.reflectDir              = float3(0, 0, 0);
     s.refractDir              = float3(0, 0, 0);
-    s.fresnel                 = 0.0;
+    s.reflectWeight           = 0.0;
+    s.refractWeight           = 1.0;
     s.totalInternalReflection = false;
     return s;
 }
@@ -62,14 +96,22 @@ SurfaceHit MakeSurfaceHit(float3 posWS, float3 rayDir, bool enteringWater)
     float iorIncident = enteringWater ? IOR_AIR   : IOR_WATER;
     float iorTransmit = enteringWater ? IOR_WATER : IOR_AIR;
 
-    float cosI    = saturate(dot(-rayDir, n));
-    s.fresnel     = FresnelSchlick(cosI, iorIncident, iorTransmit);
-    s.reflectDir  = reflect(rayDir, n);
+    s.reflectWeight = CalculateReflectance(rayDir, n, iorIncident, iorTransmit);
+    s.refractWeight = 1.0 - s.reflectWeight;
+    s.reflectDir    = ReflectExact(rayDir, n);
 
-    float  iorRatio           = iorIncident / iorTransmit;
-    float3 rawRefracted       = refract(rayDir, n, iorRatio);
+    float3 rawRefracted       = RefractExact(rayDir, n, iorIncident, iorTransmit);
     s.totalInternalReflection = (dot(rawRefracted, rawRefracted) < 0.001);
-    s.refractDir              = s.totalInternalReflection ? s.reflectDir : rawRefracted;
+    if (s.totalInternalReflection)
+    {
+        s.reflectWeight = 1.0;
+        s.refractWeight = 0.0;
+        s.refractDir    = s.reflectDir;
+    }
+    else
+    {
+        s.refractDir = normalize(rawRefracted);
+    }
 
     return s;
 }

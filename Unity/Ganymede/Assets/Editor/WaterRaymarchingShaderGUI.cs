@@ -9,7 +9,6 @@ public sealed class WaterRaymarchingShaderGUI : ShaderGUI
     static bool s_LiquidVolume = true;
     static bool s_SurfaceOptics = false;
     static bool s_SurfaceNormals = false;
-    static bool s_Debug = false;
     static bool s_Vapour = true;
     static bool s_VapourRendering = true;
     static bool s_VapourGate = false;
@@ -70,9 +69,9 @@ public sealed class WaterRaymarchingShaderGUI : ShaderGUI
             {
                 Draw("_RefractionStrength");
                 Draw("_ReflectionStrength");
-                Draw("_ReflectionScreenOffset");
-                Draw("_ReflectionVisibilityBoost");
-                Draw("_ReflectionVisibilityFloor");
+                EditorGUILayout.HelpBox(
+                    "Reflection and refraction use exact unpolarized Fresnel weights with greedy single-path selection. Refraction samples the URP scene texture at the refracted UV; reflection samples the URP environment probe in the reflected direction. Strength sliders are physical multipliers (1.0 = full physical contribution).",
+                    MessageType.Info);
             });
 
             DrawSubSection("Surface Detection / Normals", ref s_SurfaceNormals, () =>
@@ -83,11 +82,6 @@ public sealed class WaterRaymarchingShaderGUI : ShaderGUI
                 Draw("_BakedNormalBlend");
                 Draw("_BoundaryNormalBlendDistance");
                 Draw("_BoundaryNormalUpBiasPower");
-            });
-
-            DrawSubSection("Debug", ref s_Debug, () =>
-            {
-                Draw("_DebugNormalMode");
             });
         });
     }

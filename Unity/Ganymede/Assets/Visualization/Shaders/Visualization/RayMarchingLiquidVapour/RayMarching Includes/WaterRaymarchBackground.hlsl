@@ -8,6 +8,44 @@ struct WaterRaymarchBackgroundData
     SurfaceHit surfaceHit;
 };
 
+float CalculateLiquidOpticalDepthAlongRay(float3 rayPosWS, float3 rayDirWS, float stepSize)
+{
+    if (dot(rayDirWS, rayDirWS) < 0.9)
+        return 0.0;
+
+    float safeStepSize = max(stepSize, 1e-4);
+    float3 rayDir = normalize(rayDirWS);
+    float2 boundsDistance = RayBoxDst(
+        rayPosWS,
+        rayDir,
+        _PhysicsBoundsMinWS.xyz,
+        _PhysicsBoundsMaxWS.xyz
+    );
+
+    float distanceToBounds = boundsDistance.x;
+    float distanceThroughBounds = boundsDistance.y;
+    if (distanceThroughBounds <= 1e-5)
+        return 0.0;
+
+    float nudge = safeStepSize * 0.5;
+    float tinyNudge = max(1e-3, safeStepSize * 0.05);
+    float3 entryPositionWS = rayPosWS + rayDir * (distanceToBounds + nudge);
+    float maxDistance = max(0.0, distanceThroughBounds - nudge - tinyNudge);
+
+    float travelled = 0.0;
+    float opticalDepth = 0.0;
+    [loop]
+    while (travelled < maxDistance)
+    {
+        float3 samplePositionWS = entryPositionWS + rayDir * travelled;
+        float density = max(0.0, SampleAdjustedLiquidDensityWS(samplePositionWS));
+        opticalDepth += density * safeStepSize;
+        travelled += safeStepSize;
+    }
+
+    return opticalDepth;
+}
+
 float3 RefineLiquidSurfacePositionWS(
     float3 outsidePositionWS,
     float3 insidePositionWS,
@@ -174,26 +212,14 @@ WaterRaymarchBackgroundData BuildWaterRaymarchBackgroundData(
 {
     WaterRaymarchBackgroundData backgroundData;
     backgroundData.backgroundScreenUV = viewData.screenUV;
-    backgroundData.sceneDistanceAlongRay = SampleSceneDistanceAlongRay(viewData.screenUV, viewData.viewDepthDenominator);
+    float originalSceneDistanceAlongRay = SampleSceneDistanceAlongRay(viewData.screenUV, viewData.viewDepthDenominator);
+    backgroundData.sceneDistanceAlongRay = originalSceneDistanceAlongRay;
     backgroundData.surfaceHit = NoSurfaceHit();
 
-    if (backgroundData.sceneDistanceAlongRay <= volumeData.distanceToVolume)
+    if (originalSceneDistanceAlongRay <= volumeData.distanceToVolume)
         return backgroundData;
 
-    // // Two-sample liquid presence test before committing to the full surface march.
-    // // Sample liquid density at the volume entry and at the mid-point of the volume.
-    // // If both return zero the scene is vapour-only (or boundary-only) — no iso-surface
-    // // exists and the entire FindWaterSurfaceHit march can be skipped entirely.
-    // {
-    //     float3 midPointWS = volumeData.entryPositionWS
-    //         + viewData.viewRayDirectionWS * (volumeData.distanceInsideVolume * 0.5);
-    //     bool hasLiquid = SampleAdjustedLiquidDensityWS(volumeData.entryPositionWS) > 0.0
-    //                   || SampleAdjustedLiquidDensityWS(midPointWS)                 > 0.0;
-    //     if (!hasLiquid)
-    //         return backgroundData;
-    // }
-
-    float initialSearchDistance = min(volumeData.volumeExitDistance, backgroundData.sceneDistanceAlongRay);
+    float initialSearchDistance = min(volumeData.volumeExitDistance, originalSceneDistanceAlongRay);
     backgroundData.surfaceHit = FindWaterSurfaceHit(
         viewData,
         volumeData,
@@ -211,19 +237,43 @@ WaterRaymarchBackgroundData BuildWaterRaymarchBackgroundData(
             backgroundData.surfaceHit,
             refractionStrength
         );
+
+        // Always re-read scene depth at the refracted UV so the volume exit /
+        // transmittance mask matches the pixel we are actually sampling. This
+        // is the physically correct choice and prevents the original silhouette
+        // from leaking back through the refracted image.
+        float refractedSceneDistanceAlongRay = SampleSceneDistanceAlongRay(
+            backgroundData.backgroundScreenUV,
+            viewData.viewDepthDenominator
+        );
+
+        backgroundData.sceneDistanceAlongRay = (refractedSceneDistanceAlongRay > volumeData.distanceToVolume)
+            ? refractedSceneDistanceAlongRay
+            : volumeData.volumeExitDistance;
     }
 
     return backgroundData;
 }
 
+// Vector transmittance through liquid: matches reference shader's
+// Transmittance(thickness) = exp(-thickness * extinctionCoeff). Liquid color
+// emerges naturally from sigma_t * optical depth instead of a flat scalar
+// exp(-density).
+float3 LiquidTransmittance(float opticalDepth, float3 extinctionCoefficients)
+{
+    return exp(-opticalDepth * extinctionCoefficients);
+}
+
 float3 ComposeWaterBackgroundColor(
     WaterRaymarchBackgroundData backgroundData,
     float2 originalScreenUV,
-    float reflectionStrength,
-    float2 reflectionScreenOffset,
-    float reflectionVisibilityBoost,
-    float reflectionVisibilityFloor)
+    float3 extinctionCoefficients,
+    float reflectionStrength)
 {
+    // Refracted scene sample: equivalent of the reference shader continuing
+    // its ray through the fluid volume and hitting the environment on the
+    // other side. We replace its full path-traced environment hit with a
+    // single screen-space sample at the refracted UV.
     float3 refractedSceneColor = SAMPLE_TEXTURE2D(
         _CameraOpaqueTexture,
         sampler_CameraOpaqueTexture,
@@ -233,39 +283,61 @@ float3 ComposeWaterBackgroundColor(
     if (!backgroundData.surfaceHit.hit)
         return refractedSceneColor;
 
-    float3 reflectedDirectionVS = mul((float3x3)UNITY_MATRIX_V, backgroundData.surfaceHit.reflectDir);
-    float2 reflectedScreenUV = clamp(
-        // Sampling is inverse to apparent image movement, so subtract the
-        // artist offset: positive X/Y moves the reflection right/up on screen.
-        originalScreenUV + reflectedDirectionVS.xy * 0.08 * reflectionStrength - reflectionScreenOffset,
-        0.001,
-        0.999
-    );
-    float3 reflectedSceneColor = SAMPLE_TEXTURE2D(
-        _CameraOpaqueTexture,
-        sampler_CameraOpaqueTexture,
-        reflectedScreenUV
-    ).rgb;
-
+    // Reflection environment: equivalent of the reference's Light(reflectDir)
+    // for the weak/loser path. We do NOT sample _CameraOpaqueTexture for the
+    // reflected ray because that would re-introduce the unrefracted on-screen
+    // silhouette of the geometry behind the water. URP's environment probe is
+    // the correct single-bounce environment for the reflected direction.
     float3 reflectedEnvironmentColor = GlossyEnvironmentReflection(
         backgroundData.surfaceHit.reflectDir,
         backgroundData.surfaceHit.posWS,
         0.0h,
         1.0h,
         originalScreenUV
+    ) * reflectionStrength;
+
+    float reflectWeight = backgroundData.surfaceHit.reflectWeight;
+    float refractWeight = backgroundData.surfaceHit.refractWeight;
+
+    // Total internal reflection: no refracted contribution at all, exactly
+    // like the reference shader collapses to the reflected path.
+    if (backgroundData.surfaceHit.totalInternalReflection)
+        return reflectedEnvironmentColor;
+
+    // Greedy single-path selection from the reference shader. The "winning"
+    // path is sampled at full quality (scene texture for refraction, env probe
+    // for reflection). The "losing" path is approximated immediately, weighted
+    // by Fresnel and attenuated by the optical depth it would have travelled.
+    float densityProbeStepSize = max(_LightStepSize, _StepSize);
+    float densityAlongRefractRay = CalculateLiquidOpticalDepthAlongRay(
+        backgroundData.surfaceHit.posWS + backgroundData.surfaceHit.refractDir * 1e-3,
+        backgroundData.surfaceHit.refractDir,
+        densityProbeStepSize
+    );
+    float densityAlongReflectRay = CalculateLiquidOpticalDepthAlongRay(
+        backgroundData.surfaceHit.posWS + backgroundData.surfaceHit.reflectDir * 1e-3,
+        backgroundData.surfaceHit.reflectDir,
+        densityProbeStepSize
     );
 
-    float reflectedEnvironmentLuminance = dot(reflectedEnvironmentColor, float3(0.2126, 0.7152, 0.0722));
-    float environmentReflectionWeight = saturate(reflectedEnvironmentLuminance * 4.0);
-    float3 reflectedColor = lerp(reflectedSceneColor, reflectedEnvironmentColor, environmentReflectionWeight);
-    float boostedFresnel = saturate(backgroundData.surfaceHit.fresnel * max(reflectionVisibilityBoost, 1.0));
-    float reflectionWeight = saturate(max(boostedFresnel, reflectionVisibilityFloor) * reflectionStrength);
+    float refractScore = densityAlongRefractRay * refractWeight;
+    float reflectScore = densityAlongReflectRay * reflectWeight;
+    bool traceRefractedRay = refractScore >= reflectScore;
 
-    return lerp(
-        refractedSceneColor,
-        reflectedColor,
-        reflectionWeight
-    );
+    float3 refractTransmittance = LiquidTransmittance(densityAlongRefractRay, extinctionCoefficients);
+    float3 reflectTransmittance = LiquidTransmittance(densityAlongReflectRay, extinctionCoefficients);
+
+    // Composition mirrors the reference shader's accumulation:
+    //   light += winning_path * weight
+    //   light += losing_path  * weight * transmittance(losing path)
+    if (traceRefractedRay)
+    {
+        return refractedSceneColor       * refractWeight
+             + reflectedEnvironmentColor * reflectWeight * reflectTransmittance;
+    }
+
+    return reflectedEnvironmentColor * reflectWeight
+         + refractedSceneColor       * refractWeight * refractTransmittance;
 }
 
 #endif
