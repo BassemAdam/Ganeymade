@@ -15,6 +15,9 @@ Shader "Custom/WaterRaymarching"
         [Header(Surface Optics)]
         _RefractionStrength ("Refraction Strength", Range(0.0, 0.5)) = 0.05
         _ReflectionStrength ("Reflection Strength", Range(0.0, 1.0)) = 0.5
+        _ReflectionScreenOffset ("Reflection Screen Offset XY", Vector) = (0, 0, 0, 0)
+        _ReflectionVisibilityBoost ("Reflection Visibility Boost", Range(1.0, 16.0)) = 1.0
+        _ReflectionVisibilityFloor ("Reflection Visibility Floor", Range(0.0, 1.0)) = 0.0
         _SurfaceDetectionMargin ("Surface Detection Margin", Float) = 0.0
         _NormalSampleRadiusVoxels ("Normal Sample Radius (Voxels)", Range(0.5, 6.0)) = 1.0
         _BoundaryNormalBlendDistance ("Boundary Normal Blend Distance", Range(0.0, 2.0)) = 0.3
@@ -23,8 +26,20 @@ Shader "Custom/WaterRaymarching"
         _VapourScatteringCoefficients ("Vapour Extinction sigma_t (RGB)", Color) = (0.05, 0.05, 0.05, 1.0)
         _VapourScatterColor ("Vapour Scatter Albedo (RGB)", Color) = (0.9, 0.9, 0.9, 1.0)
         _VapourDensityMultiplier ("Vapour Density Multiplier", Float) = 1.0
+        _VapourAbsorption ("Vapour Absorption Floor", Range(0.0, 20.0)) = 2.0
         _VapourPhaseG ("Vapour HG Anisotropy g", Range(-0.95, 0.95)) = 0.2
         _VapourLightStepSize ("Vapour Shadow Step Size", Range(0.01, 2.0)) = 0.4
+        _VapourBackscatter ("Vapour Backscatter / Silver Lining", Range(0.0, 2.0)) = 0.4
+        [Header(Vapour Structure)]
+        _NoiseScale ("Noise Scale", Range(0.1, 20.0)) = 2.0
+        _NoiseDriftDir ("Noise Drift Direction (sample space)", Vector) = (0, -1, 0, 0)
+        _NoiseDriftSpeed ("Noise Drift Speed", Range(0.0, 5.0)) = 0.3
+        _NoiseOctaves ("Noise Octaves", Range(1, 8)) = 5
+        _DensityPower ("Vapour Density Sharpness", Range(0.1, 5.0)) = 1.5
+        _EdgeSoftness ("Vapour Bounds Edge Softness", Range(0.0, 0.5)) = 0.2
+        _BlueNoiseScale ("Blue Noise Tiling", Range(0.25, 8.0)) = 1.0
+        _BlueNoiseStrength ("Blue Noise Jitter Strength", Range(0.0, 1.0)) = 1.0
+        _BlueNoiseTimeSpeed ("Blue Noise Temporal Speed", Range(0.0, 4.0)) = 1.0
     }
 
     SubShader
@@ -73,6 +88,9 @@ Shader "Custom/WaterRaymarching"
                 float  _IsoLevel;
                 float  _RefractionStrength;
                 float  _ReflectionStrength;
+                float4 _ReflectionScreenOffset;
+                float  _ReflectionVisibilityBoost;
+                float  _ReflectionVisibilityFloor;
                 float  _SurfaceDetectionMargin;
                 float  _NormalSampleRadiusVoxels;
                 float  _BoundaryNormalBlendDistance;
@@ -81,12 +99,25 @@ Shader "Custom/WaterRaymarching"
                 float3 _VapourScatteringCoefficients; // sigma_t for vapour
                 float3 _VapourScatterColor;
                 float  _VapourDensityMultiplier;
+                float  _VapourAbsorption;
                 float  _VapourPhaseG;
                 float  _VapourLightStepSize;
+                float  _VapourBackscatter;
+                // Vapour structure/noise — copied from the dedicated vapour renderer.
+                float  _NoiseScale;
+                float4 _NoiseDriftDir;
+                float  _NoiseDriftSpeed;
+                int    _NoiseOctaves;
+                float  _DensityPower;
+                float  _EdgeSoftness;
+                float  _BlueNoiseScale;
+                float  _BlueNoiseStrength;
+                float  _BlueNoiseTimeSpeed;
             CBUFFER_END
 
             TEXTURE2D(_BlueNoiseTex);
             SAMPLER(sampler_BlueNoiseTex);
+            float4 _BlueNoiseTex_TexelSize;
             TEXTURE2D(_CameraOpaqueTexture);
             SAMPLER(sampler_CameraOpaqueTexture);
 
@@ -138,6 +169,7 @@ Shader "Custom/WaterRaymarching"
 
                 // Cosine between view ray and sun — used for vapour HG phase function.
                 float cosViewSun = dot(viewData.viewRayDirectionWS, normalize(_MainLightPosition.xyz));
+                float3 effectiveVapourExtinction = GetEffectiveVapourExtinctionCoefficients();
                 // Shadow step size: use the coarser of liquid/vapour settings for the combined march.
                 float shadowStep = max(_LightStepSize, _VapourLightStepSize);
 
@@ -156,14 +188,14 @@ Shader "Custom/WaterRaymarching"
                         continue;
 
                     // Combined extinction for this step (σ_E = σ_t_liquid·dl + σ_t_vapour·dv).
-                    float3 sigmaE = _ScatteringCoefficients * dl + _VapourScatteringCoefficients * dv;
+                    float3 sigmaE = _ScatteringCoefficients * dl + effectiveVapourExtinction * dv;
 
                     // One combined shadow march — physically correct because both phases
                     // share the same sun ray path and the integral is additive.
                     float3 sunTransmittance = CalculateTransmittedSunLightRG(
                         samplePositionWS,
                         _ScatteringCoefficients,
-                        _VapourScatteringCoefficients,
+                        effectiveVapourExtinction,
                         shadowStep
                     );
 
@@ -177,10 +209,13 @@ Shader "Custom/WaterRaymarching"
 
                     // In-scatter: liquid (isotropic) + vapour (HG anisotropic), one accumulation.
                     float  hgPhase   = HenyeyGreenstein(cosViewSun, _VapourPhaseG);
+                    float  hgNorm    = max(HenyeyGreenstein(0.0, _VapourPhaseG), 1e-4);
+                    float  backGlow  = saturate(hgPhase / (hgNorm * 8.0)) * _VapourBackscatter;
+                    float3 vapourPhaseColor = _VapourScatterColor * (hgPhase + backGlow);
                     float3 inScatter = _MainLightColor.rgb
                         * sunTransmittance
                         * shadowAtten
-                        * (_LiquidScatterColor * dl + _VapourScatterColor * (dv * hgPhase))
+                        * (_LiquidScatterColor * dl + vapourPhaseColor * dv)
                         * safeStepSize;
 
                     accumulatedScatteredLight  += inScatter * remainingViewTransmittance;
@@ -193,7 +228,10 @@ Shader "Custom/WaterRaymarching"
                 float3 backgroundColor = ComposeWaterBackgroundColor(
                     backgroundData,
                     viewData.screenUV,
-                    _ReflectionStrength
+                    _ReflectionStrength,
+                    _ReflectionScreenOffset.xy,
+                    _ReflectionVisibilityBoost,
+                    _ReflectionVisibilityFloor
                 );
 
                 float3 finalColor = accumulatedScatteredLight

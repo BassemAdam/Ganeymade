@@ -17,11 +17,23 @@ float SampleSceneDistanceAlongRay(float2 screenUV, float viewDepthDenominator)
     return eyeDepth / viewDepthDenominator;
 }
 
+float2 ProjectWorldPositionToScreenUV(float3 positionWS)
+{
+    float4 clipPosition = TransformWorldToHClip(positionWS);
+    float4 screenPosition = ComputeScreenPos(clipPosition);
+    return screenPosition.xy / max(screenPosition.w, 1e-5);
+}
+
 float SampleWaterBlueNoise(float2 screenUV)
 {
-    float2 screenPixelPosition = screenUV * _ScaledScreenParams.xy;
-    float2 blueNoiseUV = frac(screenPixelPosition / 1024.0);
-    return SAMPLE_TEXTURE2D(_BlueNoiseTex, sampler_BlueNoiseTex, blueNoiseUV).r;
+    float2 pixelCoords = screenUV * _ScaledScreenParams.xy;
+    float ignJitter = frac(52.9829189 * frac(dot(pixelCoords, float2(0.06711056, 0.00583715))));
+
+    float2 blueNoiseUV = frac(pixelCoords * _BlueNoiseTex_TexelSize.xy * max(_BlueNoiseScale, 0.01));
+    float2 timeOffset = float2(0.75487766, 0.56984029) * frac(_Time.y * _BlueNoiseTimeSpeed);
+    float blueNoise = SAMPLE_TEXTURE2D(_BlueNoiseTex, sampler_BlueNoiseTex, frac(blueNoiseUV + timeOffset)).r;
+
+    return lerp(ignJitter, blueNoise, saturate(_BlueNoiseStrength));
 }
 
 WaterRaymarchViewData BuildWaterRaymarchViewData(float3 worldPositionWS, float4 normalizedScreenPosition)

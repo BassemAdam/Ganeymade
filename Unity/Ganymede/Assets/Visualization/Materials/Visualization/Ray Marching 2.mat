@@ -101,6 +101,9 @@ Material:
     - _AlphaToMask: 0
     - _Blend: 0
     - _BlendModePreserveSpecular: 1
+    - _BlueNoiseScale: 1.73
+    - _BlueNoiseStrength: 1
+    - _BlueNoiseTimeSpeed: 1
     - _BoundaryNormalBlendDistance: 2
     - _BoundaryNormalUpBiasPower: 6.78
     - _BumpScale: 1
@@ -114,10 +117,12 @@ Material:
     - _DebugNormals: 1
     - _DensityMultiplier: 1
     - _DensityOffset: -0.35
+    - _DensityPower: 5
     - _DetailAlbedoMapScale: 1
     - _DetailNormalMapScale: 1
     - _DstBlend: 0
     - _DstBlendAlpha: 0
+    - _EdgeSoftness: 0.5
     - _EnvironmentReflections: 1
     - _GlossMapScale: 0
     - _Glossiness: 0
@@ -128,12 +133,17 @@ Material:
     - _MarchSteps: 64
     - _MaxSteps: 2048
     - _Metallic: 0
+    - _NoiseDriftSpeed: 0.7
+    - _NoiseOctaves: 2.87
+    - _NoiseScale: 0.7
     - _NormalSampleRadiusVoxels: 6
     - _OcclusionStrength: 1
     - _Parallax: 0.005
     - _QueueOffset: 0
     - _ReceiveShadows: 1
-    - _ReflectionStrength: 0.592
+    - _ReflectionStrength: 0.459
+    - _ReflectionVisibilityBoost: 5.74
+    - _ReflectionVisibilityFloor: 0.173
     - _RefractionStrength: 0.5
     - _Smoothness: 0.5
     - _SmoothnessTextureChannel: 0
@@ -145,15 +155,17 @@ Material:
     - _SurfaceDetectionMargin: 0.04
     - _VapourAOStepSize: 0.946
     - _VapourAOStrength: 7.4
+    - _VapourAbsorption: 0
     - _VapourAmbientStrength: 1
+    - _VapourBackscatter: 0.085
     - _VapourColorDensityScale: 7.31
-    - _VapourDensityMultiplier: 1
+    - _VapourDensityMultiplier: 45.5
     - _VapourFeatherMax: 0.219
     - _VapourFeatherMin: 0.044
-    - _VapourLightStepSize: 1.082
+    - _VapourLightStepSize: 1.498
     - _VapourMultiScatterStrength: 1.054
     - _VapourPhaseBlend: 0.874
-    - _VapourPhaseG: 0.379
+    - _VapourPhaseG: 0.511
     - _VapourPhaseG2: -0.495
     - _WorkflowMode: 1
     - _XRMotionVectorsPass: 1
@@ -164,9 +176,11 @@ Material:
     - _Color: {r: 1, g: 1, b: 1, a: 1}
     - _EmissionColor: {r: 0, g: 0, b: 0, a: 1}
     - _ExtinctionColor: {r: 0.8, g: 0.19999996, b: 0.049999982, a: 1}
-    - _LiquidScatterColor: {r: 0.07099997, g: 0.18799996, b: 0.321, a: 1}
+    - _LiquidScatterColor: {r: 0.076223195, g: 0.32015726, b: 0.59119487, a: 1}
+    - _NoiseDriftDir: {r: 0, g: -1, b: 0, a: 0}
+    - _ReflectionScreenOffset: {r: -0.14, g: 0, b: 0, a: 0}
     - _ScatterColor: {r: 0.002, g: 0.004, b: 0.016, a: 1}
-    - _ScatteringCoefficients: {r: 0.292, g: 0.179, b: 0.085, a: 1}
+    - _ScatteringCoefficients: {r: 0.4528302, g: 0.27712044, b: 0.14382339, a: 1}
     - _SpecColor: {r: 0.19999996, g: 0.19999996, b: 0.19999996, a: 1}
     - _TintColor: {r: 0.19999996, g: 0.6, b: 1, a: 1}
     - _VapourAmbientBottom: {r: 0.29999998, g: 0.24999997, b: 0.19999996, a: 1}
