@@ -8,6 +8,13 @@ struct WaterRaymarchBackgroundData
     SurfaceHit surfaceHit;
 };
 
+struct WaterBackgroundContributions
+{
+    float3 reflectionContribution;
+    float3 refractionContribution;
+    float3 reflectedEnvironmentColor;
+};
+
 float CalculateLiquidOpticalDepthAlongRay(float3 rayPosWS, float3 rayDirWS, float stepSize)
 {
     if (dot(rayDirWS, rayDirWS) < 0.9)
@@ -134,22 +141,12 @@ SurfaceHit FindWaterSurfaceHit(
     bool rayStartsInsideWater = rayStartsInsideVolume
         && SampleAdjustedLiquidDensityWS(viewData.cameraPositionWS) >= surfaceThreshold;
 
-    if (!rayStartsInsideVolume)
-    {
-        float entryDensity = SampleAdjustedLiquidDensityWS(volumeData.entryPositionWS);
-        if (entryDensity >= surfaceThreshold)
-            return MakeSurfaceHit(volumeData.entryPositionWS, viewData.viewRayDirectionWS, true);
-    }
-
     SurfaceHit surfaceHit = NoSurfaceHit();
     float sampleDistance = volumeData.distanceToVolume;
     float previousDensity = rayStartsInsideWater
         ? SampleAdjustedLiquidDensityWS(viewData.cameraPositionWS)
         : SampleAdjustedLiquidDensityWS(viewData.cameraPositionWS + viewData.viewRayDirectionWS * sampleDistance);
     float3 previousPositionWS = rayStartsInsideWater
-        ? viewData.cameraPositionWS
-        : viewData.cameraPositionWS + viewData.viewRayDirectionWS * sampleDistance;
-    float3 lastInsideWaterPositionWS = rayStartsInsideWater
         ? viewData.cameraPositionWS
         : viewData.cameraPositionWS + viewData.viewRayDirectionWS * sampleDistance;
 
@@ -184,20 +181,10 @@ SurfaceHit FindWaterSurfaceHit(
             surfaceHit = MakeSurfaceHit(surfacePositionWS, viewData.viewRayDirectionWS, enteringWater);
         }
 
-        if (currentDensity >= surfaceThreshold)
-            lastInsideWaterPositionWS = samplePositionWS;
-
         sampleDistance += safeStepSize;
         previousDensity = currentDensity;
         previousPositionWS = samplePositionWS;
     }
-
-    // If the camera/ray is inside liquid and the liquid reaches the simulation
-    // box edge, there may be no density drop before the volume exit. Treat the
-    // last in-water sample as a Water→Air exit so boundary normals and IOR are
-    // still valid instead of returning no/garbage surface.
-    if (!surfaceHit.hit && previousDensity >= surfaceThreshold)
-        surfaceHit = MakeSurfaceHit(lastInsideWaterPositionWS, viewData.viewRayDirectionWS, false);
 
     return surfaceHit;
 }
@@ -264,56 +251,87 @@ float3 LiquidTransmittance(float opticalDepth, float3 extinctionCoefficients)
     return exp(-opticalDepth * extinctionCoefficients);
 }
 
-// Direct skybox/probe cubemap sample. URP's GlossyEnvironmentReflection often
-// returns near-black for scenes without a baked reflection probe contribution,
-// which makes Fresnel reflections invisible. Sampling unity_SpecCube0 directly
-// gives us the actual skybox the scene is rendering, so reflections always have
-// a real environment color regardless of probe baking state.
-float3 SampleReflectionEnvironment(float3 reflectDirWS)
+float3 SampleRawSceneSpecCube(float3 reflectDirWS)
 {
-    float4 encoded = SAMPLE_TEXTURECUBE_LOD(unity_SpecCube0, samplerunity_SpecCube0, reflectDirWS, 0);
-    float3 envColor = DecodeHDREnvironment(encoded, unity_SpecCube0_HDR);
-    return envColor;
+    half4 encoded = SAMPLE_TEXTURECUBE_LOD(
+        unity_SpecCube0,
+        samplerunity_SpecCube0,
+        normalize(reflectDirWS),
+        0
+    );
+    return DecodeHDREnvironment(encoded, unity_SpecCube0_HDR);
 }
 
-float3 ComposeWaterBackgroundColor(
+float3 SampleGlossyReflectionEnvironment(float3 reflectDirWS, float3 positionWS, float2 normalizedScreenUV)
+{
+    return GlossyEnvironmentReflection(
+        normalize(reflectDirWS),
+        positionWS,
+        0.0h,
+        1.0h,
+        normalizedScreenUV
+    );
+}
+
+// URP-supported reflection probe / skybox sample with a raw spec-cube fallback.
+// The fallback is intentionally kept because URP's glossy path and raw cube path
+// are bound through slightly different shader variant paths on custom raymarch
+// passes, especially while debugging transparent proxy renderers.
+float3 SampleReflectionEnvironment(float3 reflectDirWS, float3 positionWS, float2 normalizedScreenUV)
+{
+    float3 glossyEnvironment = SampleGlossyReflectionEnvironment(
+        reflectDirWS,
+        positionWS,
+        normalizedScreenUV
+    );
+
+    float glossyMax = max(glossyEnvironment.r, max(glossyEnvironment.g, glossyEnvironment.b));
+    if (glossyMax > 1e-4)
+        return glossyEnvironment;
+
+    return SampleRawSceneSpecCube(reflectDirWS);
+}
+
+WaterBackgroundContributions ComputeWaterBackgroundContributions(
     WaterRaymarchBackgroundData backgroundData,
     float2 originalScreenUV,
     float3 extinctionCoefficients,
-    float reflectionStrength)
+    float reflectionStrength,
+    float reflectionVisibilityBoost,
+    float reflectionVisibilityFloor)
 {
-    // Refracted scene sample: equivalent of the reference shader continuing
-    // its ray through the fluid volume and hitting the environment on the
-    // other side. We replace its full path-traced environment hit with a
-    // single screen-space sample at the refracted UV.
-    float3 refractedSceneColor = SAMPLE_TEXTURE2D(
+    WaterBackgroundContributions contributions;
+    contributions.reflectionContribution = 0.0;
+    contributions.refractionContribution = SAMPLE_TEXTURE2D(
         _CameraOpaqueTexture,
         sampler_CameraOpaqueTexture,
         backgroundData.backgroundScreenUV
     ).rgb;
+    contributions.reflectedEnvironmentColor = 0.0;
 
     if (!backgroundData.surfaceHit.hit)
-        return refractedSceneColor;
+        return contributions;
 
-    // Reflection environment: equivalent of the reference's Light(reflectDir)
-    // for the weak/loser path. Direct skybox cubemap sample so the reflection
-    // contribution is always physically visible at grazing angles, instead of
-    // collapsing to black when no reflection probe is baked.
-    float3 reflectedEnvironmentColor = SampleReflectionEnvironment(backgroundData.surfaceHit.reflectDir)
-                                     * reflectionStrength;
+    contributions.reflectedEnvironmentColor = SampleReflectionEnvironment(
+        backgroundData.surfaceHit.reflectDir,
+        backgroundData.surfaceHit.posWS,
+        originalScreenUV
+    ) * reflectionStrength;
 
-    float reflectWeight = backgroundData.surfaceHit.reflectWeight;
+    float physicalReflectWeight = backgroundData.surfaceHit.reflectWeight;
+    float reflectWeight = saturate(
+        max(physicalReflectWeight, saturate(reflectionVisibilityFloor))
+      * max(reflectionVisibilityBoost, 0.0)
+    );
     float refractWeight = backgroundData.surfaceHit.refractWeight;
 
-    // Total internal reflection: no refracted contribution at all, exactly
-    // like the reference shader collapses to the reflected path.
     if (backgroundData.surfaceHit.totalInternalReflection)
-        return reflectedEnvironmentColor;
+    {
+        contributions.reflectionContribution = contributions.reflectedEnvironmentColor;
+        contributions.refractionContribution = 0.0;
+        return contributions;
+    }
 
-    // Greedy single-path selection from the reference shader. The "winning"
-    // path is sampled at full quality (scene texture for refraction, env probe
-    // for reflection). The "losing" path is approximated immediately, weighted
-    // by Fresnel and attenuated by the optical depth it would have travelled.
     float densityProbeStepSize = max(_LightStepSize, _StepSize);
     float densityAlongRefractRay = CalculateLiquidOpticalDepthAlongRay(
         backgroundData.surfaceHit.posWS + backgroundData.surfaceHit.refractDir * 1e-3,
@@ -327,23 +345,124 @@ float3 ComposeWaterBackgroundColor(
     );
 
     float refractScore = densityAlongRefractRay * refractWeight;
-    float reflectScore = densityAlongReflectRay * reflectWeight;
+    float reflectScore = densityAlongReflectRay * physicalReflectWeight;
     bool traceRefractedRay = refractScore >= reflectScore;
 
     float3 refractTransmittance = LiquidTransmittance(densityAlongRefractRay, extinctionCoefficients);
     float3 reflectTransmittance = LiquidTransmittance(densityAlongReflectRay, extinctionCoefficients);
 
-    // Composition mirrors the reference shader's accumulation:
-    //   light += winning_path * weight
-    //   light += losing_path  * weight * transmittance(losing path)
     if (traceRefractedRay)
     {
-        return refractedSceneColor       * refractWeight
-             + reflectedEnvironmentColor * reflectWeight * reflectTransmittance;
+        contributions.reflectionContribution = contributions.reflectedEnvironmentColor * reflectWeight * reflectTransmittance;
+        contributions.refractionContribution *= refractWeight;
+        return contributions;
     }
 
-    return reflectedEnvironmentColor * reflectWeight
-         + refractedSceneColor       * refractWeight * refractTransmittance;
+    contributions.reflectionContribution = contributions.reflectedEnvironmentColor * reflectWeight;
+    contributions.refractionContribution *= refractWeight * refractTransmittance;
+    return contributions;
+}
+
+float3 ComposeWaterDebugColor(
+    WaterRaymarchBackgroundData backgroundData,
+    float2 originalScreenUV,
+    float debugViewMode,
+    float3 extinctionCoefficients,
+    float reflectionStrength,
+    float reflectionVisibilityBoost,
+    float reflectionVisibilityFloor,
+    float3 surfaceViewTransmittance,
+    float3 remainingViewTransmittance)
+{
+    // Bright magenta means the water raymarch never found a liquid surface, so
+    // the missing reflection is a surface-hit problem rather than a cubemap one.
+    if (!backgroundData.surfaceHit.hit)
+        return float3(1.0, 0.0, 1.0);
+
+    int mode = (int)round(debugViewMode);
+    if (mode == 2)
+    {
+        float3 n = normalize(backgroundData.surfaceHit.normal);
+        return n * 0.5 + 0.5;
+    }
+
+    if (mode == 3)
+    {
+        float3 r = normalize(backgroundData.surfaceHit.reflectDir);
+        return r * 0.5 + 0.5;
+    }
+
+    if (mode == 4)
+    {
+        return backgroundData.surfaceHit.reflectWeight.xxx;
+    }
+
+    if (mode == 9)
+    {
+        return SampleGlossyReflectionEnvironment(
+            backgroundData.surfaceHit.reflectDir,
+            backgroundData.surfaceHit.posWS,
+            originalScreenUV
+        );
+    }
+
+    if (mode == 10)
+    {
+        return SampleRawSceneSpecCube(backgroundData.surfaceHit.reflectDir);
+    }
+
+    WaterBackgroundContributions contributions = ComputeWaterBackgroundContributions(
+        backgroundData,
+        originalScreenUV,
+        extinctionCoefficients,
+        max(reflectionStrength, 1e-3),
+        reflectionVisibilityBoost,
+        reflectionVisibilityFloor
+    );
+    float3 reflectedEnvironmentColor = contributions.reflectedEnvironmentColor;
+
+    // Bright yellow means a surface exists but the reflected environment sample
+    // is still black, so the issue is in the reflection source/binding path.
+    if (max(reflectedEnvironmentColor.r, max(reflectedEnvironmentColor.g, reflectedEnvironmentColor.b)) < 1e-4)
+        return float3(1.0, 1.0, 0.0);
+
+    if (mode == 1)
+        return reflectedEnvironmentColor;
+
+    if (mode == 5)
+        return contributions.reflectionContribution * surfaceViewTransmittance;
+    if (mode == 6)
+        return contributions.refractionContribution * remainingViewTransmittance;
+    if (mode == 7)
+        return contributions.reflectionContribution * surfaceViewTransmittance
+             + contributions.refractionContribution * remainingViewTransmittance;
+    if (mode == 8)
+        return remainingViewTransmittance;
+
+    return reflectedEnvironmentColor;
+}
+
+float3 ComposeWaterBackgroundColor(
+    WaterRaymarchBackgroundData backgroundData,
+    float2 originalScreenUV,
+    float3 extinctionCoefficients,
+    float reflectionStrength,
+    float reflectionVisibilityBoost,
+    float reflectionVisibilityFloor,
+    float3 surfaceViewTransmittance,
+    float3 remainingViewTransmittance)
+{
+    WaterBackgroundContributions contributions = ComputeWaterBackgroundContributions(
+        backgroundData,
+        originalScreenUV,
+        extinctionCoefficients,
+        reflectionStrength,
+        reflectionVisibilityBoost,
+        reflectionVisibilityFloor
+    );
+
+    return contributions.reflectionContribution * surfaceViewTransmittance
+         + contributions.refractionContribution * remainingViewTransmittance;
 }
 
 #endif

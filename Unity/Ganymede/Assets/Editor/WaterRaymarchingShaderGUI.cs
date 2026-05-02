@@ -4,6 +4,7 @@ using UnityEngine;
 public sealed class WaterRaymarchingShaderGUI : ShaderGUI
 {
     static bool s_SharedVolume = true;
+    static bool s_Debug = true;
     static bool s_BlueNoise = false;
     static bool s_Liquid = true;
     static bool s_LiquidVolume = true;
@@ -42,6 +43,14 @@ public sealed class WaterRaymarchingShaderGUI : ShaderGUI
             Draw("_StepSize");
             Draw("_IsoLevel");
 
+            DrawSubSection("Debug", ref s_Debug, () =>
+            {
+                Draw("_DebugViewMode");
+                EditorGUILayout.HelpBox(
+                    "Reflection Only shows the sampled reflected environment with fallback. Surface Normal visualizes the optical normal. Reflection Direction visualizes the reflect vector. Reflection Weight shows Fresnel reflectance. Reflection Contribution and Refraction Contribution show the weighted terms after the water background composition logic. Background Mix shows their combined result. View Transmittance shows how much refracted background survives the volume raymarch. Glossy Environment Raw and SpecCube Raw split the actual water pass reflection sources. Magenta = no liquid surface hit. Yellow = surface hit exists but both reflection sources are black.",
+                    MessageType.Info);
+            });
+
             DrawSubSection("Blue Noise Jitter", ref s_BlueNoise, () =>
             {
                 DrawTexture("_BlueNoiseTex");
@@ -69,8 +78,10 @@ public sealed class WaterRaymarchingShaderGUI : ShaderGUI
             {
                 Draw("_RefractionStrength");
                 Draw("_ReflectionStrength");
+                Draw("_ReflectionVisibilityBoost");
+                Draw("_ReflectionVisibilityFloor");
                 EditorGUILayout.HelpBox(
-                    "Reflection and refraction use exact unpolarized Fresnel weights with greedy single-path selection. Refraction samples the URP scene texture at the refracted UV; reflection samples the URP environment probe in the reflected direction. Strength sliders are physical multipliers (1.0 = full physical contribution).",
+                    "Reflection and refraction use exact unpolarized Fresnel weights with greedy single-path selection. Refraction samples the URP scene texture at the refracted UV; reflection samples the URP environment probe in the reflected direction. Strength is the physical multiplier. Visibility Boost/Floor are art controls applied only to the final reflected contribution so the normal view can show reflections without changing the raw reflection debug modes.",
                     MessageType.Info);
             });
 

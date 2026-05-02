@@ -125,6 +125,8 @@ Material:
     - _Cutoff: 0.5
     - _DebugNormalMode: 0
     - _DebugNormals: 1
+    - _DebugReflectionCubemapMode: 2
+    - _DebugViewMode: 0
     - _DensityMultiplier: 1
     - _DensityOffset: -0.35
     - _DensityPower: 1.5
