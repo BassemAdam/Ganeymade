@@ -2451,28 +2451,34 @@ MonoBehaviour:
       marchingCubesLUT: {fileID: 4900000, guid: 711f0eebef002a84e95e6dc230c006be, type: 3}
     densityGrid:
       volumeDims: {x: 128, y: 128, z: 128}
-      liquidSmoothingRadiusWS: 0.1
-      adaptiveRadiusEnabled: 1
-      liquidBulkSmoothingRadiusWS: 9
-      vapourSmoothingRadiusWS: 2.5
-      adaptiveDensitySurface: 190
-      adaptiveDensityBulk: 250
-      adaptiveDensityCurve: 0.92
+      vapourSmoothingRadiusWS: 0.1
       maxKernelRadiusVoxels: 2
-      splashRejectDensityBelow: 264.9
-      splashRejectSpeedAbove: 0.34
-    liquidBlur:
+    blur:
       enabled: 1
       radius: 4
       sigma: 4
       detailPreserve: 0
-    vapour:
-      enabled: 1
-      blurRadius: 4
-      blurSigma: 4
-      blurDetailPreserve: 0
+    marchingCubesBlur:
+      enabled: 0
+      radius: 1
+      sigma: 0.1
+      detailPreserve: 0
+    raymarchSmoothing:
+      liquidSmoothingRadiusWS: 1
+      adaptiveRadiusEnabled: 1
+      liquidBulkSmoothingRadiusWS: 2.5
+      adaptiveDensitySurface: 175
+      adaptiveDensityBulk: 300
+      adaptiveDensityCurve: 0.4
+    marchingCubesSmoothing:
+      liquidSmoothingRadiusWS: 0
+      adaptiveRadiusEnabled: 1
+      liquidBulkSmoothingRadiusWS: 0.25
+      adaptiveDensitySurface: 170
+      adaptiveDensityBulk: 260
+      adaptiveDensityCurve: 0.4
     rendering:
-      mode: 0
+      mode: 1
       rayMarchingMaterial: {fileID: 2100000, guid: 03c4cd8b0ea45e14190b02d13513c0d9, type: 2}
       marchingCubesMaterial: {fileID: 2100000, guid: a5f165da16e6e4a4e8b93a9c48ecc59b, type: 2}
       vapourRaymarchMaterial: {fileID: 2100000, guid: ecfb9a36afdd6404e9a46793705c4a27, type: 2}
@@ -2689,7 +2695,7 @@ Transform:
   m_GameObject: {fileID: 1268717246}
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: 0.42, y: 3, z: -0.86}
+  m_LocalPosition: {x: -2.76, y: 4.61, z: -0.86}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []

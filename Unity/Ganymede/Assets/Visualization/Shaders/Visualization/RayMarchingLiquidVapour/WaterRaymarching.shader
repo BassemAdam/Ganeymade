@@ -6,6 +6,9 @@ Shader "Custom/WaterRaymarching"
         _StepSize ("Step Size", Range(0.001, 1.0)) = 0.05
         _BlueNoiseTex ("Blue Noise Texture", 2D) = "gray" {}
         _IsoLevel ("Iso Level (surface threshold)", Float) = 0.01
+        [Header(Debug)]
+        [Enum(Off, 0, Reflection Only, 1, Surface Normal, 2, Reflection Direction, 3, Reflection Weight, 4, Reflection Contribution, 5, Refraction Contribution, 6, Background Mix, 7, View Transmittance, 8, Glossy Environment Raw, 9, SpecCube Raw, 10)]
+        _DebugViewMode ("Debug View", Float) = 0
         [Header(Liquid Phase)]
         _ScatteringCoefficients ("Liquid Extinction sigma_t (RGB)", Color) = (0.57, 0.06, 0.02, 1.0)
         _LiquidScatterColor ("Liquid Scatter Albedo (RGB)", Color) = (0.002, 0.004, 0.016, 1.0)
@@ -15,6 +18,8 @@ Shader "Custom/WaterRaymarching"
         [Header(Surface Optics)]
         _RefractionStrength ("Refraction Strength", Range(0.0, 1.0)) = 1.0
         _ReflectionStrength ("Reflection Strength", Range(0.0, 1.0)) = 1.0
+        _ReflectionVisibilityBoost ("Reflection Visibility Boost", Range(0.0, 16.0)) = 1.0
+        _ReflectionVisibilityFloor ("Reflection Visibility Floor", Range(0.0, 1.0)) = 0.0
         _SurfaceDetectionMargin ("Surface Detection Margin", Float) = 0.0
         _SurfaceRefineIterations ("Surface Refine Iterations", Range(0, 8)) = 4
         _NormalSampleRadiusVoxels ("Normal Sample Radius (Voxels)", Range(0.5, 6.0)) = 1.0
@@ -62,17 +67,28 @@ Shader "Custom/WaterRaymarching"
 
         Pass
         {
+            Name "ForwardWaterRaymarch"
+            Tags
+            {
+                "LightMode" = "UniversalForward"
+            }
+
             HLSLPROGRAM
             #pragma vertex vert
             #pragma fragment frag
             #pragma multi_compile _ _MAIN_LIGHT_SHADOWS _MAIN_LIGHT_SHADOWS_CASCADE _MAIN_LIGHT_SHADOWS_SCREEN
             #pragma multi_compile _ _ADDITIONAL_LIGHTS_VERTEX _ADDITIONAL_LIGHTS
             #pragma multi_compile_fragment _ _ADDITIONAL_LIGHT_SHADOWS
+            #pragma multi_compile_fragment _ _REFLECTION_PROBE_BLENDING
+            #pragma multi_compile_fragment _ _REFLECTION_PROBE_BOX_PROJECTION
+            #pragma multi_compile_fragment _ _REFLECTION_PROBE_ATLAS
+            #pragma multi_compile_fragment _ REFLECTION_PROBE_ROTATION
             #pragma multi_compile _ _CLUSTER_LIGHT_LOOP
             #pragma multi_compile _ _SHADOWS_SOFT
 
             #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Core.hlsl"
             #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Lighting.hlsl"
+            #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/GlobalIllumination.hlsl"
             #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/DeclareDepthTexture.hlsl"
             #include "RayMarching Includes/RayMarchGeometry.hlsl"
 
@@ -98,8 +114,11 @@ Shader "Custom/WaterRaymarching"
                 // Surface optics
                 float  _StepSize;
                 float  _IsoLevel;
+                float  _DebugViewMode;
                 float  _RefractionStrength;
                 float  _ReflectionStrength;
+                float  _ReflectionVisibilityBoost;
+                float  _ReflectionVisibilityFloor;
                 float  _SurfaceDetectionMargin;
                 float  _SurfaceRefineIterations;
                 float  _NormalSampleRadiusVoxels;
@@ -183,10 +202,14 @@ Shader "Custom/WaterRaymarching"
 
                 float3 accumulatedScatteredLight  = 0.0;
                 float3 remainingViewTransmittance = 1.0;
+                float3 surfaceViewTransmittance   = 1.0;
 
                 float safeStepSize   = max(_StepSize, 1e-4);
                 float currentDistance = volumeData.distanceToVolume + safeStepSize * viewData.blueNoiseValue;
                 float exitDistance    = min(volumeData.volumeExitDistance, backgroundData.sceneDistanceAlongRay);
+                float surfaceDistanceAlongRay = backgroundData.surfaceHit.hit
+                    ? distance(viewData.cameraPositionWS, backgroundData.surfaceHit.posWS)
+                    : exitDistance;
 
                 #if defined(_ADDITIONAL_LIGHTS)
                     InputData inputData = (InputData)0;
@@ -196,8 +219,10 @@ Shader "Custom/WaterRaymarching"
 
                 while (currentDistance < exitDistance)
                 {
-                    float3 samplePositionWS = viewData.cameraPositionWS + viewData.viewRayDirectionWS * currentDistance;
-                    currentDistance += safeStepSize;
+                    float stepStartDistance = currentDistance;
+                    float stepLength = min(safeStepSize, exitDistance - stepStartDistance);
+                    float3 samplePositionWS = viewData.cameraPositionWS + viewData.viewRayDirectionWS * stepStartDistance;
+                    currentDistance += stepLength;
 
                     // One raw grid sample gives us both phases:
                     //   R / phase 0 = liquid
@@ -275,23 +300,50 @@ Shader "Custom/WaterRaymarching"
                     #endif
 
                     float3 inScatter = liquidScatter + vapourScatter;
+                    float3 stepTransmittance = exp(-sigmaE * stepLength);
 
                     accumulatedScatteredLight  += inScatter * remainingViewTransmittance;
-                    remainingViewTransmittance *= exp(-sigmaE * safeStepSize);
+                    remainingViewTransmittance *= stepTransmittance;
+
+                    float surfaceStepLength = max(
+                        0.0,
+                        min(stepStartDistance + stepLength, surfaceDistanceAlongRay) - stepStartDistance
+                    );
+                    if (surfaceStepLength > 1e-6)
+                        surfaceViewTransmittance *= exp(-sigmaE * surfaceStepLength);
 
                     if (max(remainingViewTransmittance.r, max(remainingViewTransmittance.g, remainingViewTransmittance.b)) < 0.01)
                         break;
+                }
+
+                if (_DebugViewMode > 0.5)
+                {
+                    float3 reflectionDebugColor = ComposeWaterDebugColor(
+                        backgroundData,
+                        viewData.screenUV,
+                        _DebugViewMode,
+                        _ScatteringCoefficients,
+                        _ReflectionStrength,
+                        _ReflectionVisibilityBoost,
+                        _ReflectionVisibilityFloor,
+                        surfaceViewTransmittance,
+                        remainingViewTransmittance
+                    );
+                    return half4(reflectionDebugColor, 1.0);
                 }
 
                 float3 backgroundColor = ComposeWaterBackgroundColor(
                     backgroundData,
                     viewData.screenUV,
                     _ScatteringCoefficients,
-                    _ReflectionStrength
+                    _ReflectionStrength,
+                    _ReflectionVisibilityBoost,
+                    _ReflectionVisibilityFloor,
+                    surfaceViewTransmittance,
+                    remainingViewTransmittance
                 );
 
-                float3 finalColor = accumulatedScatteredLight
-                                  + backgroundColor * remainingViewTransmittance;
+                float3 finalColor = accumulatedScatteredLight + backgroundColor;
 
                 return half4(finalColor, 1.0);
             }

@@ -1,4 +1,5 @@
 using UnityEngine;
+using UnityEngine.Rendering;
 
 public sealed class WaterPhaseRaymarchRenderer
 {
@@ -54,6 +55,19 @@ public sealed class WaterPhaseRaymarchRenderer
         MeshRenderer proxyMeshRenderer = proxyTransform.GetComponent<MeshRenderer>();
         if (proxyMeshRenderer == null)
             proxyMeshRenderer = proxyTransform.gameObject.AddComponent<MeshRenderer>();
+
+        if (_sourceMeshRenderer != null)
+        {
+            proxyMeshRenderer.reflectionProbeUsage = _sourceMeshRenderer.reflectionProbeUsage;
+            proxyMeshRenderer.lightProbeUsage = _sourceMeshRenderer.lightProbeUsage;
+            proxyMeshRenderer.probeAnchor = _sourceMeshRenderer.probeAnchor;
+        }
+        else
+        {
+            proxyMeshRenderer.reflectionProbeUsage = ReflectionProbeUsage.BlendProbes;
+            proxyMeshRenderer.lightProbeUsage = LightProbeUsage.BlendProbes;
+            proxyMeshRenderer.probeAnchor = null;
+        }
 
         if (_sourceMeshRenderer != null && proxyMeshRenderer != _sourceMeshRenderer)
             _sourceMeshRenderer.enabled = false;
