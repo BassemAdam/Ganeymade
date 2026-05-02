@@ -273,17 +273,18 @@ public class PhysicsWaterPhaseBridge : MonoBehaviour
         settings.References.marchingCubesLUT = marchingCubesLUT;
 
         settings.DensityGrid.volumeDims = volumeDims;
-        settings.DensityGrid.liquidSmoothingRadiusWS = smoothingRadiusWS;
+        settings.RaymarchSmoothing.liquidSmoothingRadiusWS = smoothingRadiusWS;
+        settings.MarchingCubesSmoothing.liquidSmoothingRadiusWS = smoothingRadiusWS;
 
-        settings.LiquidBlur.enabled = blurLiquidDensity;
-        settings.LiquidBlur.radius = liquidBlurRadius;
-        settings.LiquidBlur.sigma = liquidBlurSigma;
-        settings.LiquidBlur.detailPreserve = liquidBlurDetailPreserve;
+        settings.Blur.enabled = blurLiquidDensity || blurVapourDensity;
+        settings.Blur.radius = blurVapourDensity ? blurRadius : liquidBlurRadius;
+        settings.Blur.sigma = blurVapourDensity ? blurSigma : liquidBlurSigma;
+        settings.Blur.detailPreserve = blurVapourDensity ? blurDetailPreserve : liquidBlurDetailPreserve;
 
-        settings.Vapour.enabled = blurVapourDensity;
-        settings.Vapour.blurRadius = blurRadius;
-        settings.Vapour.blurSigma = blurSigma;
-        settings.Vapour.blurDetailPreserve = blurDetailPreserve;
+        settings.MarchingCubesBlur.enabled = settings.Blur.enabled;
+        settings.MarchingCubesBlur.radius = settings.Blur.radius;
+        settings.MarchingCubesBlur.sigma = settings.Blur.sigma;
+        settings.MarchingCubesBlur.detailPreserve = settings.Blur.detailPreserve;
 
         settings.Rendering.mode = useMarchingCubes
             ? WaterSurfaceRenderMode.MarchingCubesLiquidWithVapour
@@ -303,15 +304,34 @@ public class PhysicsWaterPhaseBridge : MonoBehaviour
         settings.DensityGrid.volumeDims.x = Mathf.Max(1, settings.DensityGrid.volumeDims.x);
         settings.DensityGrid.volumeDims.y = Mathf.Max(1, settings.DensityGrid.volumeDims.y);
         settings.DensityGrid.volumeDims.z = Mathf.Max(1, settings.DensityGrid.volumeDims.z);
+        settings.DensityGrid.vapourSmoothingRadiusWS = Mathf.Max(0f, settings.DensityGrid.vapourSmoothingRadiusWS);
+        settings.DensityGrid.maxKernelRadiusVoxels = Mathf.Clamp(settings.DensityGrid.maxKernelRadiusVoxels, 1, 8);
 
-        settings.LiquidBlur.radius = Mathf.Clamp(settings.LiquidBlur.radius, 1, 4);
-        settings.LiquidBlur.sigma = Mathf.Clamp(settings.LiquidBlur.sigma, 0.1f, 4.0f);
-        settings.LiquidBlur.detailPreserve = Mathf.Clamp01(settings.LiquidBlur.detailPreserve);
+        settings.Blur.radius = Mathf.Clamp(settings.Blur.radius, 1, 4);
+        settings.Blur.sigma = Mathf.Clamp(settings.Blur.sigma, 0.1f, 4.0f);
+        settings.Blur.detailPreserve = Mathf.Clamp01(settings.Blur.detailPreserve);
 
-        settings.Vapour.blurRadius = Mathf.Clamp(settings.Vapour.blurRadius, 1, 4);
-        settings.Vapour.blurSigma = Mathf.Clamp(settings.Vapour.blurSigma, 0.1f, 4.0f);
-        settings.Vapour.blurDetailPreserve = Mathf.Clamp01(settings.Vapour.blurDetailPreserve);
+        settings.MarchingCubesBlur.radius = Mathf.Clamp(settings.MarchingCubesBlur.radius, 1, 4);
+        settings.MarchingCubesBlur.sigma = Mathf.Clamp(settings.MarchingCubesBlur.sigma, 0.1f, 4.0f);
+        settings.MarchingCubesBlur.detailPreserve = Mathf.Clamp01(settings.MarchingCubesBlur.detailPreserve);
+
+        ValidateAdaptiveSmoothing(settings.RaymarchSmoothing);
+        ValidateAdaptiveSmoothing(settings.MarchingCubesSmoothing);
 
         settings.Rendering.marchingCubesIsoLevel = Mathf.Clamp01(settings.Rendering.marchingCubesIsoLevel);
+    }
+
+    private static void ValidateAdaptiveSmoothing(WaterPhaseAdaptiveSmoothingSettings smoothing)
+    {
+        if (smoothing == null)
+            return;
+
+        if (smoothing.liquidSmoothingRadiusWS >= 0f)
+            smoothing.liquidSmoothingRadiusWS = Mathf.Max(0f, smoothing.liquidSmoothingRadiusWS);
+
+        smoothing.liquidBulkSmoothingRadiusWS = Mathf.Max(0f, smoothing.liquidBulkSmoothingRadiusWS);
+        smoothing.adaptiveDensitySurface = Mathf.Max(0f, smoothing.adaptiveDensitySurface);
+        smoothing.adaptiveDensityBulk = Mathf.Max(smoothing.adaptiveDensitySurface + 0.01f, smoothing.adaptiveDensityBulk);
+        smoothing.adaptiveDensityCurve = Mathf.Clamp(smoothing.adaptiveDensityCurve, 0.05f, 4f);
     }
 }
