@@ -47,32 +47,29 @@ Material:
     - _BlueNoiseScale: 1
     - _BlueNoiseStrength: 1
     - _BlueNoiseTimeSpeed: 1
-    - _DensityPhaseThreshold: 1
-    - _DensityPower: 3.07
-    - _EdgeSoftness: 0.378
-    - _MarchSteps: 45
+    - _DensityPower: 1.5
+    - _EdgeSoftness: 0.347
     - _NoiseDriftSpeed: 0.3
-    - _NoiseOctaves: 5.68
-    - _NoiseScale: 1
-    - _PhaseTransitionWidth: 0.181
-    - _TemperatureBlend: 0.6
-    - _VapourAbsorption: 8.42
-    - _VapourAmbientOcclusionProxy: 0.641
-    - _VapourAmbientStrength: 0.365
-    - _VapourBackscatter: 0.4
-    - _VapourEmissionStrength: 1.22
-    - _VapourFresnelPower: 3
-    - _VapourFresnelStrength: 0.6
-    - _VapourScatterG: 0.5
+    - _NoiseOctaves: 5
+    - _NoiseScale: 0.77
+    - _StepSize: 0.232
+    - _VapourAbsorption: 0.1
+    - _VapourBackscatter: 0
+    - _VapourCutoff: 0.12
+    - _VapourDensityMultiplier: 0.36
+    - _VapourErosionScale: 2.44
+    - _VapourErosionStrength: 0.35
+    - _VapourFullDensity: 0.079
+    - _VapourGodRayStrength: 1
+    - _VapourHeightDissipation: 1.09
+    - _VapourPresenceThreshold: 0.0001
+    - _VapourScatterG: -0.117
+    - _VapourShadowFloor: 0
+    - _VapourSoftness: 0.45
+    - _VapourVerticalStretch: 1.75
+    - _VapourWarpStrength: 1.009
     m_Colors:
     - _NoiseDriftDir: {r: 0, g: -1, b: 0, a: 0}
-    - _VapourAmbientColor: {r: 0.049999982, g: 0.079999976, b: 0.14999998, a: 1}
     - _VapourBaseColor: {r: 1, g: 1, b: 1, a: 1}
-    - _VapourCoolColor: {r: 0.8, g: 0.9, b: 1, a: 1}
-    - _VapourEmissionColor: {r: 1, g: 0.95, b: 0.85, a: 1}
-    - _VapourShadowColor: {r: 0.04, g: 0.06999998, b: 0.17999998, a: 1}
-    - _VapourWarmColor: {r: 1, g: 0.92, b: 0.8, a: 1}
-    - _VoxelBoundsMax: {r: 0.5, g: 0.5, b: 0.5, a: 0}
-    - _VoxelBoundsMin: {r: -0.5, g: -0.5, b: -0.5, a: 0}
   m_BuildTextureStacks: []
   m_AllowLocking: 1

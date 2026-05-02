@@ -13,19 +13,14 @@ Shader "Custom/WaterRaymarching"
         _DensityOffset ("Liquid Density Offset", Float) = 0.0
         _LightStepSize ("Liquid Shadow Step Size", Range(0.01, 2.0)) = 0.2
         [Header(Surface Optics)]
-        _RefractionStrength ("Refraction Strength", Range(0.0, 0.5)) = 0.05
-        _ReflectionStrength ("Reflection Strength", Range(0.0, 1.0)) = 0.5
-        _ReflectionScreenOffset ("Reflection Screen Offset XY", Vector) = (0, 0, 0, 0)
-        _ReflectionVisibilityBoost ("Reflection Visibility Boost", Range(1.0, 16.0)) = 1.0
-        _ReflectionVisibilityFloor ("Reflection Visibility Floor", Range(0.0, 1.0)) = 0.0
+        _RefractionStrength ("Refraction Strength", Range(0.0, 1.0)) = 1.0
+        _ReflectionStrength ("Reflection Strength", Range(0.0, 1.0)) = 1.0
         _SurfaceDetectionMargin ("Surface Detection Margin", Float) = 0.0
         _SurfaceRefineIterations ("Surface Refine Iterations", Range(0, 8)) = 4
         _NormalSampleRadiusVoxels ("Normal Sample Radius (Voxels)", Range(0.5, 6.0)) = 1.0
         _BakedNormalBlend ("Baked Normal Blend", Range(0.0, 1.0)) = 0.0
         _BoundaryNormalBlendDistance ("Boundary Normal Blend Distance", Range(0.0, 2.0)) = 0.3
         _BoundaryNormalUpBiasPower ("Boundary Up Bias Power", Range(1.0, 12.0)) = 5.0
-        [Header(Debug)]
-        _DebugNormalMode ("Debug Normal Mode (0 Off, 1 Baked, 2 Runtime, 3 Difference)", Range(0, 3)) = 0
         [Header(Vapour Rendering)]
         _VapourBaseColor ("Vapour Base Color", Color) = (1.0, 1.0, 1.0, 1)
         _VapourAbsorption ("Vapour Absorption (density -> opacity)", Range(0.1, 20.0)) = 8.0
@@ -105,16 +100,12 @@ Shader "Custom/WaterRaymarching"
                 float  _IsoLevel;
                 float  _RefractionStrength;
                 float  _ReflectionStrength;
-                float4 _ReflectionScreenOffset;
-                float  _ReflectionVisibilityBoost;
-                float  _ReflectionVisibilityFloor;
                 float  _SurfaceDetectionMargin;
                 float  _SurfaceRefineIterations;
                 float  _NormalSampleRadiusVoxels;
                 float  _BakedNormalBlend;
                 float  _BoundaryNormalBlendDistance;
                 float  _BoundaryNormalUpBiasPower;
-                float  _DebugNormalMode;
                 // Vapour rendering — procedural shape with shadow modulation for god rays.
                 half4  _VapourBaseColor;
                 float  _VapourAbsorption;
@@ -189,30 +180,6 @@ Shader "Custom/WaterRaymarching"
 
                 if (backgroundData.sceneDistanceAlongRay <= volumeData.distanceToVolume)
                     discard;
-
-                // DEBUG ONLY: compare baked normals vs runtime gradient normals.
-                // Keep _DebugNormalMode = 0 for normal rendering. When disabled,
-                // this early branch is skipped and the shader stays on the normal
-                // fast path. You can comment out this whole block after debugging
-                // if you want the shader source to stay extra lean.
-                if (_DebugNormalMode > 0.5 && backgroundData.surfaceHit.hit)
-                {
-                    float3 debugPositionWS = backgroundData.surfaceHit.posWS;
-                    float3 bakedNormal = SampleBakedSurfaceNormalWS(debugPositionWS);
-                    float3 runtimeNormal = CalculateLiquidGradientNormalWS(debugPositionWS);
-
-                    // Mode 1 = baked normal volume sampled from _PhysicsNormalGrid.
-                    if (_DebugNormalMode < 1.5)
-                        return half4(bakedNormal * 0.5 + 0.5, 1.0);
-
-                    // Mode 2 = per-fragment runtime gradient from the density field.
-                    if (_DebugNormalMode < 2.5)
-                        return half4(runtimeNormal * 0.5 + 0.5, 1.0);
-
-                    // Mode 3 = absolute directional difference. Brighter means the
-                    // two normal sources disagree more strongly at this surface hit.
-                    return half4(abs(bakedNormal - runtimeNormal), 1.0);
-                }
 
                 float3 accumulatedScatteredLight  = 0.0;
                 float3 remainingViewTransmittance = 1.0;
@@ -319,10 +286,8 @@ Shader "Custom/WaterRaymarching"
                 float3 backgroundColor = ComposeWaterBackgroundColor(
                     backgroundData,
                     viewData.screenUV,
-                    _ReflectionStrength,
-                    _ReflectionScreenOffset.xy,
-                    _ReflectionVisibilityBoost,
-                    _ReflectionVisibilityFloor
+                    _ScatteringCoefficients,
+                    _ReflectionStrength
                 );
 
                 float3 finalColor = accumulatedScatteredLight

@@ -13,15 +13,33 @@ public class WaterPhaseBridgeSettings
 {
     [SerializeField] private WaterPhaseComputeAssetReferences references = new WaterPhaseComputeAssetReferences();
     [SerializeField] private WaterPhaseDensityGridSettings densityGrid = new WaterPhaseDensityGridSettings();
-    [SerializeField] private WaterPhaseLiquidBlurSettings liquidBlur = new WaterPhaseLiquidBlurSettings();
-    [SerializeField] private WaterPhaseVapourEnhancementSettings vapour = new WaterPhaseVapourEnhancementSettings();
+    [Header("Default density blur")]
+    [FormerlySerializedAs("vapour")]
+    [SerializeField] private WaterPhaseDensityBlurSettings blur = new WaterPhaseDensityBlurSettings();
+    [Header("Marching cubes density blur")]
+    [FormerlySerializedAs("marchingCubesLiquidBlur")]
+    [SerializeField] private WaterPhaseDensityBlurSettings marchingCubesBlur = new WaterPhaseDensityBlurSettings();
+    [Header("Raymarch adaptive liquid smoothing")]
+    [SerializeField] private WaterPhaseAdaptiveSmoothingSettings raymarchSmoothing = new WaterPhaseAdaptiveSmoothingSettings();
+    [Header("Marching cubes adaptive liquid smoothing")]
+    [SerializeField] private WaterPhaseAdaptiveSmoothingSettings marchingCubesSmoothing = new WaterPhaseAdaptiveSmoothingSettings();
     [SerializeField] private WaterPhaseRenderingSettings rendering = new WaterPhaseRenderingSettings();
 
-    public WaterPhaseComputeAssetReferences References => references;
-    public WaterPhaseDensityGridSettings DensityGrid => densityGrid;
-    public WaterPhaseLiquidBlurSettings LiquidBlur => liquidBlur;
-    public WaterPhaseVapourEnhancementSettings Vapour => vapour;
-    public WaterPhaseRenderingSettings Rendering => rendering;
+    public WaterPhaseComputeAssetReferences References => references ?? (references = new WaterPhaseComputeAssetReferences());
+    public WaterPhaseDensityGridSettings DensityGrid => densityGrid ?? (densityGrid = new WaterPhaseDensityGridSettings());
+    public WaterPhaseDensityBlurSettings Blur => blur ?? (blur = new WaterPhaseDensityBlurSettings());
+    public WaterPhaseDensityBlurSettings MarchingCubesBlur => marchingCubesBlur ?? (marchingCubesBlur = new WaterPhaseDensityBlurSettings());
+    public WaterPhaseAdaptiveSmoothingSettings RaymarchSmoothing => raymarchSmoothing ?? (raymarchSmoothing = new WaterPhaseAdaptiveSmoothingSettings());
+    public WaterPhaseAdaptiveSmoothingSettings MarchingCubesSmoothing => marchingCubesSmoothing ?? (marchingCubesSmoothing = new WaterPhaseAdaptiveSmoothingSettings());
+    public WaterPhaseRenderingSettings Rendering => rendering ?? (rendering = new WaterPhaseRenderingSettings());
+
+    public WaterPhaseDensityBlurSettings ActiveBlur => Rendering.mode == WaterSurfaceRenderMode.MarchingCubesLiquidWithVapour
+        ? MarchingCubesBlur
+        : Blur;
+
+    public WaterPhaseAdaptiveSmoothingSettings ActiveSmoothing => Rendering.mode == WaterSurfaceRenderMode.MarchingCubesLiquidWithVapour
+        ? MarchingCubesSmoothing
+        : RaymarchSmoothing;
 }
 
 [Serializable]
@@ -43,6 +61,22 @@ public class WaterPhaseDensityGridSettings
     [Tooltip("Voxel resolution of the physics density volume.")]
     public Vector3Int volumeDims = new Vector3Int(64, 64, 64);
 
+    [Tooltip("World-space radius used for VAPOUR particles in both render modes. The vapour grid is consumed as a " +
+             "low-frequency presence mask (procedural detail is added per-fragment), so a wider " +
+             "radius produces a smoother, more uniform mask independent of the liquid smoothing profiles.")]
+    [Min(0f)]
+    public float vapourSmoothingRadiusWS = 2.5f;
+
+    [Tooltip("Hard cap on the splat loop half-size in voxels. The loop runs (2r+1)^3 times per particle, " +
+             "so r=4 → 729 taps, r=6 → 2197 taps, r=8 → 4913 taps. Larger radii get TRUNCATED to this " +
+             "cap rather than blowing up the GPU cost. If the truncation looks too small, raise this carefully.")]
+    [Range(1, 8)]
+    public int maxKernelRadiusVoxels = 4;
+}
+
+[Serializable]
+public class WaterPhaseAdaptiveSmoothingSettings
+{
     [Tooltip("World-space radius used for LIQUID SURFACE / lonely particles (low SPH density). " +
              "Keep small so splash droplets and thin sheets stay crisp. " +
              "If < 0, falls back to UseComputePlugin.smoothingRadius.")]
@@ -62,12 +96,6 @@ public class WaterPhaseDensityGridSettings
     [FormerlySerializedAs("bulkSmoothingRadiusWS")]
     public float liquidBulkSmoothingRadiusWS = 2.5f;
 
-    [Tooltip("World-space radius used for VAPOUR particles. The vapour grid is consumed as a " +
-             "low-frequency presence mask (procedural detail is added per-fragment), so a wider " +
-             "radius produces a smoother, more uniform mask independent of the liquid radii.")]
-    [Min(0f)]
-    public float vapourSmoothingRadiusWS = 2.5f;
-
     [Tooltip("SPH density value treated as 'surface / lonely' (uses surface radius). " +
              "Tune from your visualizer: pick the density observed on splash / surface particles (e.g. ~175).")]
     [Min(0f)]
@@ -86,66 +114,29 @@ public class WaterPhaseDensityGridSettings
              " > 1  = exaggerate differences among HIGH-density bulk particles instead.")]
     [Range(0.05f, 4f)]
     public float adaptiveDensityCurve = 0.4f;
-
-    [Tooltip("Hard cap on the splat loop half-size in voxels. The loop runs (2r+1)^3 times per particle, " +
-             "so r=4 → 729 taps, r=6 → 2197 taps, r=8 → 4913 taps. Larger bulk radii get TRUNCATED to this " +
-             "cap rather than blowing up the GPU cost. If the truncation looks too small, raise this carefully.")]
-    [Range(1, 8)]
-    public int maxKernelRadiusVoxels = 4;
-
-    [Header("Splash rejection (debug)")]
-    [Tooltip("LIQUID-ONLY. Liquid particles whose SPH density is BELOW this value are " +
-             "fully skipped during splat (no contribution to the density grid). " +
-             "Set to 0 to disable. Use this together with adaptiveDensitySurface from your visualizer.")]
-    [Min(0f)]
-    public float splashRejectDensityBelow = 0f;
-
-    [Tooltip("LIQUID-ONLY. Liquid particles whose speed (|velocity|, world units / sec) " +
-             "is ABOVE this value are fully skipped during splat. " +
-             "Set to 0 to disable. Combine with splashRejectDensityBelow to test the splash hypothesis.")]
-    [Min(0f)]
-    public float splashRejectSpeedAbove = 0f;
 }
 
 [Serializable]
-public class WaterPhaseLiquidBlurSettings
+public class WaterPhaseDensityBlurSettings
 {
-    [Tooltip("Gaussian-blur the liquid slab after normalization to smooth out individual particle dots.")]
-    public bool enabled;
-
-    [Tooltip("Kernel half-size in voxels (1=3^3 taps, 2=5^3 taps, 3=7^3 taps). Larger = smoother but heavier.")]
-    [Range(1, 4)]
-    public int radius = 1;
-
-    [Tooltip("Gaussian sigma in voxels. Small values give tight, localized blur; large values spread widely.")]
-    [Range(0.1f, 4.0f)]
-    public float sigma = 1.0f;
-
-    [Tooltip("0 = pure smooth, 1 = original high-frequency detail fully added back on top of the blur.")]
-    [Range(0f, 1f)]
-    public float detailPreserve = 0.0f;
-}
-
-[Serializable]
-public class WaterPhaseVapourEnhancementSettings
-{
-    [Tooltip("Gaussian-blur the vapour density slab to smooth out individual particle dots into a " +
-             "continuous presence mask. The visible wispy detail is generated per-fragment in the " +
-             "raymarch shader (Option-B pipeline) — this slab acts only as a low-frequency \"where is " +
-             "there vapour?\" mask.")]
+    [Tooltip("Gaussian-blur BOTH liquid and vapour slabs after normalization and before normal baking. " +
+             "This shared setting keeps raymarch and marching-cubes density fields consistent.")]
     public bool enabled = true;
 
     [Tooltip("Kernel half-size in voxels (1=3^3 taps, 2=5^3 taps, 3=7^3 taps). Larger = smoother but heavier.")]
     [Range(1, 4)]
-    public int blurRadius = 1;
+    [FormerlySerializedAs("blurRadius")]
+    public int radius = 1;
 
     [Tooltip("Gaussian sigma in voxels. Small values give tight, localized blur; large values spread widely.")]
     [Range(0.1f, 4.0f)]
-    public float blurSigma = 1.0f;
+    [FormerlySerializedAs("blurSigma")]
+    public float sigma = 1.0f;
 
     [Tooltip("0 = pure smooth, 1 = original high-frequency detail fully added back on top of the blur.")]
     [Range(0f, 1f)]
-    public float blurDetailPreserve = 0.25f;
+    [FormerlySerializedAs("blurDetailPreserve")]
+    public float detailPreserve = 0.25f;
 }
 
 [Serializable]

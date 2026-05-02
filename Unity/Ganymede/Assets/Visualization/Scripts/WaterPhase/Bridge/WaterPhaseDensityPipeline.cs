@@ -35,8 +35,6 @@ public sealed class WaterPhaseDensityPipeline
     private static readonly int ID_LiquidBlurRadius = Shader.PropertyToID("_LiquidBlurRadius");
     private static readonly int ID_LiquidBlurSigma = Shader.PropertyToID("_LiquidBlurSigma");
     private static readonly int ID_LiquidBlurDetailPreserve = Shader.PropertyToID("_LiquidBlurDetailPreserve");
-    private static readonly int ID_SplashRejectDensityBelow = Shader.PropertyToID("_SplashRejectDensityBelow");
-    private static readonly int ID_SplashRejectSpeedAbove = Shader.PropertyToID("_SplashRejectSpeedAbove");
 
     public WaterPhaseDensityPipeline(ComputeShader computeShader)
     {
@@ -116,17 +114,18 @@ public sealed class WaterPhaseDensityPipeline
         Vector3 boundsMax)
     {
         var grid = settings.DensityGrid;
+        var smoothing = settings.ActiveSmoothing;
 
-        float surfaceRadius = grid.liquidSmoothingRadiusWS >= 0f
-            ? grid.liquidSmoothingRadiusWS
+        float surfaceRadius = smoothing.liquidSmoothingRadiusWS >= 0f
+            ? smoothing.liquidSmoothingRadiusWS
             : computePlugin.smoothingRadius;
         surfaceRadius = Mathf.Max(0f, surfaceRadius);
 
         // Bulk radius is only meaningful when adaptive mode is enabled; otherwise
         // collapse it to the surface radius so the per-particle lerp degenerates
         // into a single uniform radius (preserving previous behavior).
-        float bulkRadius = grid.adaptiveRadiusEnabled
-            ? Mathf.Max(surfaceRadius, grid.liquidBulkSmoothingRadiusWS)
+        float bulkRadius = smoothing.adaptiveRadiusEnabled
+            ? Mathf.Max(surfaceRadius, smoothing.liquidBulkSmoothingRadiusWS)
             : surfaceRadius;
 
         float vapourRadius = Mathf.Max(0f, grid.vapourSmoothingRadiusWS);
@@ -139,19 +138,17 @@ public sealed class WaterPhaseDensityPipeline
         _computeShader.SetFloat(ID_SmoothingRadiusWS_LiquidSmall, surfaceRadius);
         _computeShader.SetFloat(ID_SmoothingRadiusWS_LiquidBulk, bulkRadius);
         _computeShader.SetFloat(ID_SmoothingRadiusWS_Vapour, vapourRadius);
-        _computeShader.SetFloat(ID_AdaptiveDensitySurface, Mathf.Max(0f, grid.adaptiveDensitySurface));
+        _computeShader.SetFloat(ID_AdaptiveDensitySurface, Mathf.Max(0f, smoothing.adaptiveDensitySurface));
         _computeShader.SetFloat(
             ID_AdaptiveDensityBulk,
-            Mathf.Max(grid.adaptiveDensitySurface + 0.01f, grid.adaptiveDensityBulk));
-        _computeShader.SetFloat(ID_AdaptiveDensityCurve, Mathf.Max(0.01f, grid.adaptiveDensityCurve));
+            Mathf.Max(smoothing.adaptiveDensitySurface + 0.01f, smoothing.adaptiveDensityBulk));
+        _computeShader.SetFloat(ID_AdaptiveDensityCurve, Mathf.Max(0.01f, smoothing.adaptiveDensityCurve));
         _computeShader.SetInt(
             ID_KernelRadiusVoxels,
             Mathf.Min(
                 Mathf.Max(1, grid.maxKernelRadiusVoxels),
                 ComputeKernelRadiusVoxels(loopRadius, volumeDims, boundsMin, boundsMax)));
         _computeShader.SetFloat(ID_RestDensity, Mathf.Max(0.01f, computePlugin.restDensity));
-        _computeShader.SetFloat(ID_SplashRejectDensityBelow, Mathf.Max(0f, grid.splashRejectDensityBelow));
-        _computeShader.SetFloat(ID_SplashRejectSpeedAbove, Mathf.Max(0f, grid.splashRejectSpeedAbove));
     }
 
     private static int ComputeKernelRadiusVoxels(float smoothingRadiusWS, Vector3Int volumeDims, Vector3 boundsMin, Vector3 boundsMax)
@@ -180,12 +177,13 @@ public sealed class WaterPhaseDensityPipeline
         int groupsY,
         int groupsZ)
     {
-        if (!settings.LiquidBlur.enabled)
+        WaterPhaseDensityBlurSettings blur = settings.ActiveBlur;
+        if (!blur.enabled)
             return;
 
-        _computeShader.SetInt(ID_LiquidBlurRadius, settings.LiquidBlur.radius);
-        _computeShader.SetFloat(ID_LiquidBlurSigma, settings.LiquidBlur.sigma);
-        _computeShader.SetFloat(ID_LiquidBlurDetailPreserve, settings.LiquidBlur.detailPreserve);
+        _computeShader.SetInt(ID_LiquidBlurRadius, blur.radius);
+        _computeShader.SetFloat(ID_LiquidBlurSigma, blur.sigma);
+        _computeShader.SetFloat(ID_LiquidBlurDetailPreserve, blur.detailPreserve);
         _computeShader.SetTexture(_blurLiquidKernel, "_DensityTexture3D_Read", resources.PhaseDensityTexture);
         _computeShader.SetTexture(_blurLiquidKernel, "_DensityTexture3D_RG", resources.PhaseDensityScratchTexture);
         _computeShader.Dispatch(_blurLiquidKernel, groupsX, groupsY, groupsZ);
@@ -202,14 +200,15 @@ public sealed class WaterPhaseDensityPipeline
         // The vapour slab is now consumed directly by the raymarcher as a low-frequency
         // physics presence mask; the procedural noise that produces wispy detail is
         // generated per ray-march sample in the fragment shader (Option B pipeline).
-        // The only post-processing we still want here is an optional Gaussian blur
-        // to smooth out individual particle dots into a continuous mask.
-        if (!settings.Vapour.enabled)
+        // The same active Gaussian blur profile is used for liquid and vapour,
+        // selected by render mode, before normals are baked.
+        WaterPhaseDensityBlurSettings blur = settings.ActiveBlur;
+        if (!blur.enabled)
             return;
 
-        _computeShader.SetInt(ID_BlurRadius, settings.Vapour.blurRadius);
-        _computeShader.SetFloat(ID_BlurSigma, settings.Vapour.blurSigma);
-        _computeShader.SetFloat(ID_BlurDetailPreserve, settings.Vapour.blurDetailPreserve);
+        _computeShader.SetInt(ID_BlurRadius, blur.radius);
+        _computeShader.SetFloat(ID_BlurSigma, blur.sigma);
+        _computeShader.SetFloat(ID_BlurDetailPreserve, blur.detailPreserve);
         _computeShader.SetTexture(_blurVapourKernel, "_DensityTexture3D_Read", resources.PhaseDensityTexture);
         _computeShader.SetTexture(_blurVapourKernel, "_DensityTexture3D_RG", resources.PhaseDensityScratchTexture);
         _computeShader.Dispatch(_blurVapourKernel, groupsX, groupsY, groupsZ);
