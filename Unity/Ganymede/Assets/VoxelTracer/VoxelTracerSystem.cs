@@ -48,6 +48,9 @@ public sealed class VoxelTracerSystem : MonoBehaviour
     public bool includeTerrains = true;
     [Range(1, 32)] public int terrainSampleStep = 4;
 
+    [Tooltip("Only objects on these layers are voxelized. Set to 'Everything' to include all layers (default behavior).")]
+    public LayerMask voxelizeLayers = ~0; // default: Everything
+
     [Header("Material Properties")]
     [Tooltip("Default temperature for filled solid voxels (ambient)")]
     public float defaultSolidTemperature = 25f;
@@ -643,6 +646,7 @@ public sealed class VoxelTracerSystem : MonoBehaviour
             foreach (var mf in filters)
             {
                 if (mf == null || !mf.gameObject.activeInHierarchy) continue;
+                if ((voxelizeLayers.value & (1 << mf.gameObject.layer)) == 0) continue;
                 var mr = mf.GetComponent<MeshRenderer>();
                 if (mr == null || !mr.enabled) continue;
                 if (mf.sharedMesh == null) continue;
@@ -667,6 +671,7 @@ public sealed class VoxelTracerSystem : MonoBehaviour
             foreach (var smr in skins)
             {
                 if (smr == null || !smr.enabled || !smr.gameObject.activeInHierarchy) continue;
+                if ((voxelizeLayers.value & (1 << smr.gameObject.layer)) == 0) continue;
                 _bakedMesh.Clear();
                 try { smr.BakeMesh(_bakedMesh); } catch { continue; }
                 AppendMesh(_bakedMesh, smr.transform.localToWorldMatrix, _dynamicTriList);
@@ -680,6 +685,7 @@ public sealed class VoxelTracerSystem : MonoBehaviour
             foreach (var t in terrains)
             {
                 if (t == null || !t.isActiveAndEnabled) continue;
+                if ((voxelizeLayers.value & (1 << t.gameObject.layer)) == 0) continue;
                 AppendTerrain(t, terrainSampleStep, _staticTriList);
             }
         }
@@ -701,6 +707,7 @@ public sealed class VoxelTracerSystem : MonoBehaviour
             foreach (var vd in _registeredDynamics)
             {
                 if (vd == null || !vd.gameObject.activeInHierarchy) continue;
+                if ((voxelizeLayers.value & (1 << vd.gameObject.layer)) == 0) continue;
                 var mf = vd.GetComponent<MeshFilter>();
                 if (mf == null || mf.sharedMesh == null) continue;
                 var mr = vd.GetComponent<MeshRenderer>();
@@ -717,6 +724,7 @@ public sealed class VoxelTracerSystem : MonoBehaviour
             foreach (var smr in _registeredSkins)
             {
                 if (smr == null || !smr.enabled || !smr.gameObject.activeInHierarchy) continue;
+                if ((voxelizeLayers.value & (1 << smr.gameObject.layer)) == 0) continue;
                 _bakedMesh.Clear();
                 try { smr.BakeMesh(_bakedMesh); } catch { continue; }
 

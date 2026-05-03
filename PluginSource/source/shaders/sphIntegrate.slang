@@ -212,17 +212,48 @@ void computeMain(uint3 threadId: SV_DispatchThreadID)
 
    p.position += p.velocity * params.dt;
 
-   // ── SDF collision: push out of solids along gradient normal ──────
+   // ── SDF collision ──────────────────────────────────────────────
+   // Skin offset is baked into the SDF data on CPU (subtracted before upload),
+   // so dist=0 is the desired keep-out surface. dist < 0 = penetrated.
+   // Multiple iterations handle deep penetrations (e.g. enlarged surfaces).
    if (params.sdfEnabled != 0 && params.sdfVoxelSize > 0.0)
    {
-      float dist = sampleSDF(p.position);
-      if (dist < 0.0)
+      // Push-out iterations
+      for (int sdfIter = 0; sdfIter < 4; sdfIter++)
+      {
+         float dist = sampleSDF(p.position);
+         if (dist >= 0.0)
+            break;
+         float3 normal = sdfGradient(p.position);
+         p.position -= normal * dist;
+      }
+
+      // Velocity correction + damping for particles near the surface
+      float distFinal = sampleSDF(p.position);
+      float dampZone = params.sdfVoxelSize * 2.0;
+      if (distFinal < dampZone)
       {
          float3 normal = sdfGradient(p.position);
-         p.position -= normal * dist;  // push to surface
+         float proximity = 1.0 - saturate(distFinal / dampZone);
+
+         // Zero all normal velocity to kill oscillation
          float vn = dot(p.velocity, normal);
-         if (vn < 0.0)
-            p.velocity -= (1.0 + 0.05) * vn * normal;  // reflect with slight damping
+         p.velocity -= vn * normal;
+
+         // Pre-compensate gravity: cancel next frame's gravity toward surface
+         float gn = dot(params.gravity, normal);
+         if (gn < 0.0)
+            p.velocity -= gn * params.dt * normal;
+
+         // Surface friction: damp tangential (sliding) velocity.
+         // At the surface friction is strongest; fades to zero at dampZone edge.
+         float3 tangentVel = p.velocity - dot(p.velocity, normal) * normal;
+         float frictionStrength = lerp(0.0, 0.5, proximity);
+         p.velocity -= tangentVel * frictionStrength;
+
+         // General near-surface damping on remaining velocity
+         float dampFactor = lerp(1.0, 0.9, proximity);
+         p.velocity *= dampFactor;
       }
    }
 
@@ -241,18 +272,17 @@ void computeMain(uint3 threadId: SV_DispatchThreadID)
       }
    }
 
-   // Boundary collision: clamp with epsilon offset so particles never sit at
-   // the exact same boundary coordinate (which collapses inter-particle
-   // distances to zero and kills the SPH gradient computation).
+   // AABB boundary collision with gravity pre-compensation and surface friction.
    float eps = h * 0.01;
+   float aabbFriction = 0.3;
    float3 bMin = params.boundsMin + float3(eps, eps, eps);
    float3 bMax = params.boundsMax - float3(eps, eps, eps);
-   if (p.position.x < bMin.x) { p.position.x = bMin.x; if (p.velocity.x < 0) p.velocity.x = 0; }
-   if (p.position.y < bMin.y) { p.position.y = bMin.y; if (p.velocity.y < 0) p.velocity.y = 0; }
-   if (p.position.z < bMin.z) { p.position.z = bMin.z; if (p.velocity.z < 0) p.velocity.z = 0; }
-   if (p.position.x > bMax.x) { p.position.x = bMax.x; if (p.velocity.x > 0) p.velocity.x = 0; }
-   if (p.position.y > bMax.y) { p.position.y = bMax.y; if (p.velocity.y > 0) p.velocity.y = 0; }
-   if (p.position.z > bMax.z) { p.position.z = bMax.z; if (p.velocity.z > 0) p.velocity.z = 0; }
+   if (p.position.x < bMin.x) { p.position.x = bMin.x; p.velocity.x = 0; if (params.gravity.x < 0) p.velocity.x -= params.gravity.x * params.dt; p.velocity.yz *= (1.0 - aabbFriction); }
+   if (p.position.y < bMin.y) { p.position.y = bMin.y; p.velocity.y = 0; if (params.gravity.y < 0) p.velocity.y -= params.gravity.y * params.dt; p.velocity.xz *= (1.0 - aabbFriction); }
+   if (p.position.z < bMin.z) { p.position.z = bMin.z; p.velocity.z = 0; if (params.gravity.z < 0) p.velocity.z -= params.gravity.z * params.dt; p.velocity.xy *= (1.0 - aabbFriction); }
+   if (p.position.x > bMax.x) { p.position.x = bMax.x; p.velocity.x = 0; if (params.gravity.x > 0) p.velocity.x -= params.gravity.x * params.dt; p.velocity.yz *= (1.0 - aabbFriction); }
+   if (p.position.y > bMax.y) { p.position.y = bMax.y; p.velocity.y = 0; if (params.gravity.y > 0) p.velocity.y -= params.gravity.y * params.dt; p.velocity.xz *= (1.0 - aabbFriction); }
+   if (p.position.z > bMax.z) { p.position.z = bMax.z; p.velocity.z = 0; if (params.gravity.z > 0) p.velocity.z -= params.gravity.z * params.dt; p.velocity.xy *= (1.0 - aabbFriction); }
 
    particlesOut[i] = p;
 }

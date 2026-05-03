@@ -262,10 +262,10 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::WaterSource
   spawnMode: 1
   tapExhausted: 0
-  emissionRate: 200
+  emissionRate: 100
   emissionDirection: {x: 0, y: -1, z: 0}
-  emissionSpeed: 400
-  emissionRadius: 0.9
+  emissionSpeed: 5
+  emissionRadius: 3
   initialTemperature: 25
   isActive: 1
 --- !u!4 &281062058
@@ -553,7 +553,7 @@ MonoBehaviour:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 781581037}
-  m_Enabled: 1
+  m_Enabled: 0
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 1535b2b2a32c1f449ab8d68f071124f2, type: 3}
   m_Name: 
@@ -576,7 +576,7 @@ MonoBehaviour:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 781581037}
-  m_Enabled: 1
+  m_Enabled: 0
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: eaa5497c8fbb6464481d9f729ab13601, type: 3}
   m_Name: 
@@ -890,6 +890,9 @@ MonoBehaviour:
   includeSkinnedMeshRenderers: 1
   includeTerrains: 1
   terrainSampleStep: 1
+  voxelizeLayers:
+    serializedVersion: 2
+    m_Bits: 4294967295
   defaultSolidTemperature: 25
   defaultSolidDiffusivity: 0.1
   maxVoxelsPerAxis: 512
@@ -1455,6 +1458,10 @@ PrefabInstance:
     - target: {fileID: 4161998456328252244, guid: 18cf1fa5220a198409fde72db8b3e2a5, type: 3}
       propertyPath: particleCount
       value: 8192
+      objectReference: {fileID: 0}
+    - target: {fileID: 4161998456328252244, guid: 18cf1fa5220a198409fde72db8b3e2a5, type: 3}
+      propertyPath: sdfSkinOffset
+      value: 0.4
       objectReference: {fileID: 0}
     - target: {fileID: 4161998456328252244, guid: 18cf1fa5220a198409fde72db8b3e2a5, type: 3}
       propertyPath: voxelTracerRef
