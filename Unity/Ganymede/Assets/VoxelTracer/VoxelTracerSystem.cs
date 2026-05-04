@@ -1316,49 +1316,36 @@ public sealed class VoxelTracerSystem : MonoBehaviour
 
         Vector3 halfVoxelPad = Vector3.one * (voxelSize * 0.5f);
 
-        foreach (var hs in _registeredHeatSources)
+        // Stamp VoxelSolidMaterial objects flagged as permanent heat sources
+        foreach (var sm in _registeredSolidMaterials)
         {
-            if (hs == null || !hs.isActiveAndEnabled || !hs.active) continue;
+            if (sm == null || !sm.isActiveAndEnabled || !sm.isContinuousHeatSource) continue;
+            if (sm.GetComponent<Terrain>() != null) continue;
 
-            if (hs.radius > 0f)
+            var r = sm.GetComponent<Renderer>();
+            if (r != null)
             {
                 _materialSourceList.Add(new MaterialSource
                 {
-                    position = hs.transform.position,
-                    extents = Vector3.one * hs.radius,
-                    temperature = hs.temperature,
+                    position = r.bounds.center,
+                    extents  = r.bounds.extents + Vector3.one * voxelSize,
+                    temperature = sm.temperature,
                     thermalDiffusivity = 0f,
                     phase = 0f,
-                    shape = 1
+                    shape = 0
                 });
             }
             else
             {
-                var r = hs.GetComponent<Renderer>();
-                if (r != null)
+                _materialSourceList.Add(new MaterialSource
                 {
-                    _materialSourceList.Add(new MaterialSource
-                    {
-                        position = r.bounds.center,
-                        extents = r.bounds.extents + Vector3.one * voxelSize,
-                        temperature = hs.temperature,
-                        thermalDiffusivity = 0f,
-                        phase = 0f,
-                        shape = 0
-                    });
-                }
-                else
-                {
-                    _materialSourceList.Add(new MaterialSource
-                    {
-                        position = hs.transform.position,
-                        extents = Vector3.one * 0.5f,
-                        temperature = hs.temperature,
-                        thermalDiffusivity = 0f,
-                        phase = 0f,
-                        shape = 1
-                    });
-                }
+                    position = sm.transform.position,
+                    extents  = Vector3.one * 0.5f,
+                    temperature = sm.temperature,
+                    thermalDiffusivity = 0f,
+                    phase = 0f,
+                    shape = 1
+                });
             }
         }
 
@@ -1434,51 +1421,51 @@ public sealed class VoxelTracerSystem : MonoBehaviour
         }
 
         // 2) Heat sources
-        foreach (var hs in _registeredHeatSources)
-        {
-            if (hs == null || !hs.isActiveAndEnabled || !hs.active) continue;
+        // foreach (var hs in _registeredHeatSources)
+        // {
+        //     if (hs == null || !hs.isActiveAndEnabled || !hs.active) continue;
 
-            if (hs.radius > 0f)
-            {
-                _materialSourceList.Add(new MaterialSource
-                {
-                    position = hs.transform.position,
-                    extents = Vector3.one * hs.radius,
-                    temperature = hs.temperature,
-                    thermalDiffusivity = 0f,
-                    phase = 0f,
-                    shape = 1
-                });
-            }
-            else
-            {
-                var r = hs.GetComponent<Renderer>();
-                if (r != null)
-                {
-                    _materialSourceList.Add(new MaterialSource
-                    {
-                        position = r.bounds.center,
-                        extents = r.bounds.extents + Vector3.one * voxelSize,
-                        temperature = hs.temperature,
-                        thermalDiffusivity = 0f,
-                        phase = 0f,
-                        shape = 0
-                    });
-                }
-                else
-                {
-                    _materialSourceList.Add(new MaterialSource
-                    {
-                        position = hs.transform.position,
-                        extents = Vector3.one * 0.5f,
-                        temperature = hs.temperature,
-                        thermalDiffusivity = 0f,
-                        phase = 0f,
-                        shape = 1
-                    });
-                }
-            }
-        }
+        //     if (hs.radius > 0f)
+        //     {
+        //         _materialSourceList.Add(new MaterialSource
+        //         {
+        //             position = hs.transform.position,
+        //             extents = Vector3.one * hs.radius,
+        //             temperature = hs.temperature,
+        //             thermalDiffusivity = 0f,
+        //             phase = 0f,
+        //             shape = 1
+        //         });
+        //     }
+        //     else
+        //     {
+        //         var r = hs.GetComponent<Renderer>();
+        //         if (r != null)
+        //         {
+        //             _materialSourceList.Add(new MaterialSource
+        //             {
+        //                 position = r.bounds.center,
+        //                 extents = r.bounds.extents + Vector3.one * voxelSize,
+        //                 temperature = hs.temperature,
+        //                 thermalDiffusivity = 0f,
+        //                 phase = 0f,
+        //                 shape = 0
+        //             });
+        //         }
+        //         else
+        //         {
+        //             _materialSourceList.Add(new MaterialSource
+        //             {
+        //                 position = hs.transform.position,
+        //                 extents = Vector3.one * 0.5f,
+        //                 temperature = hs.temperature,
+        //                 thermalDiffusivity = 0f,
+        //                 phase = 0f,
+        //                 shape = 1
+        //             });
+        //         }
+        //     }
+        // }
 
         // 4) Water bodies
         foreach (var wb in _registeredWaterBodies)
