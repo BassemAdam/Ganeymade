@@ -74,9 +74,10 @@ void computeMain(uint3 threadId: SV_DispatchThreadID)
    // Phase-dependent rest density: gas uses much lower rest density → high expansion pressure
    float rd = (p.phase == 1) ? params.gasRestDensity : params.restDensity;
    p.pressure = params.gasStiffness * (p.density - rd);
-   // Liquid: clamp negative pressure (no tensile force). Gas: allow full expansion.
+   // Liquid: allow negative pressure scaled by tensileK for cohesive attraction.
+   // tensileK=0 clamps to zero (old behavior). tensileK=1 allows full negative pressure.
    if (p.phase != 1)
-       p.pressure = max(p.pressure, 0.0);
+       p.pressure = max(p.pressure, p.pressure * params.tensileK);
 
    particlesOut[i] = p;
 }

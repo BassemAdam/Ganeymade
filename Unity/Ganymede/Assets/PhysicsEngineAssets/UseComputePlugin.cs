@@ -190,6 +190,11 @@ public class UseComputePlugin : MonoBehaviour
     [Range(0f, 0.1f)]
     public float cohesionStrength = 0.005f;
 
+    [Tooltip("Tensile instability correction (Monaghan). Allows negative pressure to attract " +
+             "spread-out particles back together. 0 = no tensile attraction, 0.1–0.5 typical.")]
+    [Range(0f, 1f)]
+    public float tensileK = 0.2f;
+
     [Header("Init")]
     [Tooltip("Upload particles automatically on Start")]
     public bool autoInitialize = true;
@@ -572,6 +577,7 @@ public class UseComputePlugin : MonoBehaviour
         p.gasBuoyancy = gasBuoyancy;
         p.pressureBoilingScale = pressureBoilingScale;
         p.cohesionStrength = cohesionStrength;
+        p.tensileK = tensileK;
 
         SetSimParams(p);
     }
@@ -629,7 +635,9 @@ public class UseComputePlugin : MonoBehaviour
 
                         for (int k = 0; k < thisCount && idx < count; k++)
                         {
-                            Particle p = Particle.Create(dormantParkPosition, Vector3.zero, particleMass);
+                            // Scatter dormant particles so they don't all land in the same hash cell
+                            Vector3 scattered = dormantParkPosition + new Vector3(idx * smoothingRadius * 2f, 0f, 0f);
+                            Particle p = Particle.Create(scattered, Vector3.zero, particleMass);
                             p.fixedId = idx; 
                             p.phase = -1;
                             particles[idx++] = p;
@@ -674,7 +682,8 @@ public class UseComputePlugin : MonoBehaviour
         // Any slots still unfilled (rounding) get parked dormant.
         while (idx < count)
         {
-            Particle p = Particle.Create(dormantParkPosition, Vector3.zero, particleMass);
+            Vector3 scattered = dormantParkPosition + new Vector3(idx * smoothingRadius * 2f, 0f, 0f);
+            Particle p = Particle.Create(scattered, Vector3.zero, particleMass);
             p.fixedId = idx; 
             p.phase = -1;
             particles[idx++] = p;
@@ -1066,6 +1075,7 @@ public class UseComputePlugin : MonoBehaviour
         public float  gasBuoyancy;
         public float  pressureBoilingScale;
         public float  cohesionStrength;
+        public float  tensileK;
     }
 
     

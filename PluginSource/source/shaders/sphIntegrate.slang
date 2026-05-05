@@ -159,7 +159,19 @@ void computeMain(uint3 threadId: SV_DispatchThreadID)
 
                float hr = h - r;
                float3 spikyGrad = params.spikyGradConst * (hr * hr) * dir;
-               fPressure += -params.particleMass * (p.pressure + pj.pressure) / (2.0 * pj.density) * spikyGrad;
+
+               // Monaghan tensile instability correction: adds small repulsion
+               // when both particles have negative pressure to prevent clumping.
+               float tensileCorr = 0.0;
+               if (params.tensileK > 0.0 && p.pressure < 0.0 && pj.pressure < 0.0)
+               {
+                  float wRef = h2 - (0.5 * h) * (0.5 * h); // poly6 at r=h/2
+                  float wCur = h2 - r2;
+                  float sRatio = wCur / max(wRef, 1e-10);
+                  tensileCorr = params.tensileK * 0.1 * (sRatio * sRatio * sRatio * sRatio);
+               }
+
+               fPressure += -params.particleMass * (p.pressure + pj.pressure + tensileCorr) / (2.0 * pj.density) * spikyGrad;
 
                float viscLap = params.viscLapConst * hr;
                // Phase-dependent viscosity: gas uses lower viscosity for turbulent motion

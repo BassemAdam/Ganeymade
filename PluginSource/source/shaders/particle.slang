@@ -34,6 +34,7 @@
        float  gasBuoyancy;            // upward acceleration for gas particles
        float  pressureBoilingScale;   // how much local pressure raises the effective boiling point
        float  cohesionStrength;       // attractive force between nearby liquid particles (surface tension)
+       float  tensileK;               // Monaghan tensile correction strength (0 = clamp negative pressure)
    };
 
    struct Particle
