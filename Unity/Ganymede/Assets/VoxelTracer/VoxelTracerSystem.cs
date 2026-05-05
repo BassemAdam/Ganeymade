@@ -186,6 +186,7 @@ public sealed class VoxelTracerSystem : MonoBehaviour
 
     public static void RegisterDynamic(VoxelDynamic vd) { if (vd != null) _registeredDynamics.Add(vd); }
     public static void UnregisterDynamic(VoxelDynamic vd) { _registeredDynamics.Remove(vd); }
+    public static IReadOnlyCollection<VoxelDynamic> RegisteredDynamics => _registeredDynamics;
     public static void RegisterSkin(SkinnedMeshRenderer smr) { if (smr != null) _registeredSkins.Add(smr); }
     public static void UnregisterSkin(SkinnedMeshRenderer smr) { _registeredSkins.Remove(smr); }
     public static void RegisterHeatSource(VoxelHeatSource hs) { if (hs != null) _registeredHeatSources.Add(hs); }
@@ -1632,11 +1633,12 @@ public sealed class VoxelTracerSystem : MonoBehaviour
 
     void Dispatch3D(int kernel, int gx, int gy, int gz)
     {
+        if (gx <= 0 || gy <= 0 || gz <= 0) return;
         coreCS.GetKernelThreadGroupSizes(kernel, out uint tx, out uint ty, out uint tz);
         coreCS.Dispatch(kernel,
-            Mathf.CeilToInt(gx / (float)tx),
-            Mathf.CeilToInt(gy / (float)ty),
-            Mathf.CeilToInt(gz / (float)tz));
+            Mathf.Max(1, Mathf.CeilToInt(gx / (float)tx)),
+            Mathf.Max(1, Mathf.CeilToInt(gy / (float)ty)),
+            Mathf.Max(1, Mathf.CeilToInt(gz / (float)tz)));
     }
 
     void Dispatch2D(int kernel, int gx, int gy)
