@@ -51,6 +51,7 @@ Shader "Custom/ParticleInstanced"
                 float3 normal : TEXCOORD0;
                 float value : TEXCOORD1;
                 float isGas : TEXCOORD2;
+                float isBoundary : TEXCOORD3;
             };
 
             v2f vert(appdata_base v, uint instanceID : SV_InstanceID)
@@ -65,9 +66,13 @@ Shader "Custom/ParticleInstanced"
                     dead.normal= float3(0, 1, 0);
                     dead.value = 0;
                     dead.isGas = 0;
+                    dead.isBoundary = 0;
                     return dead;
                 }
-                float scale = (p.phase == 1) ? _Size * _GasScale : _Size;
+                float scale = _Size;
+                if (p.phase == 1) scale *= _GasScale;
+                else if (p.phase == 2) scale *= 0.8; // boundary slightly smaller
+
                 float3 worldPos = p.position + v.vertex.xyz * scale;
                 float visualizedValue = p.temperature;
 
@@ -83,6 +88,7 @@ Shader "Custom/ParticleInstanced"
                 o.normal = v.normal;
                 o.value = visualizedValue;
                 o.isGas = (p.phase == 1) ? 1.0 : 0.0;
+                o.isBoundary = (p.phase == 2) ? 1.0 : 0.0;
                 return o;
             }
 
@@ -90,6 +96,13 @@ Shader "Custom/ParticleInstanced"
             {
                 float3 lightDir = normalize(float3(0.5, 1.0, 0.3));
                 float ndl = saturate(dot(i.normal, lightDir)) * 0.6 + 0.4;
+
+                // Boundary particles: grey, semi-transparent
+                if (i.isBoundary > 0.5)
+                {
+                    float3 col = float3(0.5, 0.5, 0.5) * ndl;
+                    return float4(col, 0.35);
+                }
 
                 // Map selected scalar to gradient: 0 = minValue, 1 = maxValue
                 float range = max(_MaxValue - _MinValue, 1e-5);

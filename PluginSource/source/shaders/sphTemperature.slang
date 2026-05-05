@@ -32,6 +32,14 @@ void computeMain(uint3 threadId: SV_DispatchThreadID)
         return;
 
     Particle p = particlesIn[i];
+
+    // Boundary and dormant particles skip temperature computation.
+    if (p.phase == -1 || p.phase == 2)
+    {
+        particlesOut[i] = p;
+        return;
+    }
+
     float h  = params.smoothingRadius;
     float h2 = h * h;
     uint  n  = params.particleCount;

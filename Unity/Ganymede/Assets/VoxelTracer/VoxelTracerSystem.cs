@@ -199,6 +199,12 @@ public sealed class VoxelTracerSystem : MonoBehaviour
     public static void RegisterFluidMaterial(VoxelFluidMaterial fm) { if (fm != null) _registeredFluidMaterials.Add(fm); }
     public static void UnregisterFluidMaterial(VoxelFluidMaterial fm) { _registeredFluidMaterials.Remove(fm); }
 
+    // Boundary collider registration
+    static readonly HashSet<VoxelBoundaryCollider> _registeredBoundaryColliders = new HashSet<VoxelBoundaryCollider>();
+    public static IReadOnlyCollection<VoxelBoundaryCollider> BoundaryColliders => _registeredBoundaryColliders;
+    public static void RegisterBoundaryCollider(VoxelBoundaryCollider bc) { if (bc != null) _registeredBoundaryColliders.Add(bc); }
+    public static void UnregisterBoundaryCollider(VoxelBoundaryCollider bc) { _registeredBoundaryColliders.Remove(bc); }
+
     // Dirty flags
     bool _staticDirty = true;      // rebuild static tris + re-voxelize static layer
     bool _hasDynamicObjects;       // any dynamic objects exist in scene
@@ -255,6 +261,87 @@ public sealed class VoxelTracerSystem : MonoBehaviour
         _staticDirty = true;
         RebuildStatic();
         VoxelizeFrame();
+    }
+
+    // ================================================================
+    // Boundary Particle Surface Extraction
+    // ================================================================
+
+    /// <summary>
+    /// Returns world-space positions of surface voxels, optionally filtered by bounds and normal direction.
+    /// </summary>
+    public List<Vector3> GetSurfaceVoxelPositions(float spacing, Bounds[] colliderBounds = null,
+        bool useNormalFilter = false, Vector3 filterDirection = default, float filterThreshold = 0f)
+    {
+        var result = new List<Vector3>(4096);
+        if (_voxelBuffer == null || _totalVoxels == 0 || _nx == 0) return result;
+
+        uint[] voxels = new uint[_totalVoxels];
+        _voxelBuffer.GetData(voxels);
+
+        int step = 1;
+        if (spacing > voxelSize && voxelSize > 0f)
+            step = Mathf.Max(1, Mathf.RoundToInt(spacing / voxelSize));
+
+        bool filterByBounds = colliderBounds != null && colliderBounds.Length > 0;
+        Vector3 filterDir = useNormalFilter ? filterDirection.normalized : Vector3.zero;
+        float halfVoxel = voxelSize * 0.5f;
+
+        for (int z = 0; z < _nz; z += step)
+        for (int y = 0; y < _ny; y += step)
+        for (int x = 0; x < _nx; x += step)
+        {
+            int idx = z * (_nx * _ny) + y * _nx + x;
+            if ((voxels[idx] & 1u) == 0) continue; // bit 0 = surface voxel
+
+            Vector3 worldPos = _activeMin + new Vector3(
+                x * voxelSize + halfVoxel,
+                y * voxelSize + halfVoxel,
+                z * voxelSize + halfVoxel);
+
+            if (filterByBounds)
+            {
+                bool inside = false;
+                for (int b = 0; b < colliderBounds.Length; b++)
+                {
+                    if (colliderBounds[b].Contains(worldPos))
+                    { inside = true; break; }
+                }
+                if (!inside) continue;
+            }
+
+            if (useNormalFilter)
+            {
+                Vector3 normal = EstimateSurfaceNormal(voxels, x, y, z);
+                if (Vector3.Dot(normal, filterDir) < filterThreshold)
+                    continue;
+            }
+
+            result.Add(worldPos);
+        }
+        return result;
+    }
+
+    Vector3 EstimateSurfaceNormal(uint[] voxels, int x, int y, int z)
+    {
+        float xn = SampleOccupancy(voxels, x - 1, y, z);
+        float xp = SampleOccupancy(voxels, x + 1, y, z);
+        float yn = SampleOccupancy(voxels, x, y - 1, z);
+        float yp = SampleOccupancy(voxels, x, y + 1, z);
+        float zn = SampleOccupancy(voxels, x, y, z - 1);
+        float zp = SampleOccupancy(voxels, x, y, z + 1);
+        // Normal points from occupied toward empty
+        Vector3 n = new Vector3(xn - xp, yn - yp, zn - zp);
+        float mag = n.magnitude;
+        return mag > 0.001f ? n / mag : Vector3.up;
+    }
+
+    float SampleOccupancy(uint[] voxels, int x, int y, int z)
+    {
+        if (x < 0 || x >= _nx || y < 0 || y >= _ny || z < 0 || z >= _nz)
+            return 0f;
+        int idx = z * (_nx * _ny) + y * _nx + x;
+        return (voxels[idx] & 1u) != 0 ? 1f : 0f;
     }
 
     // ================================================================

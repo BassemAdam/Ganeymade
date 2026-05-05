@@ -160,6 +160,17 @@ public class ParticleRenderer : MonoBehaviour
         if (computePlugin != null && computePlugin.perfTestMode)
             return;
 
+        // Auto-resize buffers if particle count changed (e.g. boundary particles appended)
+        int currentCount = computePlugin.particleCount;
+        if (currentCount != readbackData.Length)
+        {
+            particleBuffer.Release();
+            readbackData = new Particle[currentCount];
+            particleBuffer = new ComputeBuffer(currentCount, Marshal.SizeOf<Particle>());
+            args[1] = (uint)currentCount;
+            argsBuffer.SetData(args);
+        }
+
         // Read the full particle buffer — the shader handles dormant particles
         // (phase < 0) by collapsing them to w=0 (point at infinity, no rasterization).
         GetComputeResult(readbackData, readbackData.Length);

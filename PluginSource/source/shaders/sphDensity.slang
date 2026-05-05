@@ -30,6 +30,15 @@ void computeMain(uint3 threadId: SV_DispatchThreadID)
        particlesOut[i] = p;
        return;
    }
+
+   // Boundary particles (phase=2): fixed density, zero pressure, never changes.
+   if (p.phase == 2)
+   {
+       p.density = params.restDensity;
+       p.pressure = 0.0;
+       particlesOut[i] = p;
+       return;
+   }
    float h = params.smoothingRadius;
    float h2 = h * h;
    uint n = params.particleCount;

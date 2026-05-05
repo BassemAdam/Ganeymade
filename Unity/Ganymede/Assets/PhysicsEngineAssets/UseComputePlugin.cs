@@ -199,7 +199,15 @@ public class UseComputePlugin : MonoBehaviour
 
     [Header("SDF Collision")]
     [Tooltip("Enable SDF-based collision")]
-    public bool enableSDF = true;
+    public bool enableSDF = false;
+
+    [Header("Boundary Particles")]
+    [Tooltip("Enable boundary particle collision from voxelized meshes tagged with VoxelBoundaryCollider")]
+    public bool enableBoundaryParticles = true;
+
+    [Tooltip("Regenerate boundary particles every N frames (0 = static only, no refresh)")]
+    [Min(0)]
+    public int boundaryDynamicUpdateInterval = 0;
 
     [Tooltip("Reference to the VoxelTracerSystem in the scene (auto-found if null)")]
     public VoxelTracerSystem voxelTracerRef;
@@ -239,6 +247,15 @@ public class UseComputePlugin : MonoBehaviour
     private bool _sdfUploaded;
 
     public HashSet<int> TapReservedSlots { get; } = new HashSet<int>();
+
+    // Boundary particle state
+    private int _boundaryStartIndex;
+    private int _boundaryCount;
+    private int _boundaryDynamicFrameCounter;
+    private bool _boundaryInitialized;
+
+    /// <summary>Number of fluid/gas particles (excluding boundary). SpawnManager should use this for its pool.</summary>
+    public int FluidParticleCount => _boundaryStartIndex > 0 ? _boundaryStartIndex : particleCount;
 
     // --------------------------------------------------------------------
 
@@ -392,6 +409,24 @@ public class UseComputePlugin : MonoBehaviour
             {
                 _sdfDynamicFrameCounter = 0;
                 GenerateAndUploadSDF();
+            }
+        }
+
+        // Boundary particle deferred init + dynamic refresh
+        if (enableBoundaryParticles)
+        {
+            if (!_boundaryInitialized)
+            {
+                GenerateAndUploadBoundaryParticles();
+            }
+            else if (boundaryDynamicUpdateInterval > 0)
+            {
+                _boundaryDynamicFrameCounter++;
+                if (_boundaryDynamicFrameCounter >= boundaryDynamicUpdateInterval)
+                {
+                    _boundaryDynamicFrameCounter = 0;
+                    RefreshBoundaryParticlePositions();
+                }
             }
         }
 
@@ -1049,4 +1084,162 @@ public class UseComputePlugin : MonoBehaviour
         public uint  _pad1;
         public uint  _pad2;
     }
+
+    // ================================================================
+    // Boundary Particles
+    // ================================================================
+
+    void GenerateAndUploadBoundaryParticles()
+    {
+        if (voxelTracerRef == null || !voxelTracerRef.IsReady)
+            return; // Retry next frame
+
+        var colliders = VoxelTracerSystem.BoundaryColliders;
+        if (colliders == null || colliders.Count == 0)
+            return; // Retry next frame until VoxelBoundaryCollider registers
+
+        // Collect bounds and normal filter from tagged objects
+        var boundsList = new List<Bounds>(colliders.Count);
+        bool useNormalFilter = false;
+        Vector3 filterDirection = Vector3.up;
+        float filterThreshold = 0f;
+
+        foreach (var bc in colliders)
+        {
+            if (bc == null) continue;
+            var rend = bc.GetComponent<Renderer>();
+            if (rend != null)
+            {
+                var b = rend.bounds;
+                b.Expand(voxelTracerRef.voxelSize); // slight expansion to catch edge voxels
+                boundsList.Add(b);
+            }
+            if (bc.useNormalFilter && !useNormalFilter)
+            {
+                useNormalFilter = true;
+                filterDirection = bc.filterDirection;
+                filterThreshold = bc.filterThreshold;
+            }
+        }
+
+        if (boundsList.Count == 0) return;
+
+        List<Vector3> surfacePositions = voxelTracerRef.GetSurfaceVoxelPositions(
+            smoothingRadius, boundsList.ToArray(), useNormalFilter, filterDirection, filterThreshold);
+
+        if (surfacePositions.Count == 0) return; // Voxelizer may not have run yet
+
+        const int MAX_ELEMENTS = 262144;
+        int maxBoundary = MAX_ELEMENTS - particleCount;
+        int boundarySlots = Mathf.Min(surfacePositions.Count, maxBoundary);
+        if (boundarySlots <= 0)
+        {
+            Debug.LogWarning("[Boundary] Cannot fit boundary particles — buffer at max capacity.");
+            _boundaryInitialized = true;
+            return;
+        }
+
+        int newTotal = particleCount + boundarySlots;
+        _boundaryStartIndex = particleCount;
+        _boundaryCount = boundarySlots;
+
+        // Read current GPU state so we don't overwrite existing fluid particles
+        Particle[] allParticles = new Particle[newTotal];
+        Particle[] currentParticles = new Particle[particleCount];
+        GetComputeResult(currentParticles, particleCount);
+        Array.Copy(currentParticles, allParticles, particleCount);
+
+        // Fill boundary slots
+        for (int i = 0; i < _boundaryCount; i++)
+        {
+            int idx = _boundaryStartIndex + i;
+            allParticles[idx] = new Particle
+            {
+                position = surfacePositions[i],
+                density = restDensity,
+                velocity = Vector3.zero,
+                pressure = 0f,
+                acceleration = Vector3.zero,
+                mass = particleMass,
+                temperature = 0f,
+                phase = 2,
+                latentHeatAccum = 0f,
+                fixedId = idx,
+            };
+        }
+
+        // Re-upload expanded buffer
+        particleCount = newTotal;
+        readbackData = new Particle[newTotal];
+        SetComputeData(allParticles, newTotal);
+        _boundaryInitialized = true;
+
+        if (verbose)
+            Debug.Log($"[Boundary] Generated {_boundaryCount} boundary particles from {surfacePositions.Count} surface voxels. Total: {particleCount}");
+    }
+
+    void RefreshBoundaryParticlePositions()
+    {
+        if (voxelTracerRef == null || !voxelTracerRef.IsReady || _boundaryCount == 0)
+            return;
+
+        var colliders = VoxelTracerSystem.BoundaryColliders;
+        if (colliders == null || colliders.Count == 0) return;
+
+        var boundsList = new List<Bounds>(colliders.Count);
+        bool useNormalFilter = false;
+        Vector3 filterDirection = Vector3.up;
+        float filterThreshold = 0f;
+
+        foreach (var bc in colliders)
+        {
+            if (bc == null) continue;
+            var rend = bc.GetComponent<Renderer>();
+            if (rend != null)
+            {
+                var b = rend.bounds;
+                b.Expand(voxelTracerRef.voxelSize);
+                boundsList.Add(b);
+            }
+            if (bc.useNormalFilter && !useNormalFilter)
+            {
+                useNormalFilter = true;
+                filterDirection = bc.filterDirection;
+                filterThreshold = bc.filterThreshold;
+            }
+        }
+
+        if (boundsList.Count == 0) return;
+
+        List<Vector3> surfacePositions = voxelTracerRef.GetSurfaceVoxelPositions(
+            smoothingRadius, boundsList.ToArray(), useNormalFilter, filterDirection, filterThreshold);
+
+        int updateCount = Mathf.Min(surfacePositions.Count, _boundaryCount);
+        int[] indices = new int[updateCount];
+        Particle[] patchData = new Particle[updateCount];
+
+        for (int i = 0; i < updateCount; i++)
+        {
+            int idx = _boundaryStartIndex + i;
+            indices[i] = idx;
+            patchData[i] = new Particle
+            {
+                position = surfacePositions[i],
+                density = restDensity,
+                velocity = Vector3.zero,
+                pressure = 0f,
+                acceleration = Vector3.zero,
+                mass = particleMass,
+                temperature = 0f,
+                phase = 2,
+                latentHeatAccum = 0f,
+                fixedId = idx,
+            };
+        }
+
+        PatchParticles(indices, patchData, updateCount);
+    }
+
+    [DllImport(PluginName)]
+    private static extern void PatchParticles([In] int[] indices, [In] Particle[] data, int count);
 }

@@ -108,6 +108,15 @@ void computeMain(uint3 threadId: SV_DispatchThreadID)
       particlesOut[i] = p;
       return;
    }
+
+   // Boundary particles: immovable, never integrate forces.
+   if (p.phase == 2)
+   {
+      p.velocity = float3(0.0);
+      p.acceleration = float3(0.0);
+      particlesOut[i] = p;
+      return;
+   }
    float h = params.smoothingRadius;
    float h2 = h * h;
    uint n = params.particleCount;
