@@ -417,7 +417,9 @@ public class UseComputePlugin : MonoBehaviour
         {
             if (!_boundaryInitialized)
             {
-                GenerateAndUploadBoundaryParticles();
+                // Wait at least 2 frames so GPU has dispatched and readback is valid
+                if (frameCount >= 2)
+                    GenerateAndUploadBoundaryParticles();
             }
             else if (boundaryDynamicUpdateInterval > 0)
             {
@@ -1143,17 +1145,14 @@ public class UseComputePlugin : MonoBehaviour
         _boundaryStartIndex = particleCount;
         _boundaryCount = boundarySlots;
 
-        // Read current GPU state so we don't overwrite existing fluid particles
-        Particle[] allParticles = new Particle[newTotal];
-        Particle[] currentParticles = new Particle[particleCount];
-        GetComputeResult(currentParticles, particleCount);
-        Array.Copy(currentParticles, allParticles, particleCount);
-
-        // Fill boundary slots
+        // Build the boundary particles
+        int[] indices = new int[_boundaryCount];
+        Particle[] boundaryData = new Particle[_boundaryCount];
         for (int i = 0; i < _boundaryCount; i++)
         {
             int idx = _boundaryStartIndex + i;
-            allParticles[idx] = new Particle
+            indices[i] = idx;
+            boundaryData[i] = new Particle
             {
                 position = surfacePositions[i],
                 density = restDensity,
@@ -1168,9 +1167,22 @@ public class UseComputePlugin : MonoBehaviour
             };
         }
 
+        // Expand the native buffer: read current state, append boundary, re-upload
+        Particle[] allParticles = new Particle[newTotal];
+        // Copy current fluid particles from the snapshot (still valid at this point)
+        if (InitialParticleSnapshot != null && InitialParticleSnapshot.Length >= particleCount)
+            Array.Copy(InitialParticleSnapshot, allParticles, particleCount);
+        else
+            GetComputeResult(allParticles, particleCount);
+
+        // Write boundary particles into the tail
+        for (int i = 0; i < _boundaryCount; i++)
+            allParticles[_boundaryStartIndex + i] = boundaryData[i];
+
         // Re-upload expanded buffer
         particleCount = newTotal;
         readbackData = new Particle[newTotal];
+        SetComputeData(allParticles, newTotal);
         SetComputeData(allParticles, newTotal);
         _boundaryInitialized = true;
 
