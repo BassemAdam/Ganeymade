@@ -131,7 +131,7 @@ GameObject:
   - component: {fileID: 260858534}
   - component: {fileID: 260858533}
   - component: {fileID: 260858532}
-  - component: {fileID: 260858536}
+  - component: {fileID: 260858537}
   m_Layer: 0
   m_Name: HeatSource
   m_TagString: Untagged
@@ -231,7 +231,7 @@ Transform:
   m_Children: []
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
---- !u!114 &260858536
+--- !u!114 &260858537
 MonoBehaviour:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
@@ -240,10 +240,16 @@ MonoBehaviour:
   m_GameObject: {fileID: 260858530}
   m_Enabled: 1
   m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 79a685bc6efa748479c5f1a261a967a0, type: 3}
+  m_Script: {fileID: 11500000, guid: 7193c26c385088b48869367ff217e876, type: 3}
   m_Name: 
-  m_EditorClassIdentifier: Assembly-CSharp::HeatSourceObj
-  temperature: 100
+  m_EditorClassIdentifier: Assembly-CSharp::VoxelSolidMaterial
+  temperature: 700
+  thermalDiffusivity: 30
+  coolingRate: 0.01
+  isContinuousHeatSource: 1
+  density: 2500
+  mass: 0
+  phase: 0
 --- !u!1 &531091619
 GameObject:
   m_ObjectHideFlags: 0
@@ -368,7 +374,6 @@ GameObject:
   serializedVersion: 6
   m_Component:
   - component: {fileID: 673791684}
-  - component: {fileID: 673791685}
   - component: {fileID: 673791686}
   m_Layer: 0
   m_Name: GameObject
@@ -392,53 +397,6 @@ Transform:
   m_Children: []
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
---- !u!114 &673791685
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 673791682}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 667f1985ae19fdd44b21f9bb54b29c64, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
-  particleMaterial: {fileID: 2100000, guid: 6940acfd23abbfb419c637991f9d6755, type: 2}
-  particleMesh: {fileID: 10207, guid: 0000000000000000e000000000000000, type: 0}
-  particleSize: 0.05
-  temperatureGradient:
-    serializedVersion: 2
-    key0: {r: 1, g: 1, b: 1, a: 1}
-    key1: {r: 1, g: 1, b: 1, a: 1}
-    key2: {r: 0, g: 0, b: 0, a: 0}
-    key3: {r: 0, g: 0, b: 0, a: 0}
-    key4: {r: 0, g: 0, b: 0, a: 0}
-    key5: {r: 0, g: 0, b: 0, a: 0}
-    key6: {r: 0, g: 0, b: 0, a: 0}
-    key7: {r: 0, g: 0, b: 0, a: 0}
-    ctime0: 0
-    ctime1: 65535
-    ctime2: 0
-    ctime3: 0
-    ctime4: 0
-    ctime5: 0
-    ctime6: 0
-    ctime7: 0
-    atime0: 0
-    atime1: 65535
-    atime2: 0
-    atime3: 0
-    atime4: 0
-    atime5: 0
-    atime6: 0
-    atime7: 0
-    m_Mode: 0
-    m_ColorSpace: -1
-    m_NumColorKeys: 2
-    m_NumAlphaKeys: 2
-  minTemp: 20
-  maxTemp: 100
 --- !u!114 &673791686
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -452,6 +410,10 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::UseComputePlugin
   particleCount: 32768
+  spawnPoolReserve: 0
+  dormantParkPosition: {x: 0, y: -1000, z: 0}
+  overrideSpawnCenter: 0
+  spawnCenter: {x: 0, y: 0, z: 0}
   gravity: {x: 0, y: -9.81, z: 0}
   restDensity: 30
   gasStiffness: 10
@@ -460,8 +422,8 @@ MonoBehaviour:
   particleMass: 1
   damping: 0.998
   boundsAreLocalToTransform: 1
-  boundsMin: {x: -5, y: -5, z: -5}
-  boundsMax: {x: 5, y: 5, z: 5}
+  boundsMin: {x: -3, y: -5, z: -3}
+  boundsMax: {x: 3, y: 5, z: 3}
   perfTestMode: 0
   subStepCount: 1
   useFixedTimeStep: 1
@@ -470,11 +432,24 @@ MonoBehaviour:
   interactionStrength: 0
   interactionPos: {x: 0, y: 0, z: 0}
   interactionRadius: 3
-  thermalDiffusivity: 0.3
+  enableThermal: 1
+  thermalFrameInterval: 2
+  thermalDiffusivity: 0.436
   ambientTemperature: 20
   coolingRate: 0.01
+  boilingTemperature: 100
+  latentHeat: 50
+  gasRestDensity: 5
+  gasViscosity: 1
+  gasBuoyancy: 15
+  pressureBoilingScale: 0.1
+  cohesionStrength: 0.005
   autoInitialize: 1
   verbose: 1
+  enableSDF: 1
+  voxelTracerRef: {fileID: 0}
+  sdfSkinOffset: 0.05
+  sdfDynamicUpdateInterval: 10
 --- !u!1 &1648158321
 GameObject:
   m_ObjectHideFlags: 0
@@ -602,6 +577,88 @@ MonoBehaviour:
   m_ShadowLayerMask: 1
   m_RenderingLayers: 1
   m_ShadowRenderingLayers: 1
+--- !u!1 &1954235519
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 1954235521}
+  - component: {fileID: 1954235520}
+  m_Layer: 0
+  m_Name: ParticleRenderer
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!114 &1954235520
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1954235519}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 667f1985ae19fdd44b21f9bb54b29c64, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::ParticleRenderer
+  particleMaterial: {fileID: 2100000, guid: 6940acfd23abbfb419c637991f9d6755, type: 2}
+  particleMesh: {fileID: 10207, guid: 0000000000000000e000000000000000, type: 0}
+  particleSize: 0.05
+  visualizedField: 0
+  valueGradient:
+    serializedVersion: 2
+    key0: {r: 1, g: 1, b: 1, a: 1}
+    key1: {r: 1, g: 1, b: 1, a: 1}
+    key2: {r: 0, g: 0, b: 0, a: 0}
+    key3: {r: 0, g: 0, b: 0, a: 0}
+    key4: {r: 0, g: 0, b: 0, a: 0}
+    key5: {r: 0, g: 0, b: 0, a: 0}
+    key6: {r: 0, g: 0, b: 0, a: 0}
+    key7: {r: 0, g: 0, b: 0, a: 0}
+    ctime0: 0
+    ctime1: 65535
+    ctime2: 0
+    ctime3: 0
+    ctime4: 0
+    ctime5: 0
+    ctime6: 0
+    ctime7: 0
+    atime0: 0
+    atime1: 65535
+    atime2: 0
+    atime3: 0
+    atime4: 0
+    atime5: 0
+    atime6: 0
+    atime7: 0
+    m_Mode: 0
+    m_ColorSpace: -1
+    m_NumColorKeys: 2
+    m_NumAlphaKeys: 2
+  minValue: 20
+  maxValue: 150
+  computePlugin: {fileID: 673791686}
+  lastValidatedField: 0
+--- !u!4 &1954235521
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1954235519}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1660057539 &9223372036854775807
 SceneRoots:
   m_ObjectHideFlags: 0
@@ -610,3 +667,4 @@ SceneRoots:
   - {fileID: 1648158323}
   - {fileID: 673791684}
   - {fileID: 260858535}
+  - {fileID: 1954235521}

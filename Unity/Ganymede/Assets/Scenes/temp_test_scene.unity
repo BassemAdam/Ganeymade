@@ -154,6 +154,7 @@ MonoBehaviour:
   temperature: 70
   thermalDiffusivity: 25
   coolingRate: 0.01
+  isContinuousHeatSource: 0
   density: 2500
   mass: 0
   phase: 0
@@ -261,7 +262,7 @@ GameObject:
   - component: {fileID: 190442886}
   - component: {fileID: 190442885}
   - component: {fileID: 190442884}
-  - component: {fileID: 190442883}
+  - component: {fileID: 190442888}
   m_Layer: 0
   m_Name: HeatSource
   m_TagString: Untagged
@@ -269,21 +270,6 @@ GameObject:
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
   m_IsActive: 1
---- !u!114 &190442883
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 190442882}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: a1b2c3d4e5f647a8b9c0d1e2f3a4b5c6, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: Assembly-CSharp::VoxelHeatSource
-  temperature: 300
-  radius: 0
-  active: 1
 --- !u!65 &190442884
 BoxCollider:
   m_ObjectHideFlags: 0
@@ -376,6 +362,25 @@ Transform:
   m_Children: []
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &190442888
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 190442882}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 7193c26c385088b48869367ff217e876, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::VoxelSolidMaterial
+  temperature: 300
+  thermalDiffusivity: 10
+  coolingRate: 0.01
+  isContinuousHeatSource: 1
+  density: 2500
+  mass: 0
+  phase: 0
 --- !u!1 &414132861
 GameObject:
   m_ObjectHideFlags: 0
@@ -388,7 +393,7 @@ GameObject:
   - component: {fileID: 414132865}
   - component: {fileID: 414132864}
   - component: {fileID: 414132863}
-  - component: {fileID: 414132862}
+  - component: {fileID: 414132867}
   m_Layer: 0
   m_Name: HeatSource3
   m_TagString: Untagged
@@ -396,21 +401,6 @@ GameObject:
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
   m_IsActive: 1
---- !u!114 &414132862
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 414132861}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: a1b2c3d4e5f647a8b9c0d1e2f3a4b5c6, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: Assembly-CSharp::VoxelHeatSource
-  temperature: 500
-  radius: 0
-  active: 1
 --- !u!135 &414132863
 SphereCollider:
   m_ObjectHideFlags: 0
@@ -503,6 +493,25 @@ Transform:
   m_Children: []
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &414132867
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 414132861}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 7193c26c385088b48869367ff217e876, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::VoxelSolidMaterial
+  temperature: 500
+  thermalDiffusivity: 15
+  coolingRate: 0.01
+  isContinuousHeatSource: 1
+  density: 2500
+  mass: 0
+  phase: 0
 --- !u!1 &531091619
 GameObject:
   m_ObjectHideFlags: 0
@@ -697,6 +706,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::VoxelSliceViewer
   voxelSystem: {fileID: 1468085467}
+  thermalReceiver: {fileID: 0}
   axis: 1
   slicePosition: 0.5
   filledColor: {r: 1, g: 1, b: 1, a: 1}
@@ -743,6 +753,7 @@ MonoBehaviour:
   temperature: 40
   thermalDiffusivity: 10
   coolingRate: 0.01
+  isContinuousHeatSource: 0
   density: 2500
   mass: 0
   phase: 0
@@ -901,7 +912,7 @@ GameObject:
   - component: {fileID: 1405432126}
   - component: {fileID: 1405432125}
   - component: {fileID: 1405432124}
-  - component: {fileID: 1405432123}
+  - component: {fileID: 1405432128}
   m_Layer: 0
   m_Name: HeatSource2
   m_TagString: Untagged
@@ -909,21 +920,6 @@ GameObject:
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
   m_IsActive: 1
---- !u!114 &1405432123
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1405432122}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: a1b2c3d4e5f647a8b9c0d1e2f3a4b5c6, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: Assembly-CSharp::VoxelHeatSource
-  temperature: 200
-  radius: 0
-  active: 1
 --- !u!65 &1405432124
 BoxCollider:
   m_ObjectHideFlags: 0
@@ -1016,6 +1012,25 @@ Transform:
   m_Children: []
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &1405432128
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1405432122}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 7193c26c385088b48869367ff217e876, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::VoxelSolidMaterial
+  temperature: 100
+  thermalDiffusivity: 0.1
+  coolingRate: 0.01
+  isContinuousHeatSource: 1
+  density: 2500
+  mass: 0
+  phase: 0
 --- !u!1 &1468085466
 GameObject:
   m_ObjectHideFlags: 0
@@ -1059,6 +1074,9 @@ MonoBehaviour:
   includeSkinnedMeshRenderers: 1
   includeTerrains: 1
   terrainSampleStep: 4
+  voxelizeLayers:
+    serializedVersion: 2
+    m_Bits: 4294967295
   defaultSolidTemperature: 25
   defaultSolidDiffusivity: 0.1
   maxVoxelsPerAxis: 256

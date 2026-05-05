@@ -25,6 +25,10 @@ public sealed class VoxelSolidMaterial : MonoBehaviour
              "Maps to coolingRate in SimParams when used as a boundary.")]
     [Range(0f, 1f)] public float coolingRate = 0.01f;
 
+    [Tooltip("Whether the solid continuously generates heat (e.g. a hot stove). " +
+             "If true, the sim treats this as a constant-temperature heat source.")]
+    public bool isContinuousHeatSource = false;
+
     [Header("Physical")]
     [Tooltip("Density of this solid (kg/m³). Used by sim for buoyancy / boundary forces.")]
     [Min(0.01f)] public float density = 2500f;
