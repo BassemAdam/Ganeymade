@@ -377,7 +377,7 @@ MonoBehaviour:
   temperature: 300
   thermalDiffusivity: 10
   coolingRate: 0.01
-  isContinuousHeatSource: 0
+  isContinuousHeatSource: 1
   density: 2500
   mass: 0
   phase: 0
@@ -1027,7 +1027,7 @@ MonoBehaviour:
   temperature: 100
   thermalDiffusivity: 0.1
   coolingRate: 0.01
-  isContinuousHeatSource: 0
+  isContinuousHeatSource: 1
   density: 2500
   mass: 0
   phase: 0

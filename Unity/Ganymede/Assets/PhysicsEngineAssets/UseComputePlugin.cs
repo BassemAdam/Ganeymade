@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Runtime.InteropServices;
 using UnityEngine;
+using System.Linq;
 
 /// <summary>
 /// Minimal C# wrapper for the native Vulkan compute plugin (RenderingPlugin.dll).
@@ -223,7 +224,7 @@ public class UseComputePlugin : MonoBehaviour
     private HeatSource[] _heatSources = new HeatSource[MAX_HEAT_SOURCES];
 
     // Cached heat source references (avoid FindObjectsByType every frame)
-    private HeatSourceObj[] _cachedSources;
+    private VoxelSolidMaterial[] _cachedSources;
     private Collider[] _cachedSourceColliders;
     private Vector3[] _lastSourcePositions;
     private float[] _lastSourceTemps;
@@ -753,34 +754,35 @@ public class UseComputePlugin : MonoBehaviour
 
     void CacheHeatSources()
     {
-        _cachedSources = FindObjectsByType<HeatSourceObj>(FindObjectsSortMode.None);
+        _cachedSources = VoxelTracerSystem.SolidMaterials.ToArray();
+
         int count = Mathf.Min(_cachedSources.Length, MAX_HEAT_SOURCES);
         _cachedSourceColliders = new Collider[count];
         _lastSourcePositions = new Vector3[count];
         _lastSourceTemps = new float[count];
+
         for (int i = 0; i < count; i++)
         {
             _cachedSourceColliders[i] = _cachedSources[i].GetComponent<Collider>();
-            _lastSourcePositions[i] = Vector3.one * float.MaxValue; // force first upload
+            _lastSourcePositions[i] = Vector3.one * float.MaxValue; 
         }
     }
 
     void UpdateHeatSources()
     {
         // Re-cache if sources were destroyed or new ones added
-        if (_cachedSources == null || _cachedSources.Length == 0 ||
-            (_cachedSources.Length > 0 && _cachedSources[0] == null))
+        int currentFlaggedCount = VoxelTracerSystem.SolidMaterials.Count(sm => sm != null);
+        if (_cachedSources == null || _cachedSources.Length != currentFlaggedCount)
         {
             CacheHeatSources();
         }
-
         int count = Mathf.Min(_cachedSources.Length, MAX_HEAT_SOURCES);
 
         bool dirty = false;
         for (int i = 0; i < count; i++)
         {
             Vector3 pos = _cachedSources[i].transform.position;
-            float temp = _cachedSources[i].GetTemperature();
+            float temp = _cachedSources[i].temperature;
             if (pos != _lastSourcePositions[i] || temp != _lastSourceTemps[i])
             {
                 dirty = true;
