@@ -154,91 +154,94 @@ public class ThermalReceiver : MonoBehaviour
         int gx = voxelTracer.Nx;
         int gy = voxelTracer.Ny;
         int gz = voxelTracer.Nz;
+        int sliceSize = gx * gy;
 
-        // Create a 2D RenderTexture to receive each slice copy
-        RenderTexture tmp2D = new RenderTexture(gx, gy, 0, RenderTextureFormat.RFloat)
+        // ── Fill texture → mask (single async 3D request, no per-slice stalls) ──
         {
-            enableRandomWrite = false,
-            filterMode = FilterMode.Point,
-            dimension = UnityEngine.Rendering.TextureDimension.Tex2D
-        };
-        tmp2D.Create();
-
-        // ── Fill texture → mask ──────────────────────────────────────────
-        for (int z = 0; z < gz; z++)
-        {
-            Graphics.CopyTexture(voxelTracer.FillTexture, z, 0, tmp2D, 0, 0);
-
-            var req = AsyncGPUReadback.Request(tmp2D);
+            var req = AsyncGPUReadback.Request(voxelTracer.FillTexture);
             yield return new WaitUntil(() => req.done);
-
             if (req.hasError)
             {
-                Debug.LogError($"[ThermalReceiver] FillTexture readback error at z={z}");
-                continue;
+                Debug.LogError("[ThermalReceiver] FillTexture readback error");
             }
-
-            var data = req.GetData<float>();
-            for (int i = 0; i < data.Length; i++)
-                maskData[z * gx * gy + i] = data[i] > 0.5f ? 1u : 0u;
+            else
+            {
+                int slices = req.layerCount > 0 ? req.layerCount : gz;
+                for (int z = 0; z < gz && z < slices; z++)
+                {
+                    var slice = req.GetData<float>(z);
+                    int n = Mathf.Min(slice.Length, sliceSize);
+                    int dstBase = z * sliceSize;
+                    for (int i = 0; i < n; i++)
+                        maskData[dstBase + i] = slice[i] > 0.5f ? 1u : 0u;
+                }
+            }
         }
 
-        // ── Temperature texture → gridData ───────────────────────────────
-        for (int z = 0; z < gz; z++)
+        // ── Temperature texture → gridData ─────────────────────────────────
         {
-            Graphics.CopyTexture(voxelTracer.TemperatureTexture, z, 0, tmp2D, 0, 0);
-
-            var req = AsyncGPUReadback.Request(tmp2D);
+            var req = AsyncGPUReadback.Request(voxelTracer.TemperatureTexture);
             yield return new WaitUntil(() => req.done);
-
             if (req.hasError)
             {
-                Debug.LogError($"[ThermalReceiver] TemperatureTexture readback error at z={z}");
-                continue;
+                Debug.LogError("[ThermalReceiver] TemperatureTexture readback error");
             }
-
-            var data = req.GetData<float>();
-            for (int i = 0; i < data.Length; i++)
-                gridData[z * gx * gy + i] = data[i];
+            else
+            {
+                int slices = req.layerCount > 0 ? req.layerCount : gz;
+                for (int z = 0; z < gz && z < slices; z++)
+                {
+                    var slice = req.GetData<float>(z);
+                    int n = Mathf.Min(slice.Length, sliceSize);
+                    int dstBase = z * sliceSize;
+                    for (int i = 0; i < n; i++)
+                        gridData[dstBase + i] = slice[i];
+                }
+            }
         }
 
-        // ── Diffusivity texture → diffusivityData ────────────────────────
-        for (int z = 0; z < gz; z++)
+        // ── Diffusivity texture → diffusivityData ──────────────────────────
         {
-            Graphics.CopyTexture(voxelTracer.DiffusivityTexture, z, 0, tmp2D, 0, 0);
-
-            var req = AsyncGPUReadback.Request(tmp2D);
+            var req = AsyncGPUReadback.Request(voxelTracer.DiffusivityTexture);
             yield return new WaitUntil(() => req.done);
-
             if (req.hasError)
             {
-                Debug.LogError($"[ThermalReceiver] DiffusivityTexture readback error at z={z}");
-                continue;
+                Debug.LogError("[ThermalReceiver] DiffusivityTexture readback error");
             }
-
-            var data = req.GetData<float>();
-            for (int i = 0; i < data.Length; i++)
-                diffusivityData[z * gx * gy + i] = Mathf.Clamp(data[i], 0f, 30f);
+            else
+            {
+                int slices = req.layerCount > 0 ? req.layerCount : gz;
+                for (int z = 0; z < gz && z < slices; z++)
+                {
+                    var slice = req.GetData<float>(z);
+                    int n = Mathf.Min(slice.Length, sliceSize);
+                    int dstBase = z * sliceSize;
+                    for (int i = 0; i < n; i++)
+                        diffusivityData[dstBase + i] = Mathf.Clamp(slice[i], 0f, 30f);
+                }
+            }
         }
 
-        // ── HeatSourceTexture → heatSourceData ───────────────────────────
+        // ── HeatSourceTexture → heatSourceData ─────────────────────────────
         if (voxelTracer.HeatSourceTexture != null)
         {
-            for (int z = 0; z < gz; z++)
+            var req = AsyncGPUReadback.Request(voxelTracer.HeatSourceTexture);
+            yield return new WaitUntil(() => req.done);
+            if (req.hasError)
             {
-                Graphics.CopyTexture(voxelTracer.HeatSourceTexture, z, 0, tmp2D, 0, 0);
-                var req = AsyncGPUReadback.Request(tmp2D);
-                yield return new WaitUntil(() => req.done);
-
-                if (req.hasError)
+                Debug.LogError("[ThermalReceiver] HeatSourceTexture readback error");
+            }
+            else
+            {
+                int slices = req.layerCount > 0 ? req.layerCount : gz;
+                for (int z = 0; z < gz && z < slices; z++)
                 {
-                    Debug.LogError($"[ThermalReceiver] HeatSourceTexture readback error at z={z}");
-                    continue;
+                    var slice = req.GetData<float>(z);
+                    int n = Mathf.Min(slice.Length, sliceSize);
+                    int dstBase = z * sliceSize;
+                    for (int i = 0; i < n; i++)
+                        heatSourceData[dstBase + i] = slice[i];
                 }
-
-                var data = req.GetData<float>();
-                for (int i = 0; i < data.Length; i++)
-                    heatSourceData[z * gx * gy + i] = data[i];
             }
         }
         else
@@ -249,9 +252,6 @@ public class ThermalReceiver : MonoBehaviour
             Array.Clear(heatSourceData, 0, heatSourceData.Length);
         }
 
-        RenderTexture.active = null;
-        tmp2D.Release();
-        Destroy(tmp2D);
         Debug.Log("[ThermalReceiver] Texture readback complete. Uploading data to diffusion shader.");
 
         SetDiffusivityData(diffusivityData, gx * gy * gz);
@@ -265,32 +265,26 @@ public class ThermalReceiver : MonoBehaviour
         int gx = voxelTracer.Nx;
         int gy = voxelTracer.Ny;
         int gz = voxelTracer.Nz;
+        int sliceSize = gx * gy;
 
-        if (voxelTracer.HeatSourceTexture == null) yield break;
+        if (voxelTracer.HeatSourceTexture == null) { _refreshingHeatSources = false; yield break; }
 
-        RenderTexture tmp2D = new RenderTexture(gx, gy, 0, RenderTextureFormat.RFloat)
+        // Single async 3D request — no temp RT, no per-slice ReadPixels, no allocations.
+        var req = AsyncGPUReadback.Request(voxelTracer.HeatSourceTexture);
+        yield return new WaitUntil(() => req.done);
+
+        if (!req.hasError)
         {
-            enableRandomWrite = false,
-            filterMode = FilterMode.Point,
-            dimension = UnityEngine.Rendering.TextureDimension.Tex2D
-        };
-        tmp2D.Create();
-
-        for (int z = 0; z < gz; z++)
-        {
-            Graphics.CopyTexture(voxelTracer.HeatSourceTexture, z, 0, tmp2D, 0, 0);
-            var req = AsyncGPUReadback.Request(tmp2D);
-            yield return new WaitUntil(() => req.done);
-
-            if (req.hasError) continue;
-
-            var data = req.GetData<float>();
-            for (int i = 0; i < data.Length; i++)
-                heatSourceData[z * gx * gy + i] = data[i];
+            int slices = req.layerCount > 0 ? req.layerCount : gz;
+            for (int z = 0; z < gz && z < slices; z++)
+            {
+                var slice = req.GetData<float>(z);
+                int n = Mathf.Min(slice.Length, sliceSize);
+                int dstBase = z * sliceSize;
+                for (int i = 0; i < n; i++)
+                    heatSourceData[dstBase + i] = slice[i];
+            }
         }
-
-        tmp2D.Release();
-        Destroy(tmp2D);
 
         SetHeatSourceData(heatSourceData, gx * gy * gz);
 
