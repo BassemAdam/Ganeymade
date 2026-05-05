@@ -201,6 +201,10 @@ public class UseComputePlugin : MonoBehaviour
     [Tooltip("Enable SDF-based collision")]
     public bool enableSDF = false;
 
+    [Tooltip("Surface friction when particles slide along SDF surfaces. 0 = frictionless, 1 = heavy friction.")]
+    [Range(0f, 1f)]
+    public float sdfFriction = 0.1f;
+
     [Header("Boundary Particles")]
     [Tooltip("Enable boundary particle collision from voxelized meshes tagged with VoxelBoundaryCollider")]
     public bool enableBoundaryParticles = true;
@@ -537,7 +541,7 @@ public class UseComputePlugin : MonoBehaviour
         p.viscosity = viscosity;
         p.smoothingRadius = h;
         p.sdfVoxelSize = enableSDF ? _sdfCellSize : 0f;
-        p._pad1 = 0f;
+        p.sdfFriction = sdfFriction;
         p.gravity = gravity;
         p.particleMass = particleMass;
         p.boundsMin = boundsMinWS;
@@ -1035,7 +1039,7 @@ public class UseComputePlugin : MonoBehaviour
         public float viscosity;
         public float smoothingRadius;
         public float sdfVoxelSize;
-        public float _pad1;
+        public float sdfFriction;
         public Vector3 gravity;
         public float particleMass;
         public Vector3 boundsMin;

@@ -7,7 +7,7 @@
        float  viscosity;
        float  smoothingRadius;
        float  sdfVoxelSize;    // SDF grid cell size (0 = no SDF)
-       float  _pad1;
+       float  sdfFriction;     // 0 = no friction near SDF, 1 = full friction
        float3 gravity;
        float  particleMass;
        float3 boundsMin;

@@ -126,6 +126,7 @@ void computeMain(uint3 threadId: SV_DispatchThreadID)
    float3 fPressure = float3(0.0);
    float3 fViscosity = float3(0.0);
    float3 fCohesion  = float3(0.0);
+   float3 fBoundary  = float3(0.0);
 
    for (int dz = -1; dz <= 1; dz++)
    for (int dy = -1; dy <= 1; dy++)
@@ -146,6 +147,15 @@ void computeMain(uint3 threadId: SV_DispatchThreadID)
             {
                float r = sqrt(r2);
                float3 dir = diff / r;
+
+               // Boundary particle: repulsive penalty force
+               if (pj.phase == 2)
+               {
+                  float penetration = 1.0 - r / h; // 1 at center, 0 at edge
+                  fBoundary += dir * params.gasStiffness * penetration * penetration;
+                  idx++;
+                  continue;
+               }
 
                float hr = h - r;
                float3 spikyGrad = params.spikyGradConst * (hr * hr) * dir;
@@ -168,7 +178,7 @@ void computeMain(uint3 threadId: SV_DispatchThreadID)
       }
    }
 
-   float3 sphAccel = (fPressure + fViscosity + fCohesion) / p.density;
+   float3 sphAccel = (fPressure + fViscosity + fCohesion) / p.density + fBoundary;
    p.acceleration = sphAccel;
 
    // ── Buoyancy: gas particles always rise at full strength ──
@@ -237,7 +247,7 @@ void computeMain(uint3 threadId: SV_DispatchThreadID)
          p.position -= normal * dist;
       }
 
-      // Velocity correction + damping for particles near the surface
+      // Velocity correction + friction for particles near the surface
       float distFinal = sampleSDF(p.position);
       float dampZone = params.sdfVoxelSize * 2.0;
       if (distFinal < dampZone)
@@ -245,24 +255,23 @@ void computeMain(uint3 threadId: SV_DispatchThreadID)
          float3 normal = sdfGradient(p.position);
          float proximity = 1.0 - saturate(distFinal / dampZone);
 
-         // Zero all normal velocity to kill oscillation
+         // Only zero normal velocity if moving INTO the surface (prevents oscillation)
          float vn = dot(p.velocity, normal);
-         p.velocity -= vn * normal;
+         if (vn < 0.0)
+            p.velocity -= vn * normal;
 
-         // Pre-compensate gravity: cancel next frame's gravity toward surface
+         // Pre-compensate gravity toward surface
          float gn = dot(params.gravity, normal);
          if (gn < 0.0)
             p.velocity -= gn * params.dt * normal;
 
-         // Surface friction: damp tangential (sliding) velocity.
-         // At the surface friction is strongest; fades to zero at dampZone edge.
-         float3 tangentVel = p.velocity - dot(p.velocity, normal) * normal;
-         float frictionStrength = lerp(0.0, 0.5, proximity);
-         p.velocity -= tangentVel * frictionStrength;
-
-         // General near-surface damping on remaining velocity
-         float dampFactor = lerp(1.0, 0.9, proximity);
-         p.velocity *= dampFactor;
+         // Configurable surface friction (tangential damping)
+         if (params.sdfFriction > 0.0)
+         {
+            float3 tangentVel = p.velocity - dot(p.velocity, normal) * normal;
+            float frictionStrength = params.sdfFriction * 0.5 * proximity;
+            p.velocity -= tangentVel * frictionStrength;
+         }
       }
    }
 
