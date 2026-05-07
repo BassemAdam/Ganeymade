@@ -190,4 +190,4 @@ static const uint32_t kSolidTempDiffusion[] = {
     0x0000011C, 0x0000012E, 0x00050085, 0x00000010, 0x00000130, 0x0000012F, 0x0000012C, 0x00050081,
     0x00000010, 0x00000131, 0x000000CC, 0x00000130, 0x0003003E, 0x0000012D, 0x00000131, 0x000200F9,
     0x00000134, 0x000200F8, 0x00000134, 0x000100FD, 0x00010038,
-}; // 1525 words, 6100 bytes ï¿½ compiled from solidTemperatureDiffusion.spv
+}; // 1525 words, 6100 bytes — compiled from solidTemperatureDiffusion.spv

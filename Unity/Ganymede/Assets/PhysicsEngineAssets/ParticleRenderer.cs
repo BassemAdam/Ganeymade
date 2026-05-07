@@ -17,6 +17,8 @@ public class ParticleRenderer : MonoBehaviour
     private const float DensityMaxDefault = 300f;
     private const float SpeedMinDefault = 0f;
     private const float SpeedMaxDefault = 5f;
+    private const float NeighborCountMinDefault = 0f;
+    private const float NeighborCountMaxDefault = 30f;
 
     public enum VisualizedField
     {
@@ -24,6 +26,7 @@ public class ParticleRenderer : MonoBehaviour
         Pressure = 1,
         Density = 2,
         Speed = 3,
+        NeighborCount = 4,
     }
 
 #if (PLATFORM_IOS || PLATFORM_TVOS || PLATFORM_BRATWURST || PLATFORM_SWITCH) && !UNITY_EDITOR
@@ -236,6 +239,11 @@ public class ParticleRenderer : MonoBehaviour
             case VisualizedField.Speed:
                 minValue = SpeedMinDefault;
                 maxValue = SpeedMaxDefault;
+                break;
+
+            case VisualizedField.NeighborCount:
+                minValue = NeighborCountMinDefault;
+                maxValue = NeighborCountMaxDefault;
                 break;
 
             case VisualizedField.Temperature:

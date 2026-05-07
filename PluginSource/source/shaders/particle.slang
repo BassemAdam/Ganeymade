@@ -35,6 +35,7 @@
        float  pressureBoilingScale;   // how much local pressure raises the effective boiling point
        float  cohesionStrength;       // attractive force between nearby liquid particles (surface tension)
        float  tensileK;               // Monaghan tensile correction strength (0 = clamp negative pressure)
+       float  splashRadius;            // smaller radius for neighbor counting (splash detection)
    };
 
    struct Particle
@@ -49,6 +50,10 @@
        int    phase;
        float  latentHeatAccum;   // energy absorbed/released during phase change
        int    fixedId;
+       float  neighborCount;     // unweighted neighbor count within splashRadius
+       float  _pad0;
+       float  _pad1;
+       float  _pad2;
    };
 
    struct HeatSource

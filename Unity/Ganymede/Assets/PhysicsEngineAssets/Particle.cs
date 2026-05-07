@@ -22,6 +22,10 @@ public struct Particle
 
     public float latentHeatAccum; // accumulated latent energy for phase transition
     public int fixedId;
+    public float neighborCount;  // unweighted neighbor count within splashRadius (for screen-space rendering)
+    public float _pad0;          // padding to match GPU array stride (80 bytes)
+    public float _pad1;
+    public float _pad2;
 
     public static Particle Create(Vector3 position, Vector3 velocity, float mass, int phase = 0, float temperature = 0f)
     {
@@ -37,6 +41,7 @@ public struct Particle
             phase = phase,
             latentHeatAccum = 0f,
             fixedId = 0,
+            neighborCount = 0f,
         };
     }
 }

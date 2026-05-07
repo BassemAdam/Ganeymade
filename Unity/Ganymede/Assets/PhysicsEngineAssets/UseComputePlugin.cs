@@ -195,6 +195,11 @@ public class UseComputePlugin : MonoBehaviour
     [Range(0f, 1f)]
     public float tensileK = 0.2f;
 
+    [Tooltip("Radius for splash detection neighbor counting. Smaller than smoothingRadius " +
+             "to give sharper bulk vs splash distinction. 0 = disabled.")]
+    [Range(0f, 1f)]
+    public float splashRadius = 0.08f;
+
     [Header("Init")]
     [Tooltip("Upload particles automatically on Start")]
     public bool autoInitialize = true;
@@ -307,11 +312,11 @@ public class UseComputePlugin : MonoBehaviour
 
         int particleStride = Marshal.SizeOf<Particle>();
         int simParamsStride = Marshal.SizeOf<SimParams>();
-        if (particleStride != 64)
-            // Debug.LogError($"[UseComputePlugin] Particle stride mismatch. Expected 64, got {particleStride}. Check struct layout.");
+        if (particleStride != 80)
+            // Debug.LogError($"[UseComputePlugin] Particle stride mismatch. Expected 80, got {particleStride}. Check struct layout.");
             ;
-        if (simParamsStride != 176)
-            // Debug.LogError($"[UseComputePlugin] SimParams stride mismatch. Expected 156, got {simParamsStride}. Check struct layout.");
+        if (simParamsStride != 180)
+            // Debug.LogError($"[UseComputePlugin] SimParams stride mismatch. Expected 180, got {simParamsStride}. Check struct layout.");
             ;
 
         // Cache function pointer once
@@ -598,6 +603,7 @@ public class UseComputePlugin : MonoBehaviour
         p.pressureBoilingScale = pressureBoilingScale;
         p.cohesionStrength = cohesionStrength;
         p.tensileK = tensileK;
+        p.splashRadius = splashRadius;
 
         SetSimParams(p);
     }
@@ -1122,6 +1128,7 @@ public class UseComputePlugin : MonoBehaviour
         public float pressureBoilingScale;
         public float cohesionStrength;
         public float tensileK;
+        public float splashRadius;
     }
 
 
