@@ -29,11 +29,35 @@ float SampleWaterBlueNoise(float2 screenUV)
     float2 pixelCoords = screenUV * _ScaledScreenParams.xy;
     float ignJitter = frac(52.9829189 * frac(dot(pixelCoords, float2(0.06711056, 0.00583715))));
 
+    // Force mip-0 and NO UV shift.  Blue noise is a carefully arranged spatial
+    // distribution — fractional UV shifts with bilinear filtering interpolate
+    // adjacent texels and destroy that distribution, turning it back into
+    // ordinary white noise.  We must sample integer texel centers (mip 0) so
+    // every screen pixel reads exactly one blue noise texel.
     float2 blueNoiseUV = frac(pixelCoords * _BlueNoiseTex_TexelSize.xy * max(_BlueNoiseScale, 0.01));
-    float2 timeOffset = float2(0.75487766, 0.56984029) * frac(_Time.y * _BlueNoiseTimeSpeed);
-    float blueNoise = SAMPLE_TEXTURE2D(_BlueNoiseTex, sampler_BlueNoiseTex, frac(blueNoiseUV + timeOffset)).r;
+    float4 blueNoiseSample = SAMPLE_TEXTURE2D_LOD(_BlueNoiseTex, sampler_BlueNoiseTex, blueNoiseUV, 0);
+
+    // Cycle through each RGBA channel in discrete steps.  Each channel is an
+    // independent blue noise distribution, so successive frames are spatially
+    // uncorrelated — the correct temporal use of an RGBA blue noise texture.
+    // _BlueNoiseTimeSpeed controls how many channel switches per second.
+    uint channelIdx = (uint)floor(_Time.y * max(_BlueNoiseTimeSpeed, 0.01)) % 4;
+    float blueNoise = blueNoiseSample[channelIdx];
 
     return lerp(ignJitter, blueNoise, saturate(_BlueNoiseStrength));
+}
+
+// Returns blue noise from an explicit RGBA channel [0-3], sharing the same
+// spatial tile and frame cycle as SampleWaterBlueNoise but on a different
+// independent distribution — used so shadow marches jitter independently
+// from the view ray without needing a second texture lookup.
+float SampleWaterBlueNoiseChannel(float2 screenUV, uint channelOffset)
+{
+    float2 pixelCoords = screenUV * _ScaledScreenParams.xy;
+    float2 blueNoiseUV = frac(pixelCoords * _BlueNoiseTex_TexelSize.xy * max(_BlueNoiseScale, 0.01));
+    float4 blueNoiseSample = SAMPLE_TEXTURE2D_LOD(_BlueNoiseTex, sampler_BlueNoiseTex, blueNoiseUV, 0);
+    uint channelIdx = ((uint)floor(_Time.y * max(_BlueNoiseTimeSpeed, 0.01)) + channelOffset) % 4;
+    return blueNoiseSample[channelIdx];
 }
 
 WaterRaymarchViewData BuildWaterRaymarchViewData(float3 worldPositionWS, float4 normalizedScreenPosition)

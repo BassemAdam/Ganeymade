@@ -53,7 +53,7 @@ Shader "Custom/WaterRaymarching"
         _EdgeSoftness ("Vapour Bounds Edge Softness", Range(0.0, 0.5)) = 0.2
         _BlueNoiseScale ("Blue Noise Tiling", Range(0.25, 8.0)) = 1.0
         _BlueNoiseStrength ("Blue Noise Jitter Strength", Range(0.0, 1.0)) = 1.0
-        _BlueNoiseTimeSpeed ("Blue Noise Temporal Speed", Range(0.0, 4.0)) = 1.0
+        _BlueNoiseTimeSpeed ("Blue Noise Temporal Speed", Range(0.0, 120.0)) = 60.0
     }
 
     SubShader
@@ -208,6 +208,11 @@ Shader "Custom/WaterRaymarching"
                 float safeStepSize   = max(_StepSize, 1e-4);
                 float currentDistance = volumeData.distanceToVolume + safeStepSize * viewData.blueNoiseValue;
                 float exitDistance    = min(volumeData.volumeExitDistance, backgroundData.sceneDistanceAlongRay);
+                // Per-pixel blue noise base for shadow jitter (channel 1 = independent
+                // distribution from the view-ray channel 0).  Combined with a golden-ratio
+                // step sequence inside the loop so each shadow ray gets a unique offset,
+                // not the same one for every step on this pixel.
+                float shadowJitterBase = SampleWaterBlueNoiseChannel(viewData.screenUV, 1);
                 float surfaceDistanceAlongRay = backgroundData.surfaceHit.hit
                     ? distance(viewData.cameraPositionWS, backgroundData.surfaceHit.posWS)
                     : exitDistance;
@@ -245,10 +250,17 @@ Shader "Custom/WaterRaymarching"
                     float3 sunTransmittance = 1.0;
                     if (dl > 1e-6)
                     {
+                        // Golden-ratio (0.618...) step sequence layered on the per-pixel
+                        // blue noise base.  Each view step gets a unique shadow jitter in
+                        // [0,1) that is well-distributed across all steps on this pixel,
+                        // breaking sun-direction banding that would persist if every step
+                        // used the same per-pixel value.
+                        float shadowJitter = frac(shadowJitterBase + frac(stepStartDistance * 0.61803398875));
                         sunTransmittance = CalculateTransmittedSunLightLiquid(
                             samplePositionWS,
                             _ScatteringCoefficients,
-                            _LightStepSize
+                            _LightStepSize,
+                            shadowJitter
                         );
                     }
 
