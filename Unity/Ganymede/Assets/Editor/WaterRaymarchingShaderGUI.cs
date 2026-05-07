@@ -45,9 +45,9 @@ public sealed class WaterRaymarchingShaderGUI : ShaderGUI
 
             DrawSubSection("Debug", ref s_Debug, () =>
             {
-                Draw("_DebugViewMode");
+                DrawDebugViewMode();
                 EditorGUILayout.HelpBox(
-                    "Reflection Only shows the sampled reflected environment with fallback. Surface Normal visualizes the optical normal. Reflection Direction visualizes the reflect vector. Reflection Weight shows Fresnel reflectance. Reflection Contribution and Refraction Contribution show the weighted terms after the water background composition logic. Background Mix shows their combined result. View Transmittance shows how much refracted background survives the volume raymarch. Glossy Environment Raw and SpecCube Raw split the actual water pass reflection sources. Magenta = no liquid surface hit. Yellow = surface hit exists but both reflection sources are black.",
+                    "Reflection Only shows the sampled reflected environment with fallback. Optical Normal Used visualizes the exact view-facing normal used by Fresnel/reflection/refraction. Outward Surface Normal visualizes the raw density/bounds normal before the optical flip. Reflection Direction visualizes the reflect vector. Reflection Weight shows Fresnel reflectance. Reflection Contribution and Refraction Contribution show the weighted terms after the water background composition logic. Background Mix shows their combined result. View Transmittance shows how much refracted background survives the volume raymarch. Glossy Environment Raw and SpecCube Raw split the actual water pass reflection sources. Magenta = no liquid surface hit. Yellow = surface hit exists but both reflection sources are black.",
                     MessageType.Info);
             });
 
@@ -169,6 +169,40 @@ public sealed class WaterRaymarchingShaderGUI : ShaderGUI
         EditorGUI.indentLevel++;
         drawContents?.Invoke();
         EditorGUI.indentLevel--;
+    }
+
+    static readonly GUIContent[] s_DebugViewNames =
+    {
+        new GUIContent("Off"),
+        new GUIContent("Reflection Only"),
+        new GUIContent("Optical Normal Used"),
+        new GUIContent("Reflection Direction"),
+        new GUIContent("Reflection Weight"),
+        new GUIContent("Reflection Contribution"),
+        new GUIContent("Refraction Contribution"),
+        new GUIContent("Background Mix"),
+        new GUIContent("View Transmittance"),
+        new GUIContent("Glossy Environment Raw"),
+        new GUIContent("SpecCube Raw"),
+        new GUIContent("Outward Surface Normal"),
+    };
+
+    static readonly int[] s_DebugViewValues = { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11 };
+
+    void DrawDebugViewMode()
+    {
+        MaterialProperty prop = Find("_DebugViewMode");
+        if (prop == null) return;
+
+        EditorGUI.BeginChangeCheck();
+        int current = (int)prop.floatValue;
+        int next = EditorGUILayout.IntPopup(
+            new GUIContent("Debug View"),
+            current,
+            s_DebugViewNames,
+            s_DebugViewValues);
+        if (EditorGUI.EndChangeCheck())
+            prop.floatValue = next;
     }
 
     void Draw(string propertyName)

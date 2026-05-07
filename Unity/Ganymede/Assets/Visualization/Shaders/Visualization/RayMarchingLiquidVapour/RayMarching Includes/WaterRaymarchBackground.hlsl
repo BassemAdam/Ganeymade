@@ -61,8 +61,8 @@ float3 RefineLiquidSurfacePositionWS(
 {
     float3 aWS = outsidePositionWS;
     float3 bWS = insidePositionWS;
-    float da = SampleAdjustedLiquidDensityWS(aWS) - surfaceThreshold;
-    float db = SampleAdjustedLiquidDensityWS(bWS) - surfaceThreshold;
+    float da = SampleLiquidDensityForNormalWS(aWS) - surfaceThreshold;
+    float db = SampleLiquidDensityForNormalWS(bWS) - surfaceThreshold;
 
     [loop]
     for (int iteration = 0; iteration < refinementIterations; iteration++)
@@ -72,7 +72,7 @@ float3 RefineLiquidSurfacePositionWS(
             ? saturate(abs(da) / weightDenominator)
             : 0.5;
         float3 midpointWS = lerp(aWS, bWS, midpointWeight);
-        float midpointDensity = SampleAdjustedLiquidDensityWS(midpointWS) - surfaceThreshold;
+        float midpointDensity = SampleLiquidDensityForNormalWS(midpointWS) - surfaceThreshold;
 
         bool midpointMatchesA = (da < 0.0 && midpointDensity < 0.0)
                              || (da >= 0.0 && midpointDensity >= 0.0);
@@ -127,6 +127,20 @@ float2 CalculateRefractedSceneUV(
     );
 }
 
+bool IsBottomPhysicsBoundsFaceWS(float3 positionWS)
+{
+    // Classify the exact ray-box exit using the same closest-face convention as
+    // boundary normal blending. Ties intentionally stay with the earlier side
+    // faces in ClosestPhysicsBoundsFaceNormalWS, so side/bottom edges still work
+    // as side views instead of being rejected as bottom mirrors.
+    float3 clampedPositionWS = clamp(
+        positionWS,
+        _PhysicsBoundsMinWS.xyz,
+        _PhysicsBoundsMaxWS.xyz
+    );
+    return ClosestPhysicsBoundsFaceNormalWS(clampedPositionWS).y < -0.5;
+}
+
 SurfaceHit FindWaterSurfaceHit(
     WaterRaymarchViewData viewData,
     WaterRaymarchVolumeData volumeData,
@@ -143,12 +157,38 @@ SurfaceHit FindWaterSurfaceHit(
 
     SurfaceHit surfaceHit = NoSurfaceHit();
     float sampleDistance = volumeData.distanceToVolume;
-    float previousDensity = rayStartsInsideWater
-        ? SampleAdjustedLiquidDensityWS(viewData.cameraPositionWS)
-        : SampleAdjustedLiquidDensityWS(viewData.cameraPositionWS + viewData.viewRayDirectionWS * sampleDistance);
-    float3 previousPositionWS = rayStartsInsideWater
-        ? viewData.cameraPositionWS
-        : viewData.cameraPositionWS + viewData.viewRayDirectionWS * sampleDistance;
+
+    // Seed the previous-step state for the crossing detector.
+    // When the camera is outside the bounding box we must treat the ray origin
+    // as pure air (density = 0) even if the box entry face has high liquid
+    // density due to water pressed against the wall.  Using the sampled edge
+    // density would make the first crossing look like 'leavingWater' instead of
+    // 'enteringWater', flip the IOR to water->air, and trigger spurious total
+    // internal reflection — causing full reflection with no Fresnel blend.
+    float previousDensity;
+    float3 previousPositionWS;
+    if (rayStartsInsideWater)
+    {
+        previousDensity    = SampleAdjustedLiquidDensityWS(viewData.cameraPositionWS);
+        previousPositionWS = viewData.cameraPositionWS;
+    }
+    else if (rayStartsInsideVolume)
+    {
+        // Camera is inside the box but in air.
+        float3 boxEntryWS  = viewData.cameraPositionWS + viewData.viewRayDirectionWS * sampleDistance;
+        previousDensity    = SampleAdjustedLiquidDensityWS(boxEntryWS);
+        previousPositionWS = boxEntryWS;
+    }
+    else
+    {
+        // Camera is outside the box.  Force air density and place the anchor
+        // just before the box entry so RefineLiquidSurfacePositionWS has a
+        // valid density-0 point (SampleLiquidDensityForNormalWS returns 0
+        // outside bounds) to binary-search from.
+        float outsideOffset = max(0.0, sampleDistance - safeStepSize * 0.5);
+        previousDensity    = 0.0;
+        previousPositionWS = viewData.cameraPositionWS + viewData.viewRayDirectionWS * outsideOffset;
+    }
 
     // Jitter only after establishing whether the ray begins inside water. If the
     // camera is just under the surface, starting the state check at a blue-noise
@@ -184,6 +224,29 @@ SurfaceHit FindWaterSurfaceHit(
         sampleDistance += safeStepSize;
         previousDensity = currentDensity;
         previousPositionWS = samplePositionWS;
+    }
+
+    // If dense liquid reaches the side/top of the simulated box, the ray leaves
+    // water there even though there is no sampled density drop before the bounds
+    // clip. Restore that as a legitimate side/top optical surface, but do not
+    // treat the bottom face as water/air; the bottom is a container/floor edge
+    // and was the source of the fake mirror reflection.
+    float boundaryTolerance = max(1e-3, safeStepSize * 1.5);
+    bool searchReachedVolumeExit = maxSearchDistance >= volumeData.volumeExitDistance - boundaryTolerance;
+    if (!surfaceHit.hit && searchReachedVolumeExit && previousDensity >= surfaceThreshold)
+    {
+        float3 boundaryPositionWS = viewData.cameraPositionWS
+                                  + viewData.viewRayDirectionWS * volumeData.volumeExitDistance;
+        if (!IsBottomPhysicsBoundsFaceWS(boundaryPositionWS))
+        {
+            float insideNudge = max(1e-3, safeStepSize * 0.25);
+            float3 surfacePositionWS = clamp(
+                boundaryPositionWS - viewData.viewRayDirectionWS * insideNudge,
+                _PhysicsBoundsMinWS.xyz,
+                _PhysicsBoundsMaxWS.xyz
+            );
+            surfaceHit = MakeSurfaceHit(surfacePositionWS, viewData.viewRayDirectionWS, false);
+        }
     }
 
     return surfaceHit;
@@ -390,6 +453,12 @@ float3 ComposeWaterDebugColor(
     {
         float3 r = normalize(backgroundData.surfaceHit.reflectDir);
         return r * 0.5 + 0.5;
+    }
+
+    if (mode == 11)
+    {
+        float3 n = normalize(backgroundData.surfaceHit.outwardNormal);
+        return n * 0.5 + 0.5;
     }
 
     if (mode == 4)

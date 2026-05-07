@@ -7,7 +7,6 @@ Shader "Custom/WaterRaymarching"
         _BlueNoiseTex ("Blue Noise Texture", 2D) = "gray" {}
         _IsoLevel ("Iso Level (surface threshold)", Float) = 0.01
         [Header(Debug)]
-        [Enum(Off, 0, Reflection Only, 1, Surface Normal, 2, Reflection Direction, 3, Reflection Weight, 4, Reflection Contribution, 5, Refraction Contribution, 6, Background Mix, 7, View Transmittance, 8, Glossy Environment Raw, 9, SpecCube Raw, 10)]
         _DebugViewMode ("Debug View", Float) = 0
         [Header(Liquid Phase)]
         _ScatteringCoefficients ("Liquid Extinction sigma_t (RGB)", Color) = (0.57, 0.06, 0.02, 1.0)
