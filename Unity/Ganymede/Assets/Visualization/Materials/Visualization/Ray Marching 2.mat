@@ -110,9 +110,9 @@ Material:
     - _BakedNormalBlend: 0.522
     - _Blend: 0
     - _BlendModePreserveSpecular: 1
-    - _BlueNoiseScale: 1.73
+    - _BlueNoiseScale: 1
     - _BlueNoiseStrength: 1
-    - _BlueNoiseTimeSpeed: 1
+    - _BlueNoiseTimeSpeed: 0
     - _BoundaryNormalBlendDistance: 2
     - _BoundaryNormalUpBiasPower: 6.78
     - _BumpScale: 1
@@ -141,7 +141,7 @@ Material:
     - _GlossyReflections: 0
     - _IsoLevel: 0.001
     - _Jitter: 1
-    - _LightStepSize: 0.641
+    - _LightStepSize: 0.289
     - _MarchSteps: 64
     - _MaxSteps: 2048
     - _Metallic: 0
@@ -154,18 +154,19 @@ Material:
     - _QueueOffset: 0
     - _ReceiveShadows: 1
     - _ReflectionStrength: 1
-    - _ReflectionVisibilityBoost: 16
-    - _ReflectionVisibilityFloor: 0.977
+    - _ReflectionVisibilityBoost: 3.67
+    - _ReflectionVisibilityFloor: 0
     - _RefractionStrength: 1
     - _Smoothness: 0.5
     - _SmoothnessTextureChannel: 0
     - _SpecularHighlights: 1
     - _SrcBlend: 1
     - _SrcBlendAlpha: 1
-    - _StepSize: 0.238
+    - _StepSize: 0.259
     - _Surface: 0
     - _SurfaceDetectionMargin: 0.04
     - _SurfaceRefineIterations: 8
+    - _TIRSoftness: 0.291
     - _VapourAOStepSize: 0.946
     - _VapourAOStrength: 7.4
     - _VapourAbsorption: 0.1

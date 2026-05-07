@@ -7,14 +7,19 @@
 float3 CalculateTransmittedSunLightLiquid(
     float3 posWS,
     float3 liquidExtinction,
-    float  lightStepSize)
+    float  lightStepSize,
+    float  shadowJitter = 0.5)
 {
     float3 sunDir       = normalize(_MainLightPosition.xyz);
     float2 lightBounds  = RayBoxDst(posWS, sunDir, _PhysicsBoundsMinWS.xyz, _PhysicsBoundsMaxWS.xyz);
     float  dstToSunExit = lightBounds.x + lightBounds.y;
 
     float3 opticalDepth = 0.0;
-    float  dist         = lightBounds.x;
+    // Jitter the first shadow step by a fraction of lightStepSize — exactly the
+    // same pattern as the view march: distanceToVolume + safeStepSize * blueNoiseValue.
+    // Without the multiply the offset is raw world-space (0-1 m) and has no
+    // relationship to the step size, so banding is unchanged.
+    float  dist         = lightBounds.x + lightStepSize * shadowJitter;
 
     while (dist < dstToSunExit)
     {

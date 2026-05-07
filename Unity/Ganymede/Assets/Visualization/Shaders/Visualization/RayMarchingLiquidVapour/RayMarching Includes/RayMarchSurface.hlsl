@@ -55,6 +55,7 @@ struct SurfaceHit
     float  reflectWeight;
     float  refractWeight;
     bool   totalInternalReflection;
+    float  enteringWater; // 1.0 = air->water (camera outside), 0.0 = water->air (camera inside)
 };
 
 SurfaceHit NoSurfaceHit()
@@ -69,12 +70,14 @@ SurfaceHit NoSurfaceHit()
     s.reflectWeight           = 0.0;
     s.refractWeight           = 1.0;
     s.totalInternalReflection = false;
+    s.enteringWater           = 0.0;
     return s;
 }
 
 SurfaceHit MakeSurfaceHit(float3 posWS, float3 rayDir, bool enteringWater)
 {
-    SurfaceHit s;
+    // Initialize all fields first so no code path leaves any field uninitialized.
+    SurfaceHit s = NoSurfaceHit();
     s.hit   = true;
     s.posWS = posWS;
 
@@ -86,6 +89,7 @@ SurfaceHit MakeSurfaceHit(float3 posWS, float3 rayDir, bool enteringWater)
         return NoSurfaceHit();
 
     s.outwardNormal = n;
+    s.enteringWater = enteringWater ? 1.0 : 0.0;
 
     // The outward normal may still point into the liquid from the viewer's side.
     // Flip it if needed so Fresnel/reflection/refraction are correct.
@@ -111,6 +115,25 @@ SurfaceHit MakeSurfaceHit(float3 posWS, float3 rayDir, bool enteringWater)
     else
     {
         s.refractDir = normalize(rawRefracted);
+
+        // Soft transition approaching the TIR critical angle.
+        // sin²(refractAngle) approaches 1.0 at the critical angle; blend
+        // reflectWeight toward 1.0 over [1-softness, 1.0] so the Snell's
+        // window edge fades instead of appearing as a hard circle.
+        float tirSoftness = max(_TIRSoftness, 0.0);
+        if (tirSoftness > 1e-4)
+        {
+            float refractRatio = iorIncident / iorTransmit;
+            float cosI         = saturate(-dot(rayDir, n));
+            float sinSqrT      = refractRatio * refractRatio * (1.0 - cosI * cosI);
+            float softStart    = max(0.0, 1.0 - tirSoftness);
+            if (sinSqrT > softStart)
+            {
+                float blend     = smoothstep(softStart, 1.0, sinSqrT);
+                s.reflectWeight = lerp(s.reflectWeight, 1.0, blend);
+                s.refractWeight = 1.0 - s.reflectWeight;
+            }
+        }
     }
 
     return s;

@@ -1,4 +1,4 @@
-using UnityEditor;
+﻿using UnityEditor;
 using UnityEngine;
 
 public sealed class WaterRaymarchingShaderGUI : ShaderGUI
@@ -45,9 +45,9 @@ public sealed class WaterRaymarchingShaderGUI : ShaderGUI
 
             DrawSubSection("Debug", ref s_Debug, () =>
             {
-                Draw("_DebugViewMode");
+                DrawDebugViewMode();
                 EditorGUILayout.HelpBox(
-                    "Reflection Only shows the sampled reflected environment with fallback. Surface Normal visualizes the optical normal. Reflection Direction visualizes the reflect vector. Reflection Weight shows Fresnel reflectance. Reflection Contribution and Refraction Contribution show the weighted terms after the water background composition logic. Background Mix shows their combined result. View Transmittance shows how much refracted background survives the volume raymarch. Glossy Environment Raw and SpecCube Raw split the actual water pass reflection sources. Magenta = no liquid surface hit. Yellow = surface hit exists but both reflection sources are black.",
+                    "Reflection Only shows the sampled reflected environment with fallback. Optical Normal Used visualizes the exact view-facing normal used by Fresnel/reflection/refraction. Outward Surface Normal visualizes the raw density/bounds normal before the optical flip. Reflection Direction visualizes the reflect vector. Reflection Weight shows Fresnel reflectance. Reflection Contribution and Refraction Contribution show the weighted terms after the water background composition logic. Background Mix shows their combined result. View Transmittance shows how much refracted background survives the volume raymarch. Glossy Environment Raw and SpecCube Raw split the actual water pass reflection sources. Magenta = no liquid surface hit. Yellow = surface hit exists but both reflection sources are black.",
                     MessageType.Info);
             });
 
@@ -80,6 +80,7 @@ public sealed class WaterRaymarchingShaderGUI : ShaderGUI
                 Draw("_ReflectionStrength");
                 Draw("_ReflectionVisibilityBoost");
                 Draw("_ReflectionVisibilityFloor");
+                Draw("_TIRSoftness");
                 EditorGUILayout.HelpBox(
                     "Reflection and refraction use exact unpolarized Fresnel weights with greedy single-path selection. Refraction samples the URP scene texture at the refracted UV; reflection samples the URP environment probe in the reflected direction. Strength is the physical multiplier. Visibility Boost/Floor are art controls applied only to the final reflected contribution so the normal view can show reflections without changing the raw reflection debug modes.",
                     MessageType.Info);
@@ -169,6 +170,42 @@ public sealed class WaterRaymarchingShaderGUI : ShaderGUI
         EditorGUI.indentLevel++;
         drawContents?.Invoke();
         EditorGUI.indentLevel--;
+    }
+
+    static readonly GUIContent[] s_DebugViewNames =
+    {
+        new GUIContent("Off"),
+        new GUIContent("Reflection Only"),
+        new GUIContent("Optical Normal Used"),
+        new GUIContent("Reflection Direction"),
+        new GUIContent("Reflection Weight"),
+        new GUIContent("Reflection Contribution"),
+        new GUIContent("Refraction Contribution"),
+        new GUIContent("Background Mix"),
+        new GUIContent("View Transmittance"),
+        new GUIContent("Glossy Environment Raw"),
+        new GUIContent("SpecCube Raw"),
+        new GUIContent("Outward Surface Normal"),
+        new GUIContent("[Debug] IOR Direction (Green=Enter/Red=Leave)"),
+        new GUIContent("[Debug] Total Internal Reflection"),
+    };
+
+    static readonly int[] s_DebugViewValues = { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13 };
+
+    void DrawDebugViewMode()
+    {
+        MaterialProperty prop = Find("_DebugViewMode");
+        if (prop == null) return;
+
+        EditorGUI.BeginChangeCheck();
+        int current = (int)prop.floatValue;
+        int next = EditorGUILayout.IntPopup(
+            new GUIContent("Debug View"),
+            current,
+            s_DebugViewNames,
+            s_DebugViewValues);
+        if (EditorGUI.EndChangeCheck())
+            prop.floatValue = next;
     }
 
     void Draw(string propertyName)
