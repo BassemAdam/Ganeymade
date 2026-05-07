@@ -313,8 +313,8 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::ParticleRenderer
   particleMaterial: {fileID: 2100000, guid: 6940acfd23abbfb419c637991f9d6755, type: 2}
   particleMesh: {fileID: 10207, guid: 0000000000000000e000000000000000, type: 0}
-  particleSize: 0.05
-  visualizedField: 2
+  particleSize: 0.1
+  visualizedField: 4
   valueGradient:
     serializedVersion: 2
     key0: {r: 0, g: 0.2, b: 1, a: 1}
@@ -346,9 +346,9 @@ MonoBehaviour:
     m_NumColorKeys: 4
     m_NumAlphaKeys: 2
   minValue: 0
-  maxValue: 300
+  maxValue: 15
   computePlugin: {fileID: 1188592651}
-  lastValidatedField: 2
+  lastValidatedField: 4
 --- !u!4 &671089471
 Transform:
   m_ObjectHideFlags: 0
@@ -1535,6 +1535,10 @@ PrefabInstance:
       value: 0
       objectReference: {fileID: 0}
     - target: {fileID: 4161998456328252244, guid: 18cf1fa5220a198409fde72db8b3e2a5, type: 3}
+      propertyPath: tensileK
+      value: 0.8
+      objectReference: {fileID: 0}
+    - target: {fileID: 4161998456328252244, guid: 18cf1fa5220a198409fde72db8b3e2a5, type: 3}
       propertyPath: enableSDF
       value: 1
       objectReference: {fileID: 0}
@@ -1591,6 +1595,10 @@ PrefabInstance:
       value: 0
       objectReference: {fileID: 0}
     - target: {fileID: 4161998456328252244, guid: 18cf1fa5220a198409fde72db8b3e2a5, type: 3}
+      propertyPath: splashRadius
+      value: 0.3
+      objectReference: {fileID: 0}
+    - target: {fileID: 4161998456328252244, guid: 18cf1fa5220a198409fde72db8b3e2a5, type: 3}
       propertyPath: subStepCount
       value: 4
       objectReference: {fileID: 0}
@@ -1619,6 +1627,10 @@ PrefabInstance:
       value: 0.2
       objectReference: {fileID: 0}
     - target: {fileID: 4161998456328252244, guid: 18cf1fa5220a198409fde72db8b3e2a5, type: 3}
+      propertyPath: cohesionStrength
+      value: 0.0485
+      objectReference: {fileID: 0}
+    - target: {fileID: 4161998456328252244, guid: 18cf1fa5220a198409fde72db8b3e2a5, type: 3}
       propertyPath: spawnPoolReserve
       value: 0
       objectReference: {fileID: 0}
@@ -1640,7 +1652,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 4161998456328252244, guid: 18cf1fa5220a198409fde72db8b3e2a5, type: 3}
       propertyPath: sdfDynamicUpdateInterval
-      value: 4
+      value: 1
       objectReference: {fileID: 0}
     - target: {fileID: 4161998456328252244, guid: 18cf1fa5220a198409fde72db8b3e2a5, type: 3}
       propertyPath: boundsAreLocalToTransform

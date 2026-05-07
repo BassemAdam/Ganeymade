@@ -34,6 +34,10 @@ Shader "Custom/ParticleInstanced"
                 int phase;
                 float latentHeatAccum;
                 float _fixedId;
+                float neighborCount;
+                float _pad0;
+                float _pad1;
+                float _pad2;
             };
 
             StructuredBuffer<Particle> _ParticleBuffer;
@@ -82,6 +86,8 @@ Shader "Custom/ParticleInstanced"
                     visualizedValue = p.density;
                 else if (_VisualizedField == 3)
                     visualizedValue = length(p.velocity);
+                else if (_VisualizedField == 4)
+                    visualizedValue = p.neighborCount;
 
                 v2f o;
                 o.pos = mul(UNITY_MATRIX_VP, float4(worldPos, 1.0));

@@ -41,11 +41,14 @@ void computeMain(uint3 threadId: SV_DispatchThreadID)
    }
    float h = params.smoothingRadius;
    float h2 = h * h;
+   float sr = params.splashRadius;
+   float sr2 = sr * sr;
    uint n = params.particleCount;
 
    int3 myCell = getCellCoord(p.position, params.gridOrigin, h);
 
    float densitySum = 0.0;
+   uint splashCount = 0;
    for (int dz = -1; dz <= 1; dz++)
    for (int dy = -1; dy <= 1; dy++)
    for (int dx = -1; dx <= 1; dx++)
@@ -65,11 +68,14 @@ void computeMain(uint3 threadId: SV_DispatchThreadID)
             float w = h2 - r2;
             densitySum += w * w * w;
          }
+         if (sr2 > 0.0 && r2 < sr2 && r2 > 0.0)
+            splashCount++;
          idx++;
       }
    }
    p.density = params.particleMass * params.poly6Const * densitySum;
    p.density = max(p.density, params.restDensity * 0.01);
+   p.neighborCount = float(splashCount);
 
    // Phase-dependent rest density: gas uses much lower rest density → high expansion pressure
    float rd = (p.phase == 1) ? params.gasRestDensity : params.restDensity;
