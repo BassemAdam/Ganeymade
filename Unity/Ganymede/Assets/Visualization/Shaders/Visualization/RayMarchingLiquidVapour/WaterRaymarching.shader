@@ -20,6 +20,7 @@ Shader "Custom/WaterRaymarching"
         _ReflectionVisibilityBoost ("Reflection Visibility Boost", Range(0.0, 16.0)) = 1.0
         _ReflectionVisibilityFloor ("Reflection Visibility Floor", Range(0.0, 1.0)) = 0.0
         _SurfaceDetectionMargin ("Surface Detection Margin", Float) = 0.0
+        _TIRSoftness ("TIR Edge Softness", Range(0.0, 0.5)) = 0.08
         _SurfaceRefineIterations ("Surface Refine Iterations", Range(0, 8)) = 4
         _NormalSampleRadiusVoxels ("Normal Sample Radius (Voxels)", Range(0.5, 6.0)) = 1.0
         _BakedNormalBlend ("Baked Normal Blend", Range(0.0, 1.0)) = 0.0
@@ -119,6 +120,7 @@ Shader "Custom/WaterRaymarching"
                 float  _ReflectionVisibilityBoost;
                 float  _ReflectionVisibilityFloor;
                 float  _SurfaceDetectionMargin;
+                float  _TIRSoftness;
                 float  _SurfaceRefineIterations;
                 float  _NormalSampleRadiusVoxels;
                 float  _BakedNormalBlend;

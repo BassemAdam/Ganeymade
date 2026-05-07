@@ -118,10 +118,21 @@ float2 CalculateRefractedSceneUV(
     float3 refractedExitPositionWS = refractOriginWS + refractDir * distanceToExit;
     float2 physicallyRefractedUV = ProjectWorldPositionToScreenUV(refractedExitPositionWS);
 
+    // Near TIR the refracted ray exits the side wall almost horizontally, so
+    // physicallyRefractedUV lands well outside [0,1].  Without this guard the
+    // final clamp pins the UV to the screen edge, smearing that one texel
+    // across the entire TIR boundary ring.  Fade the refraction offset back to
+    // zero as soon as the exit point drifts off-screen so we fall back to the
+    // unrefracted UV instead of clamping.
+    float2 uvOvershoot = max(float2(0, 0), abs(physicallyRefractedUV - 0.5) - 0.5);
+    float  offScreen   = max(uvOvershoot.x, uvOvershoot.y);
+    // Start fading at the screen edge, fully gone after 5 % off-screen overshoot.
+    float  edgeFade    = 1.0 - saturate(offScreen * 20.0);
+
     // Let _RefractionStrength art-direct the bend amount while keeping the bend
     // direction based on the real refracted ray leaving the cube/volume bounds.
     return clamp(
-        lerp(viewData.screenUV, physicallyRefractedUV, saturate(refractionStrength)),
+        lerp(viewData.screenUV, physicallyRefractedUV, saturate(refractionStrength) * edgeFade),
         0.001,
         0.999
     );
@@ -169,25 +180,21 @@ SurfaceHit FindWaterSurfaceHit(
     float3 previousPositionWS;
     if (rayStartsInsideWater)
     {
+        // Camera is submerged: seed with actual density so the loop immediately
+        // finds the exit (leavingWater) surface above/around it.
         previousDensity    = SampleAdjustedLiquidDensityWS(viewData.cameraPositionWS);
         previousPositionWS = viewData.cameraPositionWS;
     }
-    else if (rayStartsInsideVolume)
-    {
-        // Camera is inside the box but in air.
-        float3 boxEntryWS  = viewData.cameraPositionWS + viewData.viewRayDirectionWS * sampleDistance;
-        previousDensity    = SampleAdjustedLiquidDensityWS(boxEntryWS);
-        previousPositionWS = boxEntryWS;
-    }
     else
     {
-        // Camera is outside the box.  Force air density and place the anchor
-        // just before the box entry so RefineLiquidSurfacePositionWS has a
-        // valid density-0 point (SampleLiquidDensityForNormalWS returns 0
-        // outside bounds) to binary-search from.
-        float outsideOffset = max(0.0, sampleDistance - safeStepSize * 0.5);
-        previousDensity    = 0.0;
-        previousPositionWS = viewData.cameraPositionWS + viewData.viewRayDirectionWS * outsideOffset;
+        // Camera is in air (inside box or outside). Force density = 0 so the
+        // first crossing is always enteringWater = true -> air->water IOR.
+        // Seeding from the actual box-entry face density is wrong when water is
+        // pressed against that wall: it makes the first crossing look like
+        // leavingWater, triggering spurious TIR and killing Fresnel from outside.
+        previousDensity = 0.0;
+        float anchorOffset = max(0.0, sampleDistance - safeStepSize * 0.5);
+        previousPositionWS = viewData.cameraPositionWS + viewData.viewRayDirectionWS * anchorOffset;
     }
 
     // Jitter only after establishing whether the ray begins inside water. If the
@@ -245,7 +252,7 @@ SurfaceHit FindWaterSurfaceHit(
                 _PhysicsBoundsMinWS.xyz,
                 _PhysicsBoundsMaxWS.xyz
             );
-            surfaceHit = MakeSurfaceHit(surfacePositionWS, viewData.viewRayDirectionWS, false);
+            surfaceHit = MakeSurfaceHit(surfacePositionWS, viewData.viewRayDirectionWS, !rayStartsInsideWater);
         }
     }
 
@@ -416,8 +423,12 @@ WaterBackgroundContributions ComputeWaterBackgroundContributions(
 
     if (traceRefractedRay)
     {
+        // Apply refractTransmittance here so the floor is correctly tinted by
+        // the water column along the refracted ray from surface to floor.
+        // This is especially important when the main march stops at the surface
+        // (outside cameras) and remainingViewTransmittance stays at 1.0.
         contributions.reflectionContribution = contributions.reflectedEnvironmentColor * reflectWeight * reflectTransmittance;
-        contributions.refractionContribution *= refractWeight;
+        contributions.refractionContribution *= refractWeight * refractTransmittance;
         return contributions;
     }
 
@@ -530,8 +541,20 @@ float3 ComposeWaterBackgroundColor(
         reflectionVisibilityFloor
     );
 
+    // From outside (enteringWater = true), ComputeWaterBackgroundContributions already
+    // applied refractTransmittance (surface→floor optical depth) to refractionContribution.
+    // Multiplying by remainingViewTransmittance here would double-attenuate the floor
+    // (remainingViewTransmittance ≈ exp(-σ×depth) ≈ refractTransmittance from outside),
+    // making the floor invisible and breaking the Fresnel transparency effect.
+    // From inside (enteringWater = false), remainingViewTransmittance is the water column
+    // above the camera and is the correct single attenuation for the transmitted sky.
+    float3 floorTransmittance = (backgroundData.surfaceHit.hit
+                                 && backgroundData.surfaceHit.enteringWater > 0.5)
+        ? float3(1.0, 1.0, 1.0)
+        : remainingViewTransmittance;
+
     return contributions.reflectionContribution * surfaceViewTransmittance
-         + contributions.refractionContribution * remainingViewTransmittance;
+         + contributions.refractionContribution * floorTransmittance;
 }
 
 #endif

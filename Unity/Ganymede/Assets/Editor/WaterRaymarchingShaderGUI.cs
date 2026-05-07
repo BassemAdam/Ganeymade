@@ -1,4 +1,4 @@
-using UnityEditor;
+﻿using UnityEditor;
 using UnityEngine;
 
 public sealed class WaterRaymarchingShaderGUI : ShaderGUI
@@ -80,6 +80,7 @@ public sealed class WaterRaymarchingShaderGUI : ShaderGUI
                 Draw("_ReflectionStrength");
                 Draw("_ReflectionVisibilityBoost");
                 Draw("_ReflectionVisibilityFloor");
+                Draw("_TIRSoftness");
                 EditorGUILayout.HelpBox(
                     "Reflection and refraction use exact unpolarized Fresnel weights with greedy single-path selection. Refraction samples the URP scene texture at the refracted UV; reflection samples the URP environment probe in the reflected direction. Strength is the physical multiplier. Visibility Boost/Floor are art controls applied only to the final reflected contribution so the normal view can show reflections without changing the raw reflection debug modes.",
                     MessageType.Info);
@@ -185,9 +186,11 @@ public sealed class WaterRaymarchingShaderGUI : ShaderGUI
         new GUIContent("Glossy Environment Raw"),
         new GUIContent("SpecCube Raw"),
         new GUIContent("Outward Surface Normal"),
+        new GUIContent("[Debug] IOR Direction (Green=Enter/Red=Leave)"),
+        new GUIContent("[Debug] Total Internal Reflection"),
     };
 
-    static readonly int[] s_DebugViewValues = { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11 };
+    static readonly int[] s_DebugViewValues = { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13 };
 
     void DrawDebugViewMode()
     {
