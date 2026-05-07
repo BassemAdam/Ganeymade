@@ -1,11 +1,12 @@
 #ifndef RAY_MARCH_DENSITY_INCLUDED
 #define RAY_MARCH_DENSITY_INCLUDED
 
-// R = liquid density (normalised 0..1), G = vapour density (normalised 0..1).
-// Liquid has a sharp iso-surface → surface detection, normals, refraction.
-// Vapour is purely volumetric → scattering/absorption only, never enters surface tests.
+// R = liquid density (normalised 0..1), G = secondary non-liquid phase density.
+// This include owns generic density sampling and liquid/surface helpers only.
 Texture3D<float2> _PhysicsDensityGrid;
 SamplerState      sampler_PhysicsDensityGrid;
+Texture3D<float4> _PhysicsNormalGrid;
+SamplerState      sampler_PhysicsNormalGrid;
 
 float4 _PhysicsVolumeDims;
 float4 _PhysicsBoundsMinWS;
@@ -25,9 +26,8 @@ float2 SampleDensityRG_WS(float3 posWS)
     return _PhysicsDensityGrid.SampleLevel(sampler_PhysicsDensityGrid, DensityGridUVW(posWS), 0);
 }
 
-// Liquid channel only.
-// Use for iso-surface detection, normal gradient estimation, and refraction.
-// Vapour must never feed into surface tests — it has no sharp phase boundary.
+// Liquid channel only. Use for iso-surface detection, normal gradient estimation,
+// and refraction. Other phases must never feed into surface tests.
 float SampleLiquidDensityWS(float3 posWS)
 {
     return SampleDensityRG_WS(posWS).r;
@@ -44,21 +44,6 @@ float AdjustLiquidDensity(float rawLiquidDensity)
 float SampleAdjustedLiquidDensityWS(float3 posWS)
 {
     return AdjustLiquidDensity(SampleLiquidDensityWS(posWS));
-}
-
-float2 SampleAdjustedDensityRG_WS(float3 posWS)
-{
-    float2 raw = SampleDensityRG_WS(posWS);
-    return float2(
-        AdjustLiquidDensity(raw.x),
-        max(raw.y * _VapourDensityMultiplier, 0.0)
-    );
-}
-
-// Vapour channel only. Use for volumetric scattering and absorption accumulation.
-float SampleVapourDensityWS(float3 posWS)
-{
-    return SampleDensityRG_WS(posWS).g;
 }
 
 bool IsInsideDensityBoundsWS(float3 posWS)
@@ -80,6 +65,39 @@ float DistanceToClosestPhysicsBoundsFaceWS(float3 posWS)
     float3 distanceToMax = _PhysicsBoundsMaxWS.xyz - posWS;
     float3 distanceToFace = min(distanceToMin, distanceToMax);
     return min(distanceToFace.x, min(distanceToFace.y, distanceToFace.z));
+}
+
+float3 SampleBakedSurfaceNormalWS(float3 posWS)
+{
+    float3 bakedNormal = _PhysicsNormalGrid.SampleLevel(
+        sampler_PhysicsNormalGrid,
+        DensityGridUVW(posWS),
+        0
+    ).xyz;
+
+    float bakedLength = length(bakedNormal);
+    return (bakedLength >= 1e-4) ? (bakedNormal / bakedLength) : float3(0.0, 0.0, 0.0);
+}
+
+// Forward declaration for Vulkan/HLSL compilers that require helper functions
+// to be declared before first use inside other helper bodies.
+float3 ClosestPhysicsBoundsFaceNormalWS(float3 posWS);
+
+float3 ApplyBoundaryNormalBlend(float3 posWS, float3 volumeNormal)
+{
+    float boundaryBlendDistance = max(_BoundaryNormalBlendDistance, 0.0);
+    if (boundaryBlendDistance <= 1e-5)
+        return volumeNormal;
+
+    // Smoothly flatten normals near the six simulation-box faces to avoid jagged
+    // wall-contact artifacts. Up-facing top-surface normals keep their detail.
+    float distanceToFace = max(DistanceToClosestPhysicsBoundsFaceWS(posWS), 0.0);
+    float faceWeight = 1.0 - smoothstep(0.0, boundaryBlendDistance, distanceToFace);
+    float upBiasReduction = 1.0 - pow(saturate(volumeNormal.y), max(_BoundaryNormalUpBiasPower, 1.0));
+    faceWeight *= upBiasReduction;
+
+    float3 faceNormal = ClosestPhysicsBoundsFaceNormalWS(posWS);
+    return normalize(lerp(volumeNormal, faceNormal, saturate(faceWeight)));
 }
 
 float3 ClosestPhysicsBoundsFaceNormalWS(float3 posWS)
@@ -137,26 +155,32 @@ float3 CalculateLiquidGradientNormalWS(float3 posWS)
 }
 
 // Surface normal calculated on-the-fly from the liquid density field.
-// The vapour channel is intentionally ignored because vapour has no sharp surface.
+// The secondary channel is intentionally ignored because it has no sharp surface.
 float3 GetSurfaceNormalWS(float3 posWS, float3 rayDir)
 {
-    float3 volumeNormal = CalculateLiquidGradientNormalWS(posWS);
+    float3 runtimeNormal = CalculateLiquidGradientNormalWS(posWS);
+    float3 bakedNormal = SampleBakedSurfaceNormalWS(posWS);
+    float runtimeValid = step(1e-8, dot(runtimeNormal, runtimeNormal));
+    float bakedValid = step(1e-8, dot(bakedNormal, bakedNormal));
+
+    float3 volumeNormal = runtimeNormal;
+    if (runtimeValid > 0.5 && bakedValid > 0.5)
+    {
+        // Blend control for look-dev:
+        //   0.00 = pure runtime normal
+        //   0.25 = baked normal contributes 25%
+        //   1.00 = pure baked normal
+        volumeNormal = normalize(lerp(runtimeNormal, bakedNormal, saturate(_BakedNormalBlend)));
+    }
+    else if (runtimeValid < 0.5 && bakedValid > 0.5)
+    {
+        volumeNormal = bakedNormal;
+    }
+
     if (dot(volumeNormal, volumeNormal) < 1e-8)
         return float3(0.0, 0.0, 0.0);
 
-    float boundaryBlendDistance = max(_BoundaryNormalBlendDistance, 0.0);
-    if (boundaryBlendDistance <= 1e-5)
-        return volumeNormal;
-
-    // Smoothly flatten normals near the six simulation-box faces to avoid jagged
-    // wall-contact artifacts. Up-facing top-surface normals keep their detail.
-    float distanceToFace = max(DistanceToClosestPhysicsBoundsFaceWS(posWS), 0.0);
-    float faceWeight = 1.0 - smoothstep(0.0, boundaryBlendDistance, distanceToFace);
-    float upBiasReduction = 1.0 - pow(saturate(volumeNormal.y), max(_BoundaryNormalUpBiasPower, 1.0));
-    faceWeight *= upBiasReduction;
-
-    float3 faceNormal = ClosestPhysicsBoundsFaceNormalWS(posWS);
-    return normalize(lerp(volumeNormal, faceNormal, saturate(faceWeight)));
+    return ApplyBoundaryNormalBlend(posWS, volumeNormal);
 }
 
 #endif

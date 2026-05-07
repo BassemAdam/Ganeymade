@@ -154,91 +154,94 @@ public class ThermalReceiver : MonoBehaviour
         int gx = voxelTracer.Nx;
         int gy = voxelTracer.Ny;
         int gz = voxelTracer.Nz;
+        int sliceSize = gx * gy;
 
-        // Create a 2D RenderTexture to receive each slice copy
-        RenderTexture tmp2D = new RenderTexture(gx, gy, 0, RenderTextureFormat.RFloat)
+        // ── Fill texture → mask (single async 3D request, no per-slice stalls) ──
         {
-            enableRandomWrite = false,
-            filterMode = FilterMode.Point,
-            dimension = UnityEngine.Rendering.TextureDimension.Tex2D
-        };
-        tmp2D.Create();
-
-        // ── Fill texture → mask ──────────────────────────────────────────
-        for (int z = 0; z < gz; z++)
-        {
-            Graphics.CopyTexture(voxelTracer.FillTexture, z, 0, tmp2D, 0, 0);
-
-            var req = AsyncGPUReadback.Request(tmp2D);
+            var req = AsyncGPUReadback.Request(voxelTracer.FillTexture);
             yield return new WaitUntil(() => req.done);
-
             if (req.hasError)
             {
-                Debug.LogError($"[ThermalReceiver] FillTexture readback error at z={z}");
-                continue;
+                Debug.LogError("[ThermalReceiver] FillTexture readback error");
             }
-
-            var data = req.GetData<float>();
-            for (int i = 0; i < data.Length; i++)
-                maskData[z * gx * gy + i] = data[i] > 0.5f ? 1u : 0u;
+            else
+            {
+                int slices = req.layerCount > 0 ? req.layerCount : gz;
+                for (int z = 0; z < gz && z < slices; z++)
+                {
+                    var slice = req.GetData<float>(z);
+                    int n = Mathf.Min(slice.Length, sliceSize);
+                    int dstBase = z * sliceSize;
+                    for (int i = 0; i < n; i++)
+                        maskData[dstBase + i] = slice[i] > 0.5f ? 1u : 0u;
+                }
+            }
         }
 
-        // ── Temperature texture → gridData ───────────────────────────────
-        for (int z = 0; z < gz; z++)
+        // ── Temperature texture → gridData ─────────────────────────────────
         {
-            Graphics.CopyTexture(voxelTracer.TemperatureTexture, z, 0, tmp2D, 0, 0);
-
-            var req = AsyncGPUReadback.Request(tmp2D);
+            var req = AsyncGPUReadback.Request(voxelTracer.TemperatureTexture);
             yield return new WaitUntil(() => req.done);
-
             if (req.hasError)
             {
-                Debug.LogError($"[ThermalReceiver] TemperatureTexture readback error at z={z}");
-                continue;
+                Debug.LogError("[ThermalReceiver] TemperatureTexture readback error");
             }
-
-            var data = req.GetData<float>();
-            for (int i = 0; i < data.Length; i++)
-                gridData[z * gx * gy + i] = data[i];
+            else
+            {
+                int slices = req.layerCount > 0 ? req.layerCount : gz;
+                for (int z = 0; z < gz && z < slices; z++)
+                {
+                    var slice = req.GetData<float>(z);
+                    int n = Mathf.Min(slice.Length, sliceSize);
+                    int dstBase = z * sliceSize;
+                    for (int i = 0; i < n; i++)
+                        gridData[dstBase + i] = slice[i];
+                }
+            }
         }
 
-        // ── Diffusivity texture → diffusivityData ────────────────────────
-        for (int z = 0; z < gz; z++)
+        // ── Diffusivity texture → diffusivityData ──────────────────────────
         {
-            Graphics.CopyTexture(voxelTracer.DiffusivityTexture, z, 0, tmp2D, 0, 0);
-
-            var req = AsyncGPUReadback.Request(tmp2D);
+            var req = AsyncGPUReadback.Request(voxelTracer.DiffusivityTexture);
             yield return new WaitUntil(() => req.done);
-
             if (req.hasError)
             {
-                Debug.LogError($"[ThermalReceiver] DiffusivityTexture readback error at z={z}");
-                continue;
+                Debug.LogError("[ThermalReceiver] DiffusivityTexture readback error");
             }
-
-            var data = req.GetData<float>();
-            for (int i = 0; i < data.Length; i++)
-                diffusivityData[z * gx * gy + i] = Mathf.Clamp(data[i], 0f, 30f);
+            else
+            {
+                int slices = req.layerCount > 0 ? req.layerCount : gz;
+                for (int z = 0; z < gz && z < slices; z++)
+                {
+                    var slice = req.GetData<float>(z);
+                    int n = Mathf.Min(slice.Length, sliceSize);
+                    int dstBase = z * sliceSize;
+                    for (int i = 0; i < n; i++)
+                        diffusivityData[dstBase + i] = Mathf.Clamp(slice[i], 0f, 30f);
+                }
+            }
         }
 
-        // ── HeatSourceTexture → heatSourceData ───────────────────────────
+        // ── HeatSourceTexture → heatSourceData ─────────────────────────────
         if (voxelTracer.HeatSourceTexture != null)
         {
-            for (int z = 0; z < gz; z++)
+            var req = AsyncGPUReadback.Request(voxelTracer.HeatSourceTexture);
+            yield return new WaitUntil(() => req.done);
+            if (req.hasError)
             {
-                Graphics.CopyTexture(voxelTracer.HeatSourceTexture, z, 0, tmp2D, 0, 0);
-                var req = AsyncGPUReadback.Request(tmp2D);
-                yield return new WaitUntil(() => req.done);
-
-                if (req.hasError)
+                Debug.LogError("[ThermalReceiver] HeatSourceTexture readback error");
+            }
+            else
+            {
+                int slices = req.layerCount > 0 ? req.layerCount : gz;
+                for (int z = 0; z < gz && z < slices; z++)
                 {
-                    Debug.LogError($"[ThermalReceiver] HeatSourceTexture readback error at z={z}");
-                    continue;
+                    var slice = req.GetData<float>(z);
+                    int n = Mathf.Min(slice.Length, sliceSize);
+                    int dstBase = z * sliceSize;
+                    for (int i = 0; i < n; i++)
+                        heatSourceData[dstBase + i] = slice[i];
                 }
-
-                var data = req.GetData<float>();
-                for (int i = 0; i < data.Length; i++)
-                    heatSourceData[z * gx * gy + i] = data[i];
             }
         }
         else
@@ -249,9 +252,6 @@ public class ThermalReceiver : MonoBehaviour
             Array.Clear(heatSourceData, 0, heatSourceData.Length);
         }
 
-        RenderTexture.active = null;
-        tmp2D.Release();
-        Destroy(tmp2D);
         Debug.Log("[ThermalReceiver] Texture readback complete. Uploading data to diffusion shader.");
 
         SetDiffusivityData(diffusivityData, gx * gy * gz);
@@ -265,32 +265,26 @@ public class ThermalReceiver : MonoBehaviour
         int gx = voxelTracer.Nx;
         int gy = voxelTracer.Ny;
         int gz = voxelTracer.Nz;
+        int sliceSize = gx * gy;
 
-        if (voxelTracer.HeatSourceTexture == null) yield break;
+        if (voxelTracer.HeatSourceTexture == null) { _refreshingHeatSources = false; yield break; }
 
-        RenderTexture tmp2D = new RenderTexture(gx, gy, 0, RenderTextureFormat.RFloat)
+        // Single async 3D request — no temp RT, no per-slice ReadPixels, no allocations.
+        var req = AsyncGPUReadback.Request(voxelTracer.HeatSourceTexture);
+        yield return new WaitUntil(() => req.done);
+
+        if (!req.hasError)
         {
-            enableRandomWrite = false,
-            filterMode = FilterMode.Point,
-            dimension = UnityEngine.Rendering.TextureDimension.Tex2D
-        };
-        tmp2D.Create();
-
-        for (int z = 0; z < gz; z++)
-        {
-            Graphics.CopyTexture(voxelTracer.HeatSourceTexture, z, 0, tmp2D, 0, 0);
-            var req = AsyncGPUReadback.Request(tmp2D);
-            yield return new WaitUntil(() => req.done);
-
-            if (req.hasError) continue;
-
-            var data = req.GetData<float>();
-            for (int i = 0; i < data.Length; i++)
-                heatSourceData[z * gx * gy + i] = data[i];
+            int slices = req.layerCount > 0 ? req.layerCount : gz;
+            for (int z = 0; z < gz && z < slices; z++)
+            {
+                var slice = req.GetData<float>(z);
+                int n = Mathf.Min(slice.Length, sliceSize);
+                int dstBase = z * sliceSize;
+                for (int i = 0; i < n; i++)
+                    heatSourceData[dstBase + i] = slice[i];
+            }
         }
-
-        tmp2D.Release();
-        Destroy(tmp2D);
 
         SetHeatSourceData(heatSourceData, gx * gy * gz);
 
@@ -310,22 +304,26 @@ public class ThermalReceiver : MonoBehaviour
     /// </summary>
     private bool HeatSourcesChanged()
     {
-        var sources = VoxelTracerSystem.HeatSources;
-        if (sources.Count != _trackedSourceSnapshots.Count) return true;
+        var sources = VoxelTracerSystem.SolidMaterials;
+        // Count only flagged sources
+        int flaggedCount = 0;
+        foreach (var sm in sources)
+            if (sm != null && sm.isContinuousHeatSource) 
+                flaggedCount++;
 
-        // Build a lookup by instanceID instead of relying on HashSet iteration order
+        if (flaggedCount != _trackedSourceSnapshots.Count) return true;
+
         var snapshotMap = new Dictionary<int, HeatSourceSnapshot>(_trackedSourceSnapshots.Count);
         foreach (var snap in _trackedSourceSnapshots)
             snapshotMap[snap.instanceID] = snap;
 
-        foreach (var hs in sources)
+        foreach (var sm in sources)
         {
-            if (hs == null) continue;
-            if (!snapshotMap.TryGetValue(hs.GetInstanceID(), out var snap)) return true;
-            if (snap.active != hs.active) return true;
-            if (!Mathf.Approximately(snap.temperature, hs.temperature)) return true;
-            if ((snap.position - hs.transform.position).sqrMagnitude > 1e-6f) return true;
-            if (!Mathf.Approximately(snap.radius, hs.radius)) return true;
+            if (sm == null || !sm.isContinuousHeatSource) continue;
+            if (!snapshotMap.TryGetValue(sm.GetInstanceID(), out var snap)) return true;
+            if (snap.isContinuousHeatSource != sm.isContinuousHeatSource) return true;
+            if (!Mathf.Approximately(snap.temperature, sm.temperature)) return true;
+            if ((snap.position - sm.transform.position).sqrMagnitude > 1e-6f) return true;
         }
         return false;
     }
@@ -333,16 +331,15 @@ public class ThermalReceiver : MonoBehaviour
     private void SnapshotCurrentSources()
     {
         _trackedSourceSnapshots.Clear();
-        foreach (var hs in VoxelTracerSystem.HeatSources)
+        foreach (var sm in VoxelTracerSystem.SolidMaterials)
         {
-            if (hs == null) continue;
+            if (sm == null || !sm.isContinuousHeatSource) continue;
             _trackedSourceSnapshots.Add(new HeatSourceSnapshot
             {
-                instanceID = hs.GetInstanceID(),
-                temperature = hs.temperature,
-                active = hs.active,
-                position = hs.transform.position,
-                radius = hs.radius
+                instanceID  = sm.GetInstanceID(),
+                temperature = sm.temperature,
+                isContinuousHeatSource = sm.isContinuousHeatSource,
+                position = sm.transform.position,
             });
         }
     }
@@ -410,43 +407,34 @@ public class ThermalReceiver : MonoBehaviour
         float avgT = solidCount > 0 ? (float)(sumT / solidCount) : 0f;
 
         // Per-source stats — CPU-side overlap check mirroring WriteHeatSources kernel
-        var sources = VoxelTracerSystem.HeatSources;
+        var sources = VoxelTracerSystem.SolidMaterials;
         var sb = new System.Text.StringBuilder();
 
         sb.AppendLine($"[ThermalReceiver] Frame {frameCount}  dt={dt:F4}  " +
                     $"min={minT:F2}  max={maxT:F2}  avg={avgT:F4}  " +
                     $"solidCells={solidCount}/{readbackData.Length}  pinnedVoxels={pinnedCount}");
 
-        foreach (var hs in sources)
+        foreach (var sm in sources)
         {
-            if (hs == null || !hs.isActiveAndEnabled || !hs.active) continue;
+            if (sm == null || !sm.isActiveAndEnabled || !sm.isContinuousHeatSource) continue;
 
             // Reconstruct source bounds exactly as StampHeatSources does
             Vector3 srcPos;
             Vector3 srcExtents;
             bool isSphere;
 
-            if (hs.radius > 0f)
+            var r = sm.GetComponent<Renderer>();
+            if (r != null)
             {
-                srcPos = hs.transform.position;
-                srcExtents = Vector3.one * hs.radius;
-                isSphere = true;
+                srcPos = r.bounds.center;
+                srcExtents = r.bounds.extents + Vector3.one * (voxelTracer.ActiveVoxelSize * 0.5f);
             }
             else
             {
-                var r = hs.GetComponent<Renderer>();
-                if (r != null)
-                {
-                    srcPos = r.bounds.center;
-                    srcExtents = r.bounds.extents + Vector3.one * (voxelTracer.ActiveVoxelSize * 0.5f);
-                }
-                else
-                {
-                    srcPos = hs.transform.position;
-                    srcExtents = Vector3.one * 0.5f;
-                }
-                isSphere = false;
+                srcPos = sm.transform.position;
+                srcExtents = Vector3.one * 0.5f;
             }
+            isSphere = false;
 
             int pinnedBySource = 0;
             float srcMinT = float.MaxValue;
@@ -511,7 +499,7 @@ public class ThermalReceiver : MonoBehaviour
                         float t = readbackData[i];
                         if (pinnedBySource == 0)
                         {
-                            sb.AppendLine($"  └ {hs.name} — WARNING: 0 pinned voxels found in heatSourceData. " +
+                            sb.AppendLine($" WARNING: 0 pinned voxels found in heatSourceData. " +
                                         $"Source bounds may not overlap any solid voxel, or heatSourceData " +
                                         $"is stale. regionAvg={srcAvgT:F2}° (reading diffused temp, not pinned).");
                             continue;
@@ -557,8 +545,8 @@ public class ThermalReceiver : MonoBehaviour
                     }
 
             diffusedAvg = diffusedNeighbours > 0 ? (float)(diffusedSum / diffusedNeighbours) : 0f;
-            sb.AppendLine($"  └ {hs.name} ({(isSphere ? "sphere" : "AABB")})  " +
-                        $"pinTemp={hs.temperature:F1}°  pinnedVoxels={pinnedBySource}  " +
+            sb.AppendLine($"  └ {sm.name} ({(isSphere ? "sphere" : "AABB")})  " +
+                        $"pinTemp={sm.temperature:F1}°  pinnedVoxels={pinnedBySource}  " +
                         $"regionAvg={srcAvgT:F2}°  " +
                         $"diffusedNeighbours={diffusedNeighbours}  diffusedAvg={diffusedAvg:F2}°");
         }
@@ -643,8 +631,8 @@ public class ThermalReceiver : MonoBehaviour
 
         if (sourceVoxels == 0)
             Debug.LogWarning("[ThermalReceiver] ⚠ No pinned source voxels found. " +
-                             "Either no VoxelHeatSource components exist, or the " +
-                             "HeatSourceTexture patch has not been applied.");
+                             "Either no VoxelSolidMaterial has isContinuousHeatSource enabled " +
+                             "or the HeatSourceTexture has not been stamped.");
 
         if (maxDiff == 0f)
             Debug.LogWarning("[ThermalReceiver] ⚠ Diffusivity buffer is entirely zero.");
@@ -685,8 +673,7 @@ public class ThermalReceiver : MonoBehaviour
     {
         public int instanceID;
         public float temperature;
-        public bool active;
+        public bool isContinuousHeatSource;
         public Vector3 position;
-        public float radius;
     }
 }

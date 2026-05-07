@@ -30,13 +30,25 @@ void computeMain(uint3 threadId: SV_DispatchThreadID)
        particlesOut[i] = p;
        return;
    }
+
+   // Boundary particles (phase=2): fixed density, zero pressure, never changes.
+   if (p.phase == 2)
+   {
+       p.density = params.restDensity;
+       p.pressure = 0.0;
+       particlesOut[i] = p;
+       return;
+   }
    float h = params.smoothingRadius;
    float h2 = h * h;
+   float sr = params.splashRadius;
+   float sr2 = sr * sr;
    uint n = params.particleCount;
 
    int3 myCell = getCellCoord(p.position, params.gridOrigin, h);
 
    float densitySum = 0.0;
+   uint splashCount = 0;
    for (int dz = -1; dz <= 1; dz++)
    for (int dy = -1; dy <= 1; dy++)
    for (int dx = -1; dx <= 1; dx++)
@@ -47,6 +59,8 @@ void computeMain(uint3 threadId: SV_DispatchThreadID)
       while (idx < n && hashKeys[idx] == key)
       {
          uint j = indices[idx];
+         // Skip boundary particles — they don't contribute to fluid density
+         if (particlesIn[j].phase == 2) { idx++; continue; }
          float3 diff = p.position - particlesIn[j].position;
          float r2 = dot(diff, diff);
          if (r2 < h2)
@@ -54,18 +68,22 @@ void computeMain(uint3 threadId: SV_DispatchThreadID)
             float w = h2 - r2;
             densitySum += w * w * w;
          }
+         if (sr2 > 0.0 && r2 < sr2 && r2 > 0.0)
+            splashCount++;
          idx++;
       }
    }
    p.density = params.particleMass * params.poly6Const * densitySum;
    p.density = max(p.density, params.restDensity * 0.01);
+   p.neighborCount = float(splashCount);
 
    // Phase-dependent rest density: gas uses much lower rest density → high expansion pressure
    float rd = (p.phase == 1) ? params.gasRestDensity : params.restDensity;
    p.pressure = params.gasStiffness * (p.density - rd);
-   // Liquid: clamp negative pressure (no tensile force). Gas: allow full expansion.
+   // Liquid: allow negative pressure scaled by tensileK for cohesive attraction.
+   // tensileK=0 clamps to zero (old behavior). tensileK=1 allows full negative pressure.
    if (p.phase != 1)
-       p.pressure = max(p.pressure, 0.0);
+       p.pressure = max(p.pressure, p.pressure * params.tensileK);
 
    particlesOut[i] = p;
 }

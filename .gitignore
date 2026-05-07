@@ -70,3 +70,6 @@ Ignore
 # Large image/texture assets
 *.exr
 *.exr.meta
+Unity/Ganymede/Assets/AllSkyFree
+Unity/Ganymede/Assets/Scenes/Visualization/phase/ReflectionProbe-0.exr
+Unity/Ganymede/Assets/Scenes/Visualization/phase/ReflectionProbe-0.exr.meta

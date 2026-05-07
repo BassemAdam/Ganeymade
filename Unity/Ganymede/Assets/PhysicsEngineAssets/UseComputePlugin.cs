@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Runtime.InteropServices;
 using UnityEngine;
+using System.Linq;
 
 /// <summary>
 /// Minimal C# wrapper for the native Vulkan compute plugin (RenderingPlugin.dll).
@@ -190,6 +191,16 @@ public class UseComputePlugin : MonoBehaviour
     [Range(0f, 0.1f)]
     public float cohesionStrength = 0.005f;
 
+    [Tooltip("Tensile instability correction (Monaghan). Allows negative pressure to attract " +
+             "spread-out particles back together. 0 = no tensile attraction, 0.1–0.5 typical.")]
+    [Range(0f, 1f)]
+    public float tensileK = 0.2f;
+
+    [Tooltip("Radius for splash detection neighbor counting. Smaller than smoothingRadius " +
+             "to give sharper bulk vs splash distinction. 0 = disabled.")]
+    [Range(0f, 1f)]
+    public float splashRadius = 0.08f;
+
     [Header("Init")]
     [Tooltip("Upload particles automatically on Start")]
     public bool autoInitialize = true;
@@ -197,24 +208,33 @@ public class UseComputePlugin : MonoBehaviour
     [Tooltip("Print debug logs")]
     public bool verbose = true;
 
-    public enum SDFSource { Analytic, VoxelTracer }
-
     [Header("SDF Collision")]
     [Tooltip("Enable SDF-based collision")]
-    public bool enableSDF = true;
+    public bool enableSDF = false;
 
-    [Tooltip("Where to get SDF data from")]
-    public SDFSource sdfSource = SDFSource.VoxelTracer;
+    [Tooltip("Surface friction when particles slide along SDF surfaces. 0 = frictionless, 1 = heavy friction.")]
+    [Range(0f, 1f)]
+    public float sdfFriction = 0.1f;
+
+    [Header("Boundary Particles")]
+    [Tooltip("Enable boundary particle collision from voxelized meshes tagged with VoxelBoundaryCollider")]
+    public bool enableBoundaryParticles = true;
+
+    [Tooltip("Regenerate boundary particles every N frames (0 = static only, no refresh)")]
+    [Min(0)]
+    public int boundaryDynamicUpdateInterval = 0;
 
     [Tooltip("Reference to the VoxelTracerSystem in the scene (auto-found if null)")]
     public VoxelTracerSystem voxelTracerRef;
 
-    [Tooltip("SDF grid cell size in world units (used only for Analytic mode).")]
-    [Range(0.05f, 1.0f)]
-    public float sdfVoxelSize = 0.2f;
+    [Tooltip("World-space distance particles are kept outside the SDF surface. " +
+             "Increase if particles visually enter the boundary mesh.")]
+    [Range(0.001f, 0.5f)]
+    public float sdfSkinOffset = 0.05f;
 
-    [Tooltip("Regenerate SDF every N frames for dynamic boundaries (0 = static only)")]
-    [Range(0, 60)]
+    [Tooltip("Regenerate SDF every N frames (1 = every frame, higher = less frequent). " +
+             "Set to 1 when moving or scaling boundaries at runtime.")]
+    [Range(1, 60)]
     public int sdfDynamicUpdateInterval = 10;
 
     [Header("Drains")]
@@ -226,13 +246,12 @@ public class UseComputePlugin : MonoBehaviour
     private HeatSource[] _heatSources = new HeatSource[MAX_HEAT_SOURCES];
 
     // Cached heat source references (avoid FindObjectsByType every frame)
-    private HeatSourceObj[] _cachedSources;
+    private VoxelSolidMaterial[] _cachedSources;
     private Collider[] _cachedSourceColliders;
     private Vector3[] _lastSourcePositions;
     private float[] _lastSourceTemps;
 
-    // Cached SDF boundary + drain references
-    private FluidBoundary[] _cachedBoundaries;
+    // Cached drain references
     private WaterDrain[] _cachedDrains;
     private DrainZoneNative[] _drainNatives = new DrainZoneNative[MAX_DRAIN_ZONES];
     private float[] _sdfData;
@@ -242,7 +261,27 @@ public class UseComputePlugin : MonoBehaviour
     private int _sdfDynamicFrameCounter;
     private bool _sdfUploaded;
 
+    // Async SDF readback state (eliminates the per-slice ReadPixels stall).
+    private UnityEngine.Rendering.AsyncGPUReadbackRequest _sdfReadbackRequest;
+    private bool _sdfReadbackPending;
+    private int _sdfPendingDimX, _sdfPendingDimY, _sdfPendingDimZ;
+    private Vector3 _sdfPendingOrigin;
+    private float _sdfPendingCellSize;
+
+    // Reusable boundary-collider scratch (avoids per-frame List/array allocations).
+    private readonly List<Bounds> _boundaryBoundsScratch = new List<Bounds>(16);
+    private Bounds[] _boundaryBoundsArray;
+
     public HashSet<int> TapReservedSlots { get; } = new HashSet<int>();
+
+    // Boundary particle state
+    private int _boundaryStartIndex;
+    private int _boundaryCount;
+    private int _boundaryDynamicFrameCounter;
+    private bool _boundaryInitialized;
+
+    /// <summary>Number of fluid/gas particles (excluding boundary). SpawnManager should use this for its pool.</summary>
+    public int FluidParticleCount => _boundaryStartIndex > 0 ? _boundaryStartIndex : particleCount;
 
     // --------------------------------------------------------------------
 
@@ -274,11 +313,11 @@ public class UseComputePlugin : MonoBehaviour
 
         int particleStride = Marshal.SizeOf<Particle>();
         int simParamsStride = Marshal.SizeOf<SimParams>();
-        if (particleStride != 64)
-            // Debug.LogError($"[UseComputePlugin] Particle stride mismatch. Expected 64, got {particleStride}. Check struct layout.");
+        if (particleStride != 80)
+            // Debug.LogError($"[UseComputePlugin] Particle stride mismatch. Expected 80, got {particleStride}. Check struct layout.");
             ;
-        if (simParamsStride != 176)
-            // Debug.LogError($"[UseComputePlugin] SimParams stride mismatch. Expected 156, got {simParamsStride}. Check struct layout.");
+        if (simParamsStride != 180)
+            // Debug.LogError($"[UseComputePlugin] SimParams stride mismatch. Expected 180, got {simParamsStride}. Check struct layout.");
             ;
 
         // Cache function pointer once
@@ -286,7 +325,7 @@ public class UseComputePlugin : MonoBehaviour
 
         // Create initial particle distribution (simple lattice in bounds)
         Particle[] particles = CreateInitialParticles(particleCount);
-        InitialParticleSnapshot = particles; 
+        InitialParticleSnapshot = particles;
         readbackData = new Particle[particleCount];
 
         // Upload to native plugin once
@@ -311,11 +350,11 @@ public class UseComputePlugin : MonoBehaviour
         CacheHeatSources();
 
         // Auto-find VoxelTracerSystem if not assigned
-        if (sdfSource == SDFSource.VoxelTracer && voxelTracerRef == null)
+        if (voxelTracerRef == null)
             voxelTracerRef = FindObjectOfType<VoxelTracerSystem>();
 
         // Default cell size until SDF is uploaded (VoxelTracer readback is async)
-        _sdfCellSize = sdfVoxelSize;
+        _sdfCellSize = voxelTracerRef != null ? voxelTracerRef.voxelSize : 0.25f;
 
         CacheBoundariesAndDrains();
         GenerateAndUploadSDF();
@@ -391,29 +430,35 @@ public class UseComputePlugin : MonoBehaviour
         // Dynamic SDF regeneration
         if (enableSDF && sdfDynamicUpdateInterval > 0)
         {
+            // Always pump completion of any pending readback so the latest snapshot
+            // is uploaded as soon as the GPU finishes \u2014 not stalled until the next
+            // request would be due.
+            PollSDFReadback();
+
             _sdfDynamicFrameCounter++;
             if (_sdfDynamicFrameCounter >= sdfDynamicUpdateInterval)
             {
                 _sdfDynamicFrameCounter = 0;
+                GenerateAndUploadSDF();
+            }
+        }
 
-                if (sdfSource == SDFSource.VoxelTracer)
+        // Boundary particle deferred init + dynamic refresh
+        if (enableBoundaryParticles)
+        {
+            if (!_boundaryInitialized)
+            {
+                // Wait at least 2 frames so GPU has dispatched and readback is valid
+                if (frameCount >= 2)
+                    GenerateAndUploadBoundaryParticles();
+            }
+            else if (boundaryDynamicUpdateInterval > 0)
+            {
+                _boundaryDynamicFrameCounter++;
+                if (_boundaryDynamicFrameCounter >= boundaryDynamicUpdateInterval)
                 {
-                    // VoxelTracer updates every frame anyway; re-read its SDF periodically
-                    GenerateAndUploadSDF();
-                }
-                else if (_cachedBoundaries != null)
-                {
-                    bool hasDynamic = false;
-                    for (int i = 0; i < _cachedBoundaries.Length; i++)
-                    {
-                        if (_cachedBoundaries[i] != null && _cachedBoundaries[i].isDynamic)
-                        {
-                            hasDynamic = true;
-                            break;
-                        }
-                    }
-                    if (hasDynamic)
-                        GenerateAndUploadSDF();
+                    _boundaryDynamicFrameCounter = 0;
+                    RefreshBoundaryParticlePositions();
                 }
             }
         }
@@ -522,18 +567,22 @@ public class UseComputePlugin : MonoBehaviour
         p.gasStiffness = gasStiffness;
         p.viscosity = viscosity;
         p.smoothingRadius = h;
-        p.sdfVoxelSize = enableSDF ? _sdfCellSize : 0f;
-        p._pad1 = 0f;
+        // Only advertise SDF as enabled to the shader once a snapshot has actually been
+        // uploaded — otherwise the shader samples an empty/stale buffer with zero dims
+        // and treats every particle as deeply penetrating, which freezes the simulation.
+        bool sdfReady = enableSDF && _sdfUploaded && _sdfDimX > 0 && _sdfDimY > 0 && _sdfDimZ > 0;
+        p.sdfVoxelSize = sdfReady ? _sdfCellSize : 0f;
+        p.sdfFriction = sdfFriction;
         p.gravity = gravity;
         p.particleMass = particleMass;
         p.boundsMin = boundsMinWS;
         p.poly6Const = poly6Const;
         p.boundsMax = boundsMaxWS;
         p.spikyGradConst = spikyGradConst;
-        p.sdfDims = enableSDF ? new UInt3((uint)_sdfDimX, (uint)_sdfDimY, (uint)_sdfDimZ) : new UInt3(0, 0, 0);
+        p.sdfDims = sdfReady ? new UInt3((uint)_sdfDimX, (uint)_sdfDimY, (uint)_sdfDimZ) : new UInt3(0, 0, 0);
         p.viscLapConst = viscLapConst;
         p.gridOrigin = boundsMinWS;
-        p.sdfEnabled = enableSDF ? 1u : 0u;
+        p.sdfEnabled = sdfReady ? 1u : 0u;
 
         p.damping = damping;
         p.bitonicK = 0;
@@ -543,7 +592,7 @@ public class UseComputePlugin : MonoBehaviour
         p.interactionPos = interactionPos;
         p.interactionRadius = interactionRadius;
 
-        p.thermalDiffusivity = thermalDiffusivity;   
+        p.thermalDiffusivity = thermalDiffusivity;
         p.ambientTemperature = ambientTemperature;
         p.coolingRate = coolingRate;
 
@@ -554,6 +603,8 @@ public class UseComputePlugin : MonoBehaviour
         p.gasBuoyancy = gasBuoyancy;
         p.pressureBoilingScale = pressureBoilingScale;
         p.cohesionStrength = cohesionStrength;
+        p.tensileK = tensileK;
+        p.splashRadius = splashRadius;
 
         SetSimParams(p);
     }
@@ -578,7 +629,7 @@ public class UseComputePlugin : MonoBehaviour
                 float restSpacing = smoothingRadius * 0.5f;
                 float minRadius = restSpacing * Mathf.Pow(reservedForSpawn, 1f / 3f) * 0.6f;
                 float sphereRadius = Mathf.Max(smoothingRadius * 3f, minRadius);
-                Vector3 centre = overrideSpawnCenter ? spawnCenter : (min + max) * 0.5f;    
+                Vector3 centre = overrideSpawnCenter ? spawnCenter : (min + max) * 0.5f;
                 SpawnSphereAt(particles, ref idx, count, centre, sphereRadius, reservedForSpawn, particleMass);
             }
             else
@@ -590,7 +641,7 @@ public class UseComputePlugin : MonoBehaviour
                 for (int s = 0; s < sources.Length; s++)
                 {
                     int thisCount = perSource + (s == sources.Length - 1 ? remainder : 0);
-                    if (thisCount <= 0) 
+                    if (thisCount <= 0)
                         continue;
 
                     // ── TAP MODE ─────────────────────────────────────────────
@@ -611,8 +662,10 @@ public class UseComputePlugin : MonoBehaviour
 
                         for (int k = 0; k < thisCount && idx < count; k++)
                         {
-                            Particle p = Particle.Create(dormantParkPosition, Vector3.zero, particleMass);
-                            p.fixedId = idx; 
+                            // Scatter dormant particles so they don't all land in the same hash cell
+                            Vector3 scattered = dormantParkPosition + new Vector3(idx * smoothingRadius * 2f, 0f, 0f);
+                            Particle p = Particle.Create(scattered, Vector3.zero, particleMass);
+                            p.fixedId = idx;
                             p.phase = -1;
                             particles[idx++] = p;
                         }
@@ -637,11 +690,11 @@ public class UseComputePlugin : MonoBehaviour
         // If the user sets spawnPoolReserve < particleCount, the leftover slots are filled with the usual bounds-filling lattice.
         if (latticeCount > 0)
         {
-            Vector3 size    = max - min;
+            Vector3 size = max - min;
             FindBestFactorGrid(latticeCount, size, out int nx, out int ny, out int nz);
 
-            Vector3 safeSize = new Vector3(Mathf.Max(size.x, 0.001f),Mathf.Max(size.y, 0.001f),Mathf.Max(size.z, 0.001f));
-            Vector3 spacing = new Vector3(safeSize.x / Mathf.Max(nx, 1),safeSize.y / Mathf.Max(ny, 1),safeSize.z / Mathf.Max(nz, 1));
+            Vector3 safeSize = new Vector3(Mathf.Max(size.x, 0.001f), Mathf.Max(size.y, 0.001f), Mathf.Max(size.z, 0.001f));
+            Vector3 spacing = new Vector3(safeSize.x / Mathf.Max(nx, 1), safeSize.y / Mathf.Max(ny, 1), safeSize.z / Mathf.Max(nz, 1));
             Vector3 start = min + spacing * 0.5f;
 
             for (int z = 0; z < nz && idx < count; z++)
@@ -656,8 +709,9 @@ public class UseComputePlugin : MonoBehaviour
         // Any slots still unfilled (rounding) get parked dormant.
         while (idx < count)
         {
-            Particle p = Particle.Create(dormantParkPosition, Vector3.zero, particleMass);
-            p.fixedId = idx; 
+            Vector3 scattered = dormantParkPosition + new Vector3(idx * smoothingRadius * 2f, 0f, 0f);
+            Particle p = Particle.Create(scattered, Vector3.zero, particleMass);
+            p.fixedId = idx;
             p.phase = -1;
             particles[idx++] = p;
         }
@@ -669,7 +723,7 @@ public class UseComputePlugin : MonoBehaviour
 
         return particles;
     }
-    private static void SpawnSphereAt(Particle[] particles, ref int idx, int totalCount,Vector3 centre, float sphereRadius,int spawnCount, float mass)
+    private static void SpawnSphereAt(Particle[] particles, ref int idx, int totalCount, Vector3 centre, float sphereRadius, int spawnCount, float mass)
     {
         for (int i = 0; i < spawnCount && idx < totalCount; i++)
         {
@@ -678,7 +732,7 @@ public class UseComputePlugin : MonoBehaviour
             float inclination = Mathf.Acos(1f - 2f * ((i + 0.5f) / spawnCount));
             float azimuth = Mathf.PI * (1f + Mathf.Sqrt(5f)) * i;
             Vector3 offset = new Vector3(r * Mathf.Sin(inclination) * Mathf.Cos(azimuth), r * Mathf.Cos(inclination), r * Mathf.Sin(inclination) * Mathf.Sin(azimuth));
- 
+
             particles[idx++] = Particle.Create(centre + offset, Vector3.zero, mass);
         }
     }
@@ -776,34 +830,35 @@ public class UseComputePlugin : MonoBehaviour
 
     void CacheHeatSources()
     {
-        _cachedSources = FindObjectsByType<HeatSourceObj>(FindObjectsSortMode.None);
+        _cachedSources = VoxelTracerSystem.SolidMaterials.ToArray();
+
         int count = Mathf.Min(_cachedSources.Length, MAX_HEAT_SOURCES);
         _cachedSourceColliders = new Collider[count];
         _lastSourcePositions = new Vector3[count];
         _lastSourceTemps = new float[count];
+
         for (int i = 0; i < count; i++)
         {
             _cachedSourceColliders[i] = _cachedSources[i].GetComponent<Collider>();
-            _lastSourcePositions[i] = Vector3.one * float.MaxValue; // force first upload
+            _lastSourcePositions[i] = Vector3.one * float.MaxValue; 
         }
     }
 
     void UpdateHeatSources()
     {
         // Re-cache if sources were destroyed or new ones added
-        if (_cachedSources == null || _cachedSources.Length == 0 ||
-            (_cachedSources.Length > 0 && _cachedSources[0] == null))
+        int currentFlaggedCount = VoxelTracerSystem.SolidMaterials.Count(sm => sm != null);
+        if (_cachedSources == null || _cachedSources.Length != currentFlaggedCount)
         {
             CacheHeatSources();
         }
-
         int count = Mathf.Min(_cachedSources.Length, MAX_HEAT_SOURCES);
 
         bool dirty = false;
         for (int i = 0; i < count; i++)
         {
             Vector3 pos = _cachedSources[i].transform.position;
-            float temp = _cachedSources[i].GetTemperature();
+            float temp = _cachedSources[i].temperature;
             if (pos != _lastSourcePositions[i] || temp != _lastSourceTemps[i])
             {
                 dirty = true;
@@ -835,14 +890,9 @@ public class UseComputePlugin : MonoBehaviour
 
     void CacheBoundariesAndDrains()
     {
-        _cachedBoundaries = FindObjectsByType<FluidBoundary>(FindObjectsSortMode.None);
         _cachedDrains = FindObjectsByType<WaterDrain>(FindObjectsSortMode.None);
         _sdfDynamicFrameCounter = 0;
         _sdfUploaded = false;
-
-        if (verbose && _cachedBoundaries.Length > 0)
-            // Debug.Log($"[UseComputePlugin] Found {_cachedBoundaries.Length} FluidBoundary objects, {_cachedDrains.Length} WaterDrain objects.");
-            ;
     }
 
     void GenerateAndUploadSDF()
@@ -853,55 +903,23 @@ public class UseComputePlugin : MonoBehaviour
             return;
         }
 
-        if (sdfSource == SDFSource.VoxelTracer)
-        {
-            GenerateSDFFromVoxelTracer();
-            return;
-        }
-
-        // Analytic mode: generate from FluidBoundary objects
-        if (_cachedBoundaries == null || _cachedBoundaries.Length == 0)
-        {
-            _sdfDimX = _sdfDimY = _sdfDimZ = 0;
-            return;
-        }
-
-        GetBoundsWS(out Vector3 bMin, out Vector3 bMax);
-        FluidSDFGenerator.ComputeGridDims(bMin, bMax, sdfVoxelSize, out _sdfDimX, out _sdfDimY, out _sdfDimZ);
-
-        int totalVoxels = _sdfDimX * _sdfDimY * _sdfDimZ;
-        if (totalVoxels <= 0 || totalVoxels > 4 * 1024 * 1024)
-        {
-            if (verbose)
-                // Debug.LogWarning($"[UseComputePlugin] SDF grid too large or invalid: {_sdfDimX}x{_sdfDimY}x{_sdfDimZ} = {totalVoxels} voxels. Skipping.");
-                ;
-            _sdfDimX = _sdfDimY = _sdfDimZ = 0;
-            return;
-        }
-
-        _sdfOrigin = bMin;
-        _sdfCellSize = sdfVoxelSize;
-
-        float[] rawSdf = FluidSDFGenerator.Generate(_cachedBoundaries, bMin, sdfVoxelSize, _sdfDimX, _sdfDimY, _sdfDimZ);
-        UploadSDFWithHeader(rawSdf);
+        GenerateSDFFromVoxelTracer();
     }
 
     void GenerateSDFFromVoxelTracer()
     {
+        // Always pump completion of any previously-issued readback so a fresh
+        // request can be kicked off this frame.
+        PollSDFReadback();
+
         if (voxelTracerRef == null || !voxelTracerRef.IsReady)
         {
-            if (verbose)
-                // Debug.LogWarning("[UseComputePlugin] VoxelTracerSystem not ready or not assigned. SDF disabled.");
-                ;
             _sdfDimX = _sdfDimY = _sdfDimZ = 0;
             return;
         }
 
         if (!voxelTracerRef.computeSDF)
         {
-            if (verbose)
-                // Debug.LogWarning("[UseComputePlugin] VoxelTracerSystem.computeSDF is OFF. Enable it to generate SDF.");
-                ;
             _sdfDimX = _sdfDimY = _sdfDimZ = 0;
             return;
         }
@@ -909,9 +927,6 @@ public class UseComputePlugin : MonoBehaviour
         RenderTexture sdfTex = voxelTracerRef.SDFTexture;
         if (sdfTex == null)
         {
-            if (verbose)
-                // Debug.LogWarning("[UseComputePlugin] VoxelTracerSystem SDFTexture is null.");
-                ;
             _sdfDimX = _sdfDimY = _sdfDimZ = 0;
             return;
         }
@@ -923,73 +938,85 @@ public class UseComputePlugin : MonoBehaviour
 
         if (totalVoxels <= 0 || totalVoxels > 4 * 1024 * 1024)
         {
-            if (verbose)
-                // Debug.LogWarning($"[UseComputePlugin] VoxelTracer SDF grid too large: {nx}x{ny}x{nz} = {totalVoxels}. Skipping.");
-                ;
             _sdfDimX = _sdfDimY = _sdfDimZ = 0;
             return;
         }
 
+        // Don't issue a second request while one is still in-flight — otherwise
+        // we'd churn GPU work and waste memory. The interval throttle still
+        // governs how often this is called; this just guards against a slow GPU.
+        if (_sdfReadbackPending) return;
+
+        // Capture the metadata that goes with this snapshot so the upload uses
+        // the geometry the readback was sampled against, not whatever the
+        // voxelizer happens to have when the request completes.
+        _sdfPendingDimX = nx;
+        _sdfPendingDimY = ny;
+        _sdfPendingDimZ = nz;
+        _sdfPendingOrigin = voxelTracerRef.ActiveGridMin;
+        _sdfPendingCellSize = voxelTracerRef.ActiveVoxelSize;
+
+        // Single async request for the whole 3D texture (all slices in one shot).
+        // Zero stalls, zero per-slice ReadPixels traffic, zero per-call allocations.
+        _sdfReadbackRequest = UnityEngine.Rendering.AsyncGPUReadback.Request(sdfTex);
+        _sdfReadbackPending = true;
+    }
+
+    void PollSDFReadback()
+    {
+        if (!_sdfReadbackPending) return;
+        if (!_sdfReadbackRequest.done) return;
+
+        _sdfReadbackPending = false;
+        if (_sdfReadbackRequest.hasError) return;
+
+        int nx = _sdfPendingDimX;
+        int ny = _sdfPendingDimY;
+        int nz = _sdfPendingDimZ;
+        int totalVoxels = nx * ny * nz;
+        if (totalVoxels <= 0) return;
+
+        const int HEADER = 4;
+        int needed = HEADER + totalVoxels;
+        if (_sdfData == null || _sdfData.Length != needed)
+            _sdfData = new float[needed];
+
+        _sdfData[0] = _sdfPendingOrigin.x;
+        _sdfData[1] = _sdfPendingOrigin.y;
+        _sdfData[2] = _sdfPendingOrigin.z;
+        _sdfData[3] = 0f;
+
+        // For 3D textures, AsyncGPUReadback returns one layer (slice) per GetData call.
+        // We must iterate every depth slice — calling GetData<T>() with no args only
+        // returns slice 0, which would silently leave the rest of the SDF as zeros
+        // (and therefore make the shader think every particle is on the surface).
+        int sliceCount = _sdfReadbackRequest.layerCount;
+        if (sliceCount <= 0) sliceCount = nz; // fallback for older Unity versions
+        int sliceSize = nx * ny;
+        float skin = sdfSkinOffset;
+
+        for (int z = 0; z < nz && z < sliceCount; z++)
+        {
+            var slice = _sdfReadbackRequest.GetData<float>(z);
+            int n = Mathf.Min(slice.Length, sliceSize);
+            int dstBase = HEADER + z * sliceSize;
+            for (int i = 0; i < n; i++)
+                _sdfData[dstBase + i] = slice[i] - skin;
+        }
+
+        // Commit the snapshot's metadata only after we have data to back it.
         _sdfDimX = nx;
         _sdfDimY = ny;
         _sdfDimZ = nz;
-        _sdfOrigin = voxelTracerRef.ActiveGridMin;
-        _sdfCellSize = voxelTracerRef.ActiveVoxelSize;
-
-        // Synchronous slice-by-slice readback of the 3D SDF texture
-        float[] rawSdf = ReadBack3DTexture(sdfTex, nx, ny, nz);
-        UploadSDFWithHeader(rawSdf);
-
-        if (verbose)
-        {
-            // Debug.Log($"[UseComputePlugin] VoxelTracer SDF uploaded: {_sdfDimX}x{_sdfDimY}x{_sdfDimZ}, " +
-            //           $"origin={_sdfOrigin}, voxelSize={_sdfCellSize:F3}");
-        }
-    }
-
-    static float[] ReadBack3DTexture(RenderTexture rt, int nx, int ny, int nz)
-    {
-        float[] data = new float[nx * ny * nz];
-        var tempRT = RenderTexture.GetTemporary(nx, ny, 0, RenderTextureFormat.RFloat);
-        var tempTex = new Texture2D(nx, ny, TextureFormat.RFloat, false);
-
-        for (int z = 0; z < nz; z++)
-        {
-            Graphics.CopyTexture(rt, z, 0, tempRT, 0, 0);
-            var prev = RenderTexture.active;
-            RenderTexture.active = tempRT;
-            tempTex.ReadPixels(new Rect(0, 0, nx, ny), 0, 0, false);
-            tempTex.Apply(false);
-            RenderTexture.active = prev;
-
-            var raw = tempTex.GetRawTextureData<float>();
-            for (int i = 0; i < nx * ny; i++)
-                data[z * (nx * ny) + i] = raw[i];
-        }
-
-        RenderTexture.ReleaseTemporary(tempRT);
-        Destroy(tempTex);
-        return data;
-    }
-
-    void UploadSDFWithHeader(float[] rawSdf)
-    {
-        // Prepend 4-float header: [originX, originY, originZ, 0]
-        const int HEADER = 4;
-        _sdfData = new float[HEADER + rawSdf.Length];
-        _sdfData[0] = _sdfOrigin.x;
-        _sdfData[1] = _sdfOrigin.y;
-        _sdfData[2] = _sdfOrigin.z;
-        _sdfData[3] = 0f;
-        Array.Copy(rawSdf, 0, _sdfData, HEADER, rawSdf.Length);
+        _sdfOrigin = _sdfPendingOrigin;
+        _sdfCellSize = _sdfPendingCellSize;
 
         SetSDFData(_sdfData, _sdfData.Length);
         _sdfUploaded = true;
-
-        if (verbose && sdfSource == SDFSource.Analytic)
-            // Debug.Log($"[UseComputePlugin] Analytic SDF uploaded: {_sdfDimX}x{_sdfDimY}x{_sdfDimZ} = {rawSdf.Length} voxels, voxelSize={_sdfCellSize}");
-            ;
     }
+
+    // Drain-zone change-detection state to skip the per-frame native upload.
+    private DrainZoneNative[] _drainPrevSnapshot;
 
     void UploadDrainZones()
     {
@@ -1009,6 +1036,25 @@ public class UseComputePlugin : MonoBehaviour
             _drainNatives[i].radius = _cachedDrains[i].drainRadius;
             _drainNatives[i].active = 1u;
         }
+
+        // Skip the native upload if nothing changed since last call (drains rarely move).
+        if (_drainPrevSnapshot == null) _drainPrevSnapshot = new DrainZoneNative[MAX_DRAIN_ZONES];
+        bool changed = false;
+        for (int i = 0; i < MAX_DRAIN_ZONES; i++)
+        {
+            ref var a = ref _drainNatives[i];
+            ref var b = ref _drainPrevSnapshot[i];
+            if (a.active != b.active || a.radius != b.radius ||
+                a.posX != b.posX || a.posY != b.posY || a.posZ != b.posZ)
+            {
+                changed = true;
+                break;
+            }
+        }
+        if (!changed) return;
+
+        for (int i = 0; i < MAX_DRAIN_ZONES; i++)
+            _drainPrevSnapshot[i] = _drainNatives[i];
 
         SetDrainZones(_drainNatives, MAX_DRAIN_ZONES);
     }
@@ -1056,7 +1102,7 @@ public class UseComputePlugin : MonoBehaviour
         public float viscosity;
         public float smoothingRadius;
         public float sdfVoxelSize;
-        public float _pad1;
+        public float sdfFriction;
         public Vector3 gravity;
         public float particleMass;
         public Vector3 boundsMin;
@@ -1073,28 +1119,30 @@ public class UseComputePlugin : MonoBehaviour
         public float interactionStrength;
         public Vector3 interactionPos;
         public float interactionRadius;
-        public float  thermalDiffusivity;
-        public float  ambientTemperature;
-        public float  coolingRate;
-        public float  boilingTemperature;
-        public float  latentHeat;
-        public float  gasRestDensity;
-        public float  gasViscosity;
-        public float  gasBuoyancy;
-        public float  pressureBoilingScale;
-        public float  cohesionStrength;
+        public float thermalDiffusivity;
+        public float ambientTemperature;
+        public float coolingRate;
+        public float boilingTemperature;
+        public float latentHeat;
+        public float gasRestDensity;
+        public float gasViscosity;
+        public float gasBuoyancy;
+        public float pressureBoilingScale;
+        public float cohesionStrength;
+        public float tensileK;
+        public float splashRadius;
     }
 
-    
+
     [StructLayout(LayoutKind.Sequential)]
     public struct HeatSource
     {
         public float posX, posY, posZ;  // world-space position
         public float radius;            // radius of influence
         public float temperature;       // target temperature
-        public uint  active;            // 1 = active, 0 = inactive slot
-        public uint  _pad0;
-        public uint  _pad1;
+        public uint active;            // 1 = active, 0 = inactive slot
+        public uint _pad0;
+        public uint _pad1;
     }
 
     [StructLayout(LayoutKind.Sequential)]
@@ -1102,9 +1150,176 @@ public class UseComputePlugin : MonoBehaviour
     {
         public float posX, posY, posZ;
         public float radius;
-        public uint  active;
-        public uint  _pad0;
-        public uint  _pad1;
-        public uint  _pad2;
+        public uint active;
+        public uint _pad0;
+        public uint _pad1;
+        public uint _pad2;
+    }
+
+    // ================================================================
+    // Boundary Particles
+    // ================================================================
+
+    void GenerateAndUploadBoundaryParticles()
+    {
+        if (voxelTracerRef == null || !voxelTracerRef.IsReady)
+            return; // Retry next frame
+
+        var colliders = VoxelTracerSystem.BoundaryColliders;
+        if (colliders == null || colliders.Count == 0)
+            return; // Retry next frame until VoxelBoundaryCollider registers
+
+        bool useNormalFilter;
+        Vector3 filterDirection;
+        float filterThreshold;
+        Bounds[] boundsArr = CollectBoundaryBounds(colliders, out useNormalFilter, out filterDirection, out filterThreshold);
+        if (boundsArr == null) return;
+
+        List<Vector3> surfacePositions = voxelTracerRef.GetSurfaceVoxelPositions(
+            smoothingRadius, boundsArr, useNormalFilter, filterDirection, filterThreshold);
+
+        if (surfacePositions.Count == 0) return; // Voxelizer may not have run yet
+
+        const int MAX_ELEMENTS = 262144;
+        int maxBoundary = MAX_ELEMENTS - particleCount;
+        int boundarySlots = Mathf.Min(surfacePositions.Count, maxBoundary);
+        if (boundarySlots <= 0)
+        {
+            Debug.LogWarning("[Boundary] Cannot fit boundary particles — buffer at max capacity.");
+            _boundaryInitialized = true;
+            return;
+        }
+
+        int newTotal = particleCount + boundarySlots;
+        _boundaryStartIndex = particleCount;
+        _boundaryCount = boundarySlots;
+
+        // Build the boundary particles
+        int[] indices = new int[_boundaryCount];
+        Particle[] boundaryData = new Particle[_boundaryCount];
+        for (int i = 0; i < _boundaryCount; i++)
+        {
+            int idx = _boundaryStartIndex + i;
+            indices[i] = idx;
+            boundaryData[i] = new Particle
+            {
+                position = surfacePositions[i],
+                density = restDensity,
+                velocity = Vector3.zero,
+                pressure = 0f,
+                acceleration = Vector3.zero,
+                mass = particleMass,
+                temperature = 0f,
+                phase = 2,
+                latentHeatAccum = 0f,
+                fixedId = idx,
+            };
+        }
+
+        // Expand the native buffer: read current state, append boundary, re-upload
+        Particle[] allParticles = new Particle[newTotal];
+        // Copy current fluid particles from the snapshot (still valid at this point)
+        if (InitialParticleSnapshot != null && InitialParticleSnapshot.Length >= particleCount)
+            Array.Copy(InitialParticleSnapshot, allParticles, particleCount);
+        else
+            GetComputeResult(allParticles, particleCount);
+
+        // Write boundary particles into the tail
+        for (int i = 0; i < _boundaryCount; i++)
+            allParticles[_boundaryStartIndex + i] = boundaryData[i];
+
+        // Re-upload expanded buffer
+        particleCount = newTotal;
+        readbackData = new Particle[newTotal];
+        SetComputeData(allParticles, newTotal);
+        _boundaryInitialized = true;
+
+        if (verbose)
+            Debug.Log($"[Boundary] Generated {_boundaryCount} boundary particles from {surfacePositions.Count} surface voxels. Total: {particleCount}");
+    }
+
+    void RefreshBoundaryParticlePositions()
+    {
+        if (voxelTracerRef == null || !voxelTracerRef.IsReady || _boundaryCount == 0)
+            return;
+
+        var colliders = VoxelTracerSystem.BoundaryColliders;
+        if (colliders == null || colliders.Count == 0) return;
+
+        bool useNormalFilter;
+        Vector3 filterDirection;
+        float filterThreshold;
+        Bounds[] boundsArr = CollectBoundaryBounds(colliders, out useNormalFilter, out filterDirection, out filterThreshold);
+        if (boundsArr == null) return;
+
+        List<Vector3> surfacePositions = voxelTracerRef.GetSurfaceVoxelPositions(
+            smoothingRadius, boundsArr, useNormalFilter, filterDirection, filterThreshold);
+
+        int updateCount = Mathf.Min(surfacePositions.Count, _boundaryCount);
+        int[] indices = new int[updateCount];
+        Particle[] patchData = new Particle[updateCount];
+
+        for (int i = 0; i < updateCount; i++)
+        {
+            int idx = _boundaryStartIndex + i;
+            indices[i] = idx;
+            patchData[i] = new Particle
+            {
+                position = surfacePositions[i],
+                density = restDensity,
+                velocity = Vector3.zero,
+                pressure = 0f,
+                acceleration = Vector3.zero,
+                mass = particleMass,
+                temperature = 0f,
+                phase = 2,
+                latentHeatAccum = 0f,
+                fixedId = idx,
+            };
+        }
+
+        PatchParticles(indices, patchData, updateCount);
+    }
+
+    [DllImport(PluginName)]
+    private static extern void PatchParticles([In] int[] indices, [In] Particle[] data, int count);
+
+    /// <summary>Build the boundary collider Bounds[] in a reusable scratch array,
+    /// returning null if no valid colliders were found. Avoids per-frame allocations.</summary>
+    Bounds[] CollectBoundaryBounds(IReadOnlyCollection<VoxelBoundaryCollider> colliders,
+        out bool useNormalFilter, out Vector3 filterDirection, out float filterThreshold)
+    {
+        useNormalFilter = false;
+        filterDirection = Vector3.up;
+        filterThreshold = 0f;
+
+        _boundaryBoundsScratch.Clear();
+        float expand = voxelTracerRef.voxelSize;
+        foreach (var bc in colliders)
+        {
+            if (bc == null) continue;
+            var rend = bc.GetComponent<Renderer>();
+            if (rend != null)
+            {
+                var b = rend.bounds;
+                b.Expand(expand);
+                _boundaryBoundsScratch.Add(b);
+            }
+            if (bc.useNormalFilter && !useNormalFilter)
+            {
+                useNormalFilter = true;
+                filterDirection = bc.filterDirection;
+                filterThreshold = bc.filterThreshold;
+            }
+        }
+
+        int n = _boundaryBoundsScratch.Count;
+        if (n == 0) return null;
+
+        if (_boundaryBoundsArray == null || _boundaryBoundsArray.Length != n)
+            _boundaryBoundsArray = new Bounds[n];
+        for (int i = 0; i < n; i++)
+            _boundaryBoundsArray[i] = _boundaryBoundsScratch[i];
+        return _boundaryBoundsArray;
     }
 }

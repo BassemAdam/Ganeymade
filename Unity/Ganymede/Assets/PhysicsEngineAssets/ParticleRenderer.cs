@@ -17,6 +17,8 @@ public class ParticleRenderer : MonoBehaviour
     private const float DensityMaxDefault = 300f;
     private const float SpeedMinDefault = 0f;
     private const float SpeedMaxDefault = 5f;
+    private const float NeighborCountMinDefault = 0f;
+    private const float NeighborCountMaxDefault = 30f;
 
     public enum VisualizedField
     {
@@ -24,6 +26,7 @@ public class ParticleRenderer : MonoBehaviour
         Pressure = 1,
         Density = 2,
         Speed = 3,
+        NeighborCount = 4,
     }
 
 #if (PLATFORM_IOS || PLATFORM_TVOS || PLATFORM_BRATWURST || PLATFORM_SWITCH) && !UNITY_EDITOR
@@ -160,6 +163,17 @@ public class ParticleRenderer : MonoBehaviour
         if (computePlugin != null && computePlugin.perfTestMode)
             return;
 
+        // Auto-resize buffers if particle count changed (e.g. boundary particles appended)
+        int currentCount = computePlugin.particleCount;
+        if (currentCount != readbackData.Length)
+        {
+            particleBuffer.Release();
+            readbackData = new Particle[currentCount];
+            particleBuffer = new ComputeBuffer(currentCount, Marshal.SizeOf<Particle>());
+            args[1] = (uint)currentCount;
+            argsBuffer.SetData(args);
+        }
+
         // Read the full particle buffer — the shader handles dormant particles
         // (phase < 0) by collapsing them to w=0 (point at infinity, no rasterization).
         GetComputeResult(readbackData, readbackData.Length);
@@ -225,6 +239,11 @@ public class ParticleRenderer : MonoBehaviour
             case VisualizedField.Speed:
                 minValue = SpeedMinDefault;
                 maxValue = SpeedMaxDefault;
+                break;
+
+            case VisualizedField.NeighborCount:
+                minValue = NeighborCountMinDefault;
+                maxValue = NeighborCountMaxDefault;
                 break;
 
             case VisualizedField.Temperature:

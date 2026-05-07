@@ -27,8 +27,8 @@ Material:
   m_ValidKeywords: []
   m_InvalidKeywords: []
   m_LightmapFlags: 4
-  m_EnableInstancingVariants: 1
-  m_DoubleSidedGI: 1
+  m_EnableInstancingVariants: 0
+  m_DoubleSidedGI: 0
   m_CustomRenderQueue: -1
   stringTagMap: {}
   disabledShaderPasses:
@@ -39,24 +39,17 @@ Material:
     m_TexEnvs: []
     m_Ints: []
     m_Floats:
-    - _AbsorptionRate: 0.28
-    - _BleedCompensation: 0.615
-    - _BlurRadius: 0.0669
-    - _BlurStrength: 0.0111
-    - _DepthScale: 0.47
-    - _FoamDistance: 1.912
-    - _FoamSharpness: 4.98
-    - _FresnelPower: 10
-    - _IOR: 1.556
-    - _MinAlpha: 0.881
-    - _ReflectionStrength: 0.934
-    - _RefractionStrength: 0.268
-    - _Smoothness: 0.97
-    - _SpecularStrength: 4.79
+    - _AbsorptionRate: 0.23
+    - _BlurRadius: 0.08
+    - _FresnelPower: 7.93
+    - _MinAlpha: 1
+    - _ReflectionStrength: 0.5
+    - _RefractionStrength: 0.05
+    - _Smoothness: 0.853
+    - _SpecularStrength: 1.5
     m_Colors:
-    - _DeepColor: {r: 0.07289071, g: 0.11758502, b: 0.24528301, a: 1}
-    - _FoamColor: {r: 1, g: 1, b: 1, a: 1}
-    - _ShallowColor: {r: 0.12109872, g: 0.98742133, b: 0.98742133, a: 1}
+    - _DeepColor: {r: 0.02, g: 0.049999982, b: 0.14999998, a: 1}
+    - _ShallowColor: {r: 0.29999998, g: 0.8, b: 0.8, a: 1}
     - _WaterColor: {r: 0.09999997, g: 0.39999998, b: 0.6, a: 1}
   m_BuildTextureStacks: []
   m_AllowLocking: 1

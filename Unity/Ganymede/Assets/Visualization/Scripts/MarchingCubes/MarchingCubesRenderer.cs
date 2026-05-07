@@ -159,6 +159,8 @@ public class MarchingCubesRenderer : IDisposable
         // Ensure material instance
         if (_matInstance == null)
             _matInstance = new Material(_sourceMaterial);
+        else
+            _matInstance.CopyPropertiesFromMaterial(_sourceMaterial);
 
         _matInstance.EnableKeyword(KW_Procedural);
         _matInstance.SetBuffer(PID_VertexBuffer, _vertexBuffer);

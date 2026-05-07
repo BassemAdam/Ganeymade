@@ -7,7 +7,7 @@
        float  viscosity;
        float  smoothingRadius;
        float  sdfVoxelSize;    // SDF grid cell size (0 = no SDF)
-       float  _pad1;
+       float  sdfFriction;     // 0 = no friction near SDF, 1 = full friction
        float3 gravity;
        float  particleMass;
        float3 boundsMin;
@@ -34,6 +34,8 @@
        float  gasBuoyancy;            // upward acceleration for gas particles
        float  pressureBoilingScale;   // how much local pressure raises the effective boiling point
        float  cohesionStrength;       // attractive force between nearby liquid particles (surface tension)
+       float  tensileK;               // Monaghan tensile correction strength (0 = clamp negative pressure)
+       float  splashRadius;            // smaller radius for neighbor counting (splash detection)
    };
 
    struct Particle
@@ -48,6 +50,10 @@
        int    phase;
        float  latentHeatAccum;   // energy absorbed/released during phase change
        int    fixedId;
+       float  neighborCount;     // unweighted neighbor count within splashRadius
+       float  _pad0;
+       float  _pad1;
+       float  _pad2;
    };
 
    struct HeatSource

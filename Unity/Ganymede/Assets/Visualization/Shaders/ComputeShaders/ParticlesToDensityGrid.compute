@@ -32,8 +32,12 @@ struct Particle
     float  temperature;
     int    phase;
 
+    float  latentHeatAccum;
+    float  fixedId;
+    float  neighborCount;
     float  _pad0;
     float  _pad1;
+    float  _pad2;
 };
 
 StructuredBuffer<Particle>  _ParticleBuffer;
@@ -60,17 +64,6 @@ float  _AdaptiveDensityBulk;    // SPH density value treated as "fully bulk"    
 float  _AdaptiveDensityCurve;   // gamma applied to t before lerp. 1 = linear, <1 exaggerates low-density variation, >1 exaggerates high-density variation
 int    _KernelRadiusVoxels;   // loop bound covering the LARGER of the two radii (bulk). Falloff zeroes smaller-h splats automatically.
 float2 _InvDensityScaleRG;    // x = liquid scale, y = vapour scale (vapour rest density is lower)
-
-// ── Splash rejection (debug/test) ───────────────────────────────────────────
-// LIQUID-ONLY (phase 0). A particle is fully skipped (contributes nothing to the
-// density grid) if either condition is met:
-//   p.density < _SplashRejectDensityBelow      (isolated / low-neighbor → likely splash)
-//   length(p.velocity) > _SplashRejectSpeedAbove (fast → likely splash)
-// Each test is disabled when its threshold is <= 0, so set both to 0 to keep
-// the previous behaviour. Vapour particles are always unaffected.
-float  _SplashRejectDensityBelow;
-float  _SplashRejectSpeedAbove;
-// ─────────────────────────────────────────────────────────────────────────────
 
 // ── Gaussian blur params (vapour) ───────────────────────────────────────────
 int    _BlurRadius;              // neighborhood half-size in voxels (1 = 3^3, 2 = 5^3, etc.)
@@ -361,8 +354,8 @@ void BlurVapourDensity(uint3 id : SV_DispatchThreadID)
 // Both MarchingCubesCompute and WaterRaymarching sample this instead of computing
 // per-vertex / per-fragment gradients at runtime.
 //
-// 4-voxel half-span matches the raymarcher's eps = 4/gridSize for consistent
-// smoothness across both renderers on a 128^3 volume.
+// Use a slightly wider stencil than a 1-voxel central difference so the baked
+// fallback normals are smoother and less prone to voxel-to-voxel flip noise.
 // ─────────────────────────────────────────────────────────────────────────────
 [numthreads(8, 8, 8)]
 void BakeNormals(uint3 id : SV_DispatchThreadID)
@@ -381,9 +374,10 @@ void BakeNormals(uint3 id : SV_DispatchThreadID)
     // Central-difference gradient of the liquid density field (R channel).
     // Uses out-of-bounds=0 (air) instead of clamping so that liquid touching the
     // volume boundary still gets a correct outward normal on all six faces.
-    float dx = SAMPLE_OR_AIR(c + int3(1,0,0)) - SAMPLE_OR_AIR(c - int3(1,0,0));
-    float dy = SAMPLE_OR_AIR(c + int3(0,1,0)) - SAMPLE_OR_AIR(c - int3(0,1,0));
-    float dz = SAMPLE_OR_AIR(c + int3(0,0,1)) - SAMPLE_OR_AIR(c - int3(0,0,1));
+    const int normalHalfSpan = 2;
+    float dx = SAMPLE_OR_AIR(c + int3(normalHalfSpan,0,0)) - SAMPLE_OR_AIR(c - int3(normalHalfSpan,0,0));
+    float dy = SAMPLE_OR_AIR(c + int3(0,normalHalfSpan,0)) - SAMPLE_OR_AIR(c - int3(0,normalHalfSpan,0));
+    float dz = SAMPLE_OR_AIR(c + int3(0,0,normalHalfSpan)) - SAMPLE_OR_AIR(c - int3(0,0,normalHalfSpan));
 
     float3 grad = float3(dx, dy, dz);
     float  len  = length(grad);

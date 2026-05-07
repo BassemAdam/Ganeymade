@@ -48,6 +48,9 @@ public sealed class VoxelTracerSystem : MonoBehaviour
     public bool includeTerrains = true;
     [Range(1, 32)] public int terrainSampleStep = 4;
 
+    [Tooltip("Only objects on these layers are voxelized. Set to 'Everything' to include all layers (default behavior).")]
+    public LayerMask voxelizeLayers = ~0; // default: Everything
+
     [Header("Material Properties")]
     [Tooltip("Default temperature for filled solid voxels (ambient)")]
     public float defaultSolidTemperature = 25f;
@@ -183,6 +186,7 @@ public sealed class VoxelTracerSystem : MonoBehaviour
 
     public static void RegisterDynamic(VoxelDynamic vd) { if (vd != null) _registeredDynamics.Add(vd); }
     public static void UnregisterDynamic(VoxelDynamic vd) { _registeredDynamics.Remove(vd); }
+    public static IReadOnlyCollection<VoxelDynamic> RegisteredDynamics => _registeredDynamics;
     public static void RegisterSkin(SkinnedMeshRenderer smr) { if (smr != null) _registeredSkins.Add(smr); }
     public static void UnregisterSkin(SkinnedMeshRenderer smr) { _registeredSkins.Remove(smr); }
     public static void RegisterHeatSource(VoxelHeatSource hs) { if (hs != null) _registeredHeatSources.Add(hs); }
@@ -195,6 +199,12 @@ public sealed class VoxelTracerSystem : MonoBehaviour
     public static void UnregisterSolidMaterial(VoxelSolidMaterial sm) { _registeredSolidMaterials.Remove(sm); }
     public static void RegisterFluidMaterial(VoxelFluidMaterial fm) { if (fm != null) _registeredFluidMaterials.Add(fm); }
     public static void UnregisterFluidMaterial(VoxelFluidMaterial fm) { _registeredFluidMaterials.Remove(fm); }
+
+    // Boundary collider registration
+    static readonly HashSet<VoxelBoundaryCollider> _registeredBoundaryColliders = new HashSet<VoxelBoundaryCollider>();
+    public static IReadOnlyCollection<VoxelBoundaryCollider> BoundaryColliders => _registeredBoundaryColliders;
+    public static void RegisterBoundaryCollider(VoxelBoundaryCollider bc) { if (bc != null) _registeredBoundaryColliders.Add(bc); }
+    public static void UnregisterBoundaryCollider(VoxelBoundaryCollider bc) { _registeredBoundaryColliders.Remove(bc); }
 
     // Dirty flags
     bool _staticDirty = true;      // rebuild static tris + re-voxelize static layer
@@ -232,6 +242,10 @@ public sealed class VoxelTracerSystem : MonoBehaviour
 
         VoxelizeFrame();
 
+        // Pump async voxel-buffer readback so the cached snapshot used by
+        // boundary-particle generation stays fresh without ever stalling.
+        PollVoxelReadback();
+
         // Press F3 during play mode to dump temperature & diffusivity stats
         if (Input.GetKeyDown(KeyCode.F3))
             DebugPrintMaterialTextures();
@@ -252,6 +266,181 @@ public sealed class VoxelTracerSystem : MonoBehaviour
         _staticDirty = true;
         RebuildStatic();
         VoxelizeFrame();
+    }
+
+    // ================================================================
+    // Boundary Particle Surface Extraction
+    // ================================================================
+
+    // Async voxel-buffer snapshot. The CPU never blocks on the GPU; instead the
+    // most recent completed snapshot is reused until a fresh one arrives. A snapshot
+    // is at most one frame stale relative to a normal interval-driven boundary refresh.
+    UnityEngine.Rendering.AsyncGPUReadbackRequest _voxelReadbackRequest;
+    bool _voxelReadbackPending;
+    uint[] _voxelSnapshot;          // last completed snapshot (sized _totalVoxels at request time)
+    int _voxelSnapshotNx, _voxelSnapshotNy, _voxelSnapshotNz;
+    Vector3 _voxelSnapshotMin;
+    float _voxelSnapshotVoxelSize;
+    bool _voxelSnapshotValid;
+
+    // Reused output buffer (avoids per-call List allocation).
+    readonly List<Vector3> _surfacePositionsCache = new List<Vector3>(4096);
+
+    /// <summary>True once at least one async voxel-buffer snapshot has completed.</summary>
+    public bool HasSurfaceSnapshot => _voxelSnapshotValid;
+
+    /// <summary>
+    /// Fires an async readback of the current voxel buffer if none is in flight.
+    /// Safe to call every frame — work is automatically coalesced.
+    /// </summary>
+    public void RequestSurfaceVoxelSnapshot()
+    {
+        if (_voxelBuffer == null || _totalVoxels == 0 || _nx == 0) return;
+        if (_voxelReadbackPending) return;
+
+        // Resize backing array only when grid dimensions change.
+        if (_voxelSnapshot == null || _voxelSnapshot.Length != _totalVoxels)
+            _voxelSnapshot = new uint[_totalVoxels];
+
+        // Capture current grid metadata so a stale snapshot doesn't get sampled
+        // against a different grid layout than the one it was taken from.
+        _voxelSnapshotNx = _nx;
+        _voxelSnapshotNy = _ny;
+        _voxelSnapshotNz = _nz;
+        _voxelSnapshotMin = _activeMin;
+        _voxelSnapshotVoxelSize = voxelSize;
+
+        _voxelReadbackRequest = UnityEngine.Rendering.AsyncGPUReadback.Request(_voxelBuffer);
+        _voxelReadbackPending = true;
+    }
+
+    void PollVoxelReadback()
+    {
+        if (!_voxelReadbackPending) return;
+        if (!_voxelReadbackRequest.done) return;
+
+        _voxelReadbackPending = false;
+        if (_voxelReadbackRequest.hasError)
+            return;
+
+        var data = _voxelReadbackRequest.GetData<uint>();
+        if (data.Length != _voxelSnapshot.Length)
+            _voxelSnapshot = new uint[data.Length];
+        // Copy out — the NativeArray is invalidated after this callback frame.
+        data.CopyTo(_voxelSnapshot);
+        _voxelSnapshotValid = true;
+    }
+
+    /// <summary>
+    /// Returns world-space positions of surface voxels, optionally filtered by bounds and normal direction.
+    /// Uses the most recent async voxel-buffer snapshot — never blocks the GPU pipeline.
+    /// On the very first call (before any snapshot has completed) this returns an empty list and
+    /// kicks off an async request; callers that retry next frame (e.g. boundary particle init)
+    /// will succeed once data arrives.
+    /// </summary>
+    public List<Vector3> GetSurfaceVoxelPositions(float spacing, Bounds[] colliderBounds = null,
+        bool useNormalFilter = false, Vector3 filterDirection = default, float filterThreshold = 0f)
+    {
+        // Make sure we have a request in flight so the next call can return data.
+        RequestSurfaceVoxelSnapshot();
+        PollVoxelReadback();
+
+        _surfacePositionsCache.Clear();
+        if (!_voxelSnapshotValid) return _surfacePositionsCache;
+
+        // Use the snapshot's captured grid metadata (in case the grid resized
+        // after the readback was issued).
+        int snx = _voxelSnapshotNx;
+        int sny = _voxelSnapshotNy;
+        int snz = _voxelSnapshotNz;
+        Vector3 snapMin = _voxelSnapshotMin;
+        float snapVoxel = _voxelSnapshotVoxelSize;
+        uint[] voxels = _voxelSnapshot;
+
+        int step = 1;
+        if (spacing > snapVoxel && snapVoxel > 0f)
+            step = Mathf.Max(1, Mathf.RoundToInt(spacing / snapVoxel));
+
+        bool filterByBounds = colliderBounds != null && colliderBounds.Length > 0;
+        Vector3 filterDir = useNormalFilter ? filterDirection.normalized : Vector3.zero;
+        float halfVoxel = snapVoxel * 0.5f;
+
+        for (int z = 0; z < snz; z += step)
+            for (int y = 0; y < sny; y += step)
+                for (int x = 0; x < snx; x += step)
+                {
+                    int idx = z * (snx * sny) + y * snx + x;
+                    if ((voxels[idx] & 1u) == 0) continue; // bit 0 = surface voxel
+
+                    Vector3 worldPos = snapMin + new Vector3(
+                        x * snapVoxel + halfVoxel,
+                        y * snapVoxel + halfVoxel,
+                        z * snapVoxel + halfVoxel);
+
+                    if (filterByBounds)
+                    {
+                        bool inside = false;
+                        for (int b = 0; b < colliderBounds.Length; b++)
+                        {
+                            if (colliderBounds[b].Contains(worldPos))
+                            { inside = true; break; }
+                        }
+                        if (!inside) continue;
+                    }
+
+                    if (useNormalFilter)
+                    {
+                        Vector3 normal = EstimateSurfaceNormalSnapshot(voxels, snx, sny, snz, x, y, z);
+                        if (Vector3.Dot(normal, filterDir) < filterThreshold)
+                            continue;
+                    }
+
+                    _surfacePositionsCache.Add(worldPos);
+                }
+        return _surfacePositionsCache;
+    }
+
+    Vector3 EstimateSurfaceNormalSnapshot(uint[] voxels, int snx, int sny, int snz, int x, int y, int z)
+    {
+        float xn = SampleOccupancySnapshot(voxels, snx, sny, snz, x - 1, y, z);
+        float xp = SampleOccupancySnapshot(voxels, snx, sny, snz, x + 1, y, z);
+        float yn = SampleOccupancySnapshot(voxels, snx, sny, snz, x, y - 1, z);
+        float yp = SampleOccupancySnapshot(voxels, snx, sny, snz, x, y + 1, z);
+        float zn = SampleOccupancySnapshot(voxels, snx, sny, snz, x, y, z - 1);
+        float zp = SampleOccupancySnapshot(voxels, snx, sny, snz, x, y, z + 1);
+        Vector3 n = new Vector3(xn - xp, yn - yp, zn - zp);
+        float mag = n.magnitude;
+        return mag > 0.001f ? n / mag : Vector3.up;
+    }
+
+    float SampleOccupancySnapshot(uint[] voxels, int snx, int sny, int snz, int x, int y, int z)
+    {
+        if (x < 0 || x >= snx || y < 0 || y >= sny || z < 0 || z >= snz)
+            return 0f;
+        int idx = z * (snx * sny) + y * snx + x;
+        return (voxels[idx] & 1u) != 0 ? 1f : 0f;
+    }
+
+    Vector3 EstimateSurfaceNormal(uint[] voxels, int x, int y, int z)
+    {
+        float xn = SampleOccupancy(voxels, x - 1, y, z);
+        float xp = SampleOccupancy(voxels, x + 1, y, z);
+        float yn = SampleOccupancy(voxels, x, y - 1, z);
+        float yp = SampleOccupancy(voxels, x, y + 1, z);
+        float zn = SampleOccupancy(voxels, x, y, z - 1);
+        float zp = SampleOccupancy(voxels, x, y, z + 1);
+        // Normal points from occupied toward empty
+        Vector3 n = new Vector3(xn - xp, yn - yp, zn - zp);
+        float mag = n.magnitude;
+        return mag > 0.001f ? n / mag : Vector3.up;
+    }
+
+    float SampleOccupancy(uint[] voxels, int x, int y, int z)
+    {
+        if (x < 0 || x >= _nx || y < 0 || y >= _ny || z < 0 || z >= _nz)
+            return 0f;
+        int idx = z * (_nx * _ny) + y * _nx + x;
+        return (voxels[idx] & 1u) != 0 ? 1f : 0f;
     }
 
     // ================================================================
@@ -643,6 +832,7 @@ public sealed class VoxelTracerSystem : MonoBehaviour
             foreach (var mf in filters)
             {
                 if (mf == null || !mf.gameObject.activeInHierarchy) continue;
+                if ((voxelizeLayers.value & (1 << mf.gameObject.layer)) == 0) continue;
                 var mr = mf.GetComponent<MeshRenderer>();
                 if (mr == null || !mr.enabled) continue;
                 if (mf.sharedMesh == null) continue;
@@ -667,6 +857,7 @@ public sealed class VoxelTracerSystem : MonoBehaviour
             foreach (var smr in skins)
             {
                 if (smr == null || !smr.enabled || !smr.gameObject.activeInHierarchy) continue;
+                if ((voxelizeLayers.value & (1 << smr.gameObject.layer)) == 0) continue;
                 _bakedMesh.Clear();
                 try { smr.BakeMesh(_bakedMesh); } catch { continue; }
                 AppendMesh(_bakedMesh, smr.transform.localToWorldMatrix, _dynamicTriList);
@@ -680,6 +871,7 @@ public sealed class VoxelTracerSystem : MonoBehaviour
             foreach (var t in terrains)
             {
                 if (t == null || !t.isActiveAndEnabled) continue;
+                if ((voxelizeLayers.value & (1 << t.gameObject.layer)) == 0) continue;
                 AppendTerrain(t, terrainSampleStep, _staticTriList);
             }
         }
@@ -701,6 +893,7 @@ public sealed class VoxelTracerSystem : MonoBehaviour
             foreach (var vd in _registeredDynamics)
             {
                 if (vd == null || !vd.gameObject.activeInHierarchy) continue;
+                if ((voxelizeLayers.value & (1 << vd.gameObject.layer)) == 0) continue;
                 var mf = vd.GetComponent<MeshFilter>();
                 if (mf == null || mf.sharedMesh == null) continue;
                 var mr = vd.GetComponent<MeshRenderer>();
@@ -717,6 +910,7 @@ public sealed class VoxelTracerSystem : MonoBehaviour
             foreach (var smr in _registeredSkins)
             {
                 if (smr == null || !smr.enabled || !smr.gameObject.activeInHierarchy) continue;
+                if ((voxelizeLayers.value & (1 << smr.gameObject.layer)) == 0) continue;
                 _bakedMesh.Clear();
                 try { smr.BakeMesh(_bakedMesh); } catch { continue; }
 
@@ -1174,6 +1368,15 @@ public sealed class VoxelTracerSystem : MonoBehaviour
 
     void ReleaseAll()
     {
+        // Wait for any in-flight async readback to avoid touching freed memory
+        // from a callback after the buffer has been released.
+        if (_voxelReadbackPending)
+        {
+            _voxelReadbackRequest.WaitForCompletion();
+            _voxelReadbackPending = false;
+        }
+        _voxelSnapshotValid = false;
+
         ReleaseBuffers();
         ReleaseTextures();
         ReleaseTriBuffers();
@@ -1308,49 +1511,36 @@ public sealed class VoxelTracerSystem : MonoBehaviour
 
         Vector3 halfVoxelPad = Vector3.one * (voxelSize * 0.5f);
 
-        foreach (var hs in _registeredHeatSources)
+        // Stamp VoxelSolidMaterial objects flagged as permanent heat sources
+        foreach (var sm in _registeredSolidMaterials)
         {
-            if (hs == null || !hs.isActiveAndEnabled || !hs.active) continue;
+            if (sm == null || !sm.isActiveAndEnabled || !sm.isContinuousHeatSource) continue;
+            if (sm.GetComponent<Terrain>() != null) continue;
 
-            if (hs.radius > 0f)
+            var r = sm.GetComponent<Renderer>();
+            if (r != null)
             {
                 _materialSourceList.Add(new MaterialSource
                 {
-                    position = hs.transform.position,
-                    extents = Vector3.one * hs.radius,
-                    temperature = hs.temperature,
+                    position = r.bounds.center,
+                    extents  = r.bounds.extents + Vector3.one * voxelSize,
+                    temperature = sm.temperature,
                     thermalDiffusivity = 0f,
                     phase = 0f,
-                    shape = 1
+                    shape = 0
                 });
             }
             else
             {
-                var r = hs.GetComponent<Renderer>();
-                if (r != null)
+                _materialSourceList.Add(new MaterialSource
                 {
-                    _materialSourceList.Add(new MaterialSource
-                    {
-                        position = r.bounds.center,
-                        extents = r.bounds.extents + Vector3.one * voxelSize,
-                        temperature = hs.temperature,
-                        thermalDiffusivity = 0f,
-                        phase = 0f,
-                        shape = 0
-                    });
-                }
-                else
-                {
-                    _materialSourceList.Add(new MaterialSource
-                    {
-                        position = hs.transform.position,
-                        extents = Vector3.one * 0.5f,
-                        temperature = hs.temperature,
-                        thermalDiffusivity = 0f,
-                        phase = 0f,
-                        shape = 1
-                    });
-                }
+                    position = sm.transform.position,
+                    extents  = Vector3.one * 0.5f,
+                    temperature = sm.temperature,
+                    thermalDiffusivity = 0f,
+                    phase = 0f,
+                    shape = 1
+                });
             }
         }
 
@@ -1404,7 +1594,7 @@ public sealed class VoxelTracerSystem : MonoBehaviour
                 _materialSourceList.Add(new MaterialSource
                 {
                     position = r.bounds.center,
-                    extents = r.bounds.extents + Vector3.one * voxelSize, 
+                    extents = r.bounds.extents + Vector3.one * voxelSize,
                     temperature = sm.temperature,
                     thermalDiffusivity = sm.thermalDiffusivity,
                     phase = 0f,
@@ -1426,51 +1616,51 @@ public sealed class VoxelTracerSystem : MonoBehaviour
         }
 
         // 2) Heat sources
-        foreach (var hs in _registeredHeatSources)
-        {
-            if (hs == null || !hs.isActiveAndEnabled || !hs.active) continue;
+        // foreach (var hs in _registeredHeatSources)
+        // {
+        //     if (hs == null || !hs.isActiveAndEnabled || !hs.active) continue;
 
-            if (hs.radius > 0f)
-            {
-                _materialSourceList.Add(new MaterialSource
-                {
-                    position = hs.transform.position,
-                    extents = Vector3.one * hs.radius,
-                    temperature = hs.temperature,
-                    thermalDiffusivity = 0f,
-                    phase = 0f,
-                    shape = 1
-                });
-            }
-            else
-            {
-                var r = hs.GetComponent<Renderer>();
-                if (r != null)
-                {
-                    _materialSourceList.Add(new MaterialSource
-                    {
-                        position = r.bounds.center,
-                        extents = r.bounds.extents + Vector3.one * voxelSize,
-                        temperature = hs.temperature,
-                        thermalDiffusivity = 0f,
-                        phase = 0f,
-                        shape = 0
-                    });
-                }
-                else
-                {
-                    _materialSourceList.Add(new MaterialSource
-                    {
-                        position = hs.transform.position,
-                        extents = Vector3.one * 0.5f,
-                        temperature = hs.temperature,
-                        thermalDiffusivity = 0f,
-                        phase = 0f,
-                        shape = 1
-                    });
-                }
-            }
-        }
+        //     if (hs.radius > 0f)
+        //     {
+        //         _materialSourceList.Add(new MaterialSource
+        //         {
+        //             position = hs.transform.position,
+        //             extents = Vector3.one * hs.radius,
+        //             temperature = hs.temperature,
+        //             thermalDiffusivity = 0f,
+        //             phase = 0f,
+        //             shape = 1
+        //         });
+        //     }
+        //     else
+        //     {
+        //         var r = hs.GetComponent<Renderer>();
+        //         if (r != null)
+        //         {
+        //             _materialSourceList.Add(new MaterialSource
+        //             {
+        //                 position = r.bounds.center,
+        //                 extents = r.bounds.extents + Vector3.one * voxelSize,
+        //                 temperature = hs.temperature,
+        //                 thermalDiffusivity = 0f,
+        //                 phase = 0f,
+        //                 shape = 0
+        //             });
+        //         }
+        //         else
+        //         {
+        //             _materialSourceList.Add(new MaterialSource
+        //             {
+        //                 position = hs.transform.position,
+        //                 extents = Vector3.one * 0.5f,
+        //                 temperature = hs.temperature,
+        //                 thermalDiffusivity = 0f,
+        //                 phase = 0f,
+        //                 shape = 1
+        //             });
+        //         }
+        //     }
+        // }
 
         // 4) Water bodies
         foreach (var wb in _registeredWaterBodies)
@@ -1537,11 +1727,12 @@ public sealed class VoxelTracerSystem : MonoBehaviour
 
     void Dispatch3D(int kernel, int gx, int gy, int gz)
     {
+        if (gx <= 0 || gy <= 0 || gz <= 0) return;
         coreCS.GetKernelThreadGroupSizes(kernel, out uint tx, out uint ty, out uint tz);
         coreCS.Dispatch(kernel,
-            Mathf.CeilToInt(gx / (float)tx),
-            Mathf.CeilToInt(gy / (float)ty),
-            Mathf.CeilToInt(gz / (float)tz));
+            Mathf.Max(1, Mathf.CeilToInt(gx / (float)tx)),
+            Mathf.Max(1, Mathf.CeilToInt(gy / (float)ty)),
+            Mathf.Max(1, Mathf.CeilToInt(gz / (float)tz)));
     }
 
     void Dispatch2D(int kernel, int gx, int gy)

@@ -14,3 +14,4 @@ EXPORTS
    SetSubStepCount
    GetComputeOutputBuffer
    SetUnityParticleOutputBuffer
+   PatchParticles

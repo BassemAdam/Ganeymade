@@ -1,39 +1,31 @@
 #ifndef RAY_MARCH_LIGHTING_INCLUDED
 #define RAY_MARCH_LIGHTING_INCLUDED
 
-// Henyey-Greenstein phase function: g=0 → isotropic, g>0 → forward-scattering.
-float HenyeyGreenstein(float cosTheta, float g)
-{
-    float g2 = g * g;
-    return (1.0 - g2) / (4.0 * 3.14159265 * pow(1.0 + g2 - 2.0 * g * cosTheta, 1.5));
-}
-
-// Single combined shadow march for dual-phase media.
-// At each shadow step both channels are sampled once; combined extinction
-// sigma_E = liquidExtinction*dl + vapourExtinction*dv is accumulated into
-// one optical-depth integral, then converted to transmittance with a single exp().
-// This is cheaper than two separate marches and physically equivalent when the
-// phase contributions overlap (which they always do in a mixed liquid/vapour volume).
-float3 CalculateTransmittedSunLightRG(
+// Simple liquid-only self-shadowing. Vapour self-shadowing and phase functions
+// are intentionally left out while the vapour mask/texture visualization is
+// being tuned step by step.
+float3 CalculateTransmittedSunLightLiquid(
     float3 posWS,
     float3 liquidExtinction,
-    float3 vapourExtinction,
-    float  lightStepSize)
+    float  lightStepSize,
+    float  shadowJitter = 0.5)
 {
     float3 sunDir       = normalize(_MainLightPosition.xyz);
     float2 lightBounds  = RayBoxDst(posWS, sunDir, _PhysicsBoundsMinWS.xyz, _PhysicsBoundsMaxWS.xyz);
     float  dstToSunExit = lightBounds.x + lightBounds.y;
 
     float3 opticalDepth = 0.0;
-    float  dist         = lightBounds.x;
+    // Jitter the first shadow step by a fraction of lightStepSize — exactly the
+    // same pattern as the view march: distanceToVolume + safeStepSize * blueNoiseValue.
+    // Without the multiply the offset is raw world-space (0-1 m) and has no
+    // relationship to the step size, so banding is unchanged.
+    float  dist         = lightBounds.x + lightStepSize * shadowJitter;
 
     while (dist < dstToSunExit)
     {
         float3 samplePositionWS = posWS + sunDir * dist;
-        float2 adjustedDensity = SampleAdjustedDensityRG_WS(samplePositionWS);
-        float  dl = adjustedDensity.x;
-        float  dv = adjustedDensity.y;
-        opticalDepth += (liquidExtinction * dl + vapourExtinction * dv) * lightStepSize;
+        float dl = SampleAdjustedLiquidDensityWS(samplePositionWS);
+        opticalDepth += liquidExtinction * dl * lightStepSize;
         dist += lightStepSize;
     }
 

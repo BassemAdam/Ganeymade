@@ -78,6 +78,7 @@ public class SpawnManager : MonoBehaviour
     private Particle[] _readbackBuffer;
     private int _tapEmitCount = 0;
     private int _skipReadbackFrames = 3;
+    private bool _bulkSpawnDone = false;
 
     // ── Unity lifecycle ──────────────────────────────────────────────────
 
@@ -104,7 +105,21 @@ public class SpawnManager : MonoBehaviour
             GetComputeResult(_cpuParticles, _particleCount);
         }
         ScanSources();
-        ResetAllParticles(_cpuParticles, _particleCount);
+
+        // Bulk-spawn: if all particles are dormant (full spawn pool), activate them
+        // in one shot rather than trickling through PatchParticles frame-by-frame.
+        if (TryBulkSpawn())
+        {
+            ResetAllParticles(_cpuParticles, _particleCount);
+            _bulkSpawnDone = true;
+            if (verbose)
+                Debug.Log($"[SpawnManager] Bulk-spawned all dormant particles in one shot.");
+        }
+        else
+        {
+            ResetAllParticles(_cpuParticles, _particleCount);
+        }
+
         if (verbose)
             Debug.Log($"[SpawnManager] Initialized. pool={_particleCount}, sources={(_sources?.Length ?? 0)}");
     }
@@ -320,6 +335,73 @@ public class SpawnManager : MonoBehaviour
 
         if (verbose)
             Debug.Log($"[SpawnManager] Found {_sources.Length} WaterSource(s).");
+    }
+
+    // ── Bulk spawn ───────────────────────────────────────────────────────
+
+    /// <summary>
+    /// If all non-tap particles are dormant (full spawn pool), activate them all
+    /// at their source positions in one shot. Returns true if bulk spawn was performed.
+    /// </summary>
+    private bool TryBulkSpawn()
+    {
+        if (_sources == null || _sources.Length == 0) return false;
+
+        // Count dormant non-tap slots
+        int dormantCount = 0;
+        for (int i = 0; i < _particleCount; i++)
+        {
+            if (_tapReservedSlots.Contains(i)) continue;
+            if (_cpuParticles[i].phase == -1) dormantCount++;
+        }
+
+        // Only bulk-spawn if majority of particles are dormant (spawn pool is full)
+        if (dormantCount < _particleCount / 2) return false;
+
+        // Find sphere-mode sources to distribute particles to
+        var sphereSources = new List<WaterSource>();
+        foreach (var src in _sources)
+        {
+            if (src != null && src.isActive && src.spawnMode == WaterSource.SpawnMode.Sphere)
+                sphereSources.Add(src);
+        }
+        if (sphereSources.Count == 0) return false;
+
+        // Distribute dormant slots evenly among sphere sources
+        int perSource = dormantCount / sphereSources.Count;
+        int sourceIdx = 0;
+        int assigned = 0;
+
+        for (int i = 0; i < _particleCount && sourceIdx < sphereSources.Count; i++)
+        {
+            if (_tapReservedSlots.Contains(i)) continue;
+            if (_cpuParticles[i].phase != -1) continue;
+
+            var src = sphereSources[sourceIdx];
+            Vector3 dir = src.emissionDirection.sqrMagnitude > 0.0001f
+                ? src.emissionDirection.normalized : Vector3.down;
+
+            Vector3 offset = UnityEngine.Random.insideUnitSphere * src.emissionRadius;
+            Particle p = default;
+            p.position = src.transform.position + offset;
+            p.velocity = dir * src.emissionSpeed;
+            p.mass = _sim.particleMass;
+            p.temperature = src.initialTemperature;
+            p.phase = 0;
+            p.density = _sim.restDensity;
+            p.fixedId = i;
+
+            _cpuParticles[i] = p;
+            assigned++;
+
+            if (assigned >= perSource && sourceIdx < sphereSources.Count - 1)
+            {
+                assigned = 0;
+                sourceIdx++;
+            }
+        }
+
+        return true;
     }
 
     private void OnDrawGizmosSelected()

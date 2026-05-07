@@ -108,6 +108,15 @@ void computeMain(uint3 threadId: SV_DispatchThreadID)
       particlesOut[i] = p;
       return;
    }
+
+   // Boundary particles: immovable, never integrate forces.
+   if (p.phase == 2)
+   {
+      p.velocity = float3(0.0);
+      p.acceleration = float3(0.0);
+      particlesOut[i] = p;
+      return;
+   }
    float h = params.smoothingRadius;
    float h2 = h * h;
    uint n = params.particleCount;
@@ -117,6 +126,7 @@ void computeMain(uint3 threadId: SV_DispatchThreadID)
    float3 fPressure = float3(0.0);
    float3 fViscosity = float3(0.0);
    float3 fCohesion  = float3(0.0);
+   float3 fBoundary  = float3(0.0);
 
    for (int dz = -1; dz <= 1; dz++)
    for (int dy = -1; dy <= 1; dy++)
@@ -138,9 +148,30 @@ void computeMain(uint3 threadId: SV_DispatchThreadID)
                float r = sqrt(r2);
                float3 dir = diff / r;
 
+               // Boundary particle: repulsive penalty force
+               if (pj.phase == 2)
+               {
+                  float penetration = 1.0 - r / h; // 1 at center, 0 at edge
+                  fBoundary += dir * params.gasStiffness * penetration * penetration;
+                  idx++;
+                  continue;
+               }
+
                float hr = h - r;
                float3 spikyGrad = params.spikyGradConst * (hr * hr) * dir;
-               fPressure += -params.particleMass * (p.pressure + pj.pressure) / (2.0 * pj.density) * spikyGrad;
+
+               // Monaghan tensile instability correction: adds small repulsion
+               // when both particles have negative pressure to prevent clumping.
+               float tensileCorr = 0.0;
+               if (params.tensileK > 0.0 && p.pressure < 0.0 && pj.pressure < 0.0)
+               {
+                  float wRef = h2 - (0.5 * h) * (0.5 * h); // poly6 at r=h/2
+                  float wCur = h2 - r2;
+                  float sRatio = wCur / max(wRef, 1e-10);
+                  tensileCorr = params.tensileK * 0.1 * (sRatio * sRatio * sRatio * sRatio);
+               }
+
+               fPressure += -params.particleMass * (p.pressure + pj.pressure + tensileCorr) / (2.0 * pj.density) * spikyGrad;
 
                float viscLap = params.viscLapConst * hr;
                // Phase-dependent viscosity: gas uses lower viscosity for turbulent motion
@@ -159,7 +190,7 @@ void computeMain(uint3 threadId: SV_DispatchThreadID)
       }
    }
 
-   float3 sphAccel = (fPressure + fViscosity + fCohesion) / p.density;
+   float3 sphAccel = (fPressure + fViscosity + fCohesion) / p.density + fBoundary;
    p.acceleration = sphAccel;
 
    // ── Buoyancy: gas particles always rise at full strength ──
@@ -212,17 +243,47 @@ void computeMain(uint3 threadId: SV_DispatchThreadID)
 
    p.position += p.velocity * params.dt;
 
-   // ── SDF collision: push out of solids along gradient normal ──────
+   // ── SDF collision ──────────────────────────────────────────────
+   // Skin offset is baked into the SDF data on CPU (subtracted before upload),
+   // so dist=0 is the desired keep-out surface. dist < 0 = penetrated.
+   // Multiple iterations handle deep penetrations (e.g. enlarged surfaces).
    if (params.sdfEnabled != 0 && params.sdfVoxelSize > 0.0)
    {
-      float dist = sampleSDF(p.position);
-      if (dist < 0.0)
+      // Push-out iterations
+      for (int sdfIter = 0; sdfIter < 4; sdfIter++)
+      {
+         float dist = sampleSDF(p.position);
+         if (dist >= 0.0)
+            break;
+         float3 normal = sdfGradient(p.position);
+         p.position -= normal * dist;
+      }
+
+      // Velocity correction + friction for particles near the surface
+      float distFinal = sampleSDF(p.position);
+      float dampZone = params.sdfVoxelSize * 2.0;
+      if (distFinal < dampZone)
       {
          float3 normal = sdfGradient(p.position);
-         p.position -= normal * dist;  // push to surface
+         float proximity = 1.0 - saturate(distFinal / dampZone);
+
+         // Only zero normal velocity if moving INTO the surface (prevents oscillation)
          float vn = dot(p.velocity, normal);
          if (vn < 0.0)
-            p.velocity -= (1.0 + 0.05) * vn * normal;  // reflect with slight damping
+            p.velocity -= vn * normal;
+
+         // Pre-compensate gravity toward surface
+         float gn = dot(params.gravity, normal);
+         if (gn < 0.0)
+            p.velocity -= gn * params.dt * normal;
+
+         // Configurable surface friction (tangential damping)
+         if (params.sdfFriction > 0.0)
+         {
+            float3 tangentVel = p.velocity - dot(p.velocity, normal) * normal;
+            float frictionStrength = params.sdfFriction * 0.5 * proximity;
+            p.velocity -= tangentVel * frictionStrength;
+         }
       }
    }
 
@@ -241,18 +302,17 @@ void computeMain(uint3 threadId: SV_DispatchThreadID)
       }
    }
 
-   // Boundary collision: clamp with epsilon offset so particles never sit at
-   // the exact same boundary coordinate (which collapses inter-particle
-   // distances to zero and kills the SPH gradient computation).
+   // AABB boundary collision with gravity pre-compensation and surface friction.
    float eps = h * 0.01;
+   float aabbFriction = 0.3;
    float3 bMin = params.boundsMin + float3(eps, eps, eps);
    float3 bMax = params.boundsMax - float3(eps, eps, eps);
-   if (p.position.x < bMin.x) { p.position.x = bMin.x; if (p.velocity.x < 0) p.velocity.x = 0; }
-   if (p.position.y < bMin.y) { p.position.y = bMin.y; if (p.velocity.y < 0) p.velocity.y = 0; }
-   if (p.position.z < bMin.z) { p.position.z = bMin.z; if (p.velocity.z < 0) p.velocity.z = 0; }
-   if (p.position.x > bMax.x) { p.position.x = bMax.x; if (p.velocity.x > 0) p.velocity.x = 0; }
-   if (p.position.y > bMax.y) { p.position.y = bMax.y; if (p.velocity.y > 0) p.velocity.y = 0; }
-   if (p.position.z > bMax.z) { p.position.z = bMax.z; if (p.velocity.z > 0) p.velocity.z = 0; }
+   if (p.position.x < bMin.x) { p.position.x = bMin.x; p.velocity.x = 0; if (params.gravity.x < 0) p.velocity.x -= params.gravity.x * params.dt; p.velocity.yz *= (1.0 - aabbFriction); }
+   if (p.position.y < bMin.y) { p.position.y = bMin.y; p.velocity.y = 0; if (params.gravity.y < 0) p.velocity.y -= params.gravity.y * params.dt; p.velocity.xz *= (1.0 - aabbFriction); }
+   if (p.position.z < bMin.z) { p.position.z = bMin.z; p.velocity.z = 0; if (params.gravity.z < 0) p.velocity.z -= params.gravity.z * params.dt; p.velocity.xy *= (1.0 - aabbFriction); }
+   if (p.position.x > bMax.x) { p.position.x = bMax.x; p.velocity.x = 0; if (params.gravity.x > 0) p.velocity.x -= params.gravity.x * params.dt; p.velocity.yz *= (1.0 - aabbFriction); }
+   if (p.position.y > bMax.y) { p.position.y = bMax.y; p.velocity.y = 0; if (params.gravity.y > 0) p.velocity.y -= params.gravity.y * params.dt; p.velocity.xz *= (1.0 - aabbFriction); }
+   if (p.position.z > bMax.z) { p.position.z = bMax.z; p.velocity.z = 0; if (params.gravity.z > 0) p.velocity.z -= params.gravity.z * params.dt; p.velocity.xy *= (1.0 - aabbFriction); }
 
    particlesOut[i] = p;
 }
