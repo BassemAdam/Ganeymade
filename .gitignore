@@ -64,5 +64,9 @@ Unity/Ganymede/Assets/Art/Shaders/WaterLiquid.shader
 Unity/Ganymede/Assets/Art/Shaders/Includes/req.md
 Unity/Ganymede/Assets/Art/Shaders/Includes/req2.md
 Unity/Ganymede/Assets/Art/Shaders/Includes/req2.md.meta
-Unity/Ganymede/Assets/Fantasy Skybox FREE
+Unity/Ganymede/Assets/AllSkyFree
 Ignore
+
+# Large image/texture assets
+*.exr
+*.exr.meta
