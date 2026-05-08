@@ -139,8 +139,11 @@ public class FluidForceApplicator : MonoBehaviour
         }
 
         // Archimedes: buoyancy = fluidDensity * g * submergedVolume
-        float submergedVolume = objectVolume * submergedFraction;
-        float buoyancyMagnitude = fluidDensity * Mathf.Abs(Physics.gravity.y) * submergedVolume;
+        // Scale so equilibrium occurs at submergedFraction == sinkFactor:
+        //   F_b = mass * g * (submergedFraction / sinkFactor)
+        float sink = Mathf.Max(vd.sinkFactor, 0.01f);
+        float buoyancyMagnitude = vd.rb.mass * Mathf.Abs(Physics.gravity.y) *
+                                  (submergedFraction / sink);
         Vector3 buoyancyForce = Vector3.up * buoyancyMagnitude;
 
         // The Rigidbody already has gravity, so we just add buoyancy
@@ -168,10 +171,8 @@ public class FluidForceApplicator : MonoBehaviour
         vd.lastDragForce = dragForce;
         vd.rb.AddForce(dragForce, ForceMode.Force);
 
-        // Angular drag
-        Vector3 angVel = vd.rb.angularVelocity;
-        float angDrag = vd.angularDragCoefficient * submergedFraction * fluidDensity * 0.01f;
-        vd.rb.AddTorque(-angVel * angDrag, ForceMode.Force);
+        // Angular drag / upright enforcement
+        ApplyAngularForces(vd, submergedFraction);
     }
 
     /// <summary>
@@ -243,9 +244,11 @@ public class FluidForceApplicator : MonoBehaviour
         vd.lastBuoyancyForce = forceSum;
         vd.rb.AddForce(forceSum, ForceMode.Force);
 
-        // Additional Archimedes correction (SPH pressure alone may underestimate buoyancy)
-        float archimedesBoost = fluidDensity * Mathf.Abs(Physics.gravity.y) * objectVolume * vd.submergedFraction;
-        Vector3 archForce = Vector3.up * archimedesBoost * 0.5f; // 50% blend with SPH forces
+        // Additional Archimedes correction scaled by sink factor
+        float sink = Mathf.Max(vd.sinkFactor, 0.01f);
+        float archimedesBoost = vd.rb.mass * Mathf.Abs(Physics.gravity.y) *
+                                (vd.submergedFraction / sink) * 0.5f;
+        Vector3 archForce = Vector3.up * archimedesBoost;
         vd.rb.AddForce(archForce, ForceMode.Force);
         vd.lastBuoyancyForce += archForce;
 
@@ -261,10 +264,32 @@ public class FluidForceApplicator : MonoBehaviour
         vd.lastDragForce = dragForce;
         vd.rb.AddForce(dragForce, ForceMode.Force);
 
-        // Angular drag
-        Vector3 angVel = vd.rb.angularVelocity;
-        float angDrag = vd.angularDragCoefficient * vd.submergedFraction * fluidDensity * 0.01f;
-        vd.rb.AddTorque(-angVel * angDrag, ForceMode.Force);
+        // Angular drag / upright enforcement
+        ApplyAngularForces(vd, vd.submergedFraction);
+    }
+
+    /// <summary>
+    /// Shared angular forces: either keeps the object upright (no pitch/roll)
+    /// or applies standard angular drag.
+    /// </summary>
+    private void ApplyAngularForces(VoxelDynamic vd, float submergedFraction)
+    {
+        if (vd.stayUpright)
+        {
+            // Lock pitch/roll, preserve yaw. MoveRotation gives smooth
+            // physics-friendly correction without fighting the solver.
+            float yaw = vd.rb.rotation.eulerAngles.y;
+            vd.rb.MoveRotation(Quaternion.Euler(0f, yaw, 0f));
+            Vector3 av = vd.rb.angularVelocity;
+            vd.rb.angularVelocity = new Vector3(0f, av.y, 0f);
+        }
+        else
+        {
+            // Standard angular drag
+            Vector3 angVel = vd.rb.angularVelocity;
+            float angDrag = vd.angularDragCoefficient * submergedFraction * fluidDensity * 0.01f;
+            vd.rb.AddTorque(-angVel * angDrag, ForceMode.Force);
+        }
     }
 
     void OnDrawGizmosSelected()

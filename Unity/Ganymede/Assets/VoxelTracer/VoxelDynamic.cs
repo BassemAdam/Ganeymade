@@ -34,6 +34,13 @@ public sealed class VoxelDynamic : MonoBehaviour
     [Range(0f, 5f)]
     public float angularDragCoefficient = 0.5f;
 
+    [Tooltip("Target waterline: 0 = sits on surface, 0.5 = half submerged, 1 = fully sunk.")]
+    [Range(0f, 1f)]
+    public float sinkFactor = 0.3f;
+
+    [Tooltip("Keep the object upright (no pitch/roll). Yaw rotation is preserved.")]
+    public bool stayUpright = false;
+
     [Tooltip("Auto-set Rigidbody mass from objectDensity * approximateVolume on Start.")]
     public bool autoSetMass = true;
 
