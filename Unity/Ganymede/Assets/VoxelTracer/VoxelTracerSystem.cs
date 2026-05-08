@@ -1108,8 +1108,10 @@ public sealed class VoxelTracerSystem : MonoBehaviour
         mn = new Vector3(float.MaxValue, float.MaxValue, float.MaxValue);
         mx = new Vector3(float.MinValue, float.MinValue, float.MinValue);
 
+        // Size grid to STATIC geometry only. Dynamic objects move each frame,
+        // so baking their initial position into the grid bounds wastes
+        // resolution and can blow past the SDF voxel budget.
         ExpandBounds(_staticTriList, ref mn, ref mx);
-        ExpandBounds(_dynamicTriList, ref mn, ref mx);
 
         if (mn.x > mx.x) { mn = gridMin; mx = gridMax; return; }
 
@@ -1737,6 +1739,7 @@ public sealed class VoxelTracerSystem : MonoBehaviour
 
     void Dispatch2D(int kernel, int gx, int gy)
     {
+        if (gx <= 0 || gy <= 0) return;
         coreCS.GetKernelThreadGroupSizes(kernel, out uint tx, out uint ty, out _);
         coreCS.Dispatch(kernel,
             Mathf.CeilToInt(gx / (float)tx),
@@ -1763,6 +1766,7 @@ public sealed class VoxelTracerSystem : MonoBehaviour
 
     void DispatchLinear(int kernel, int count)
     {
+        if (count <= 0) return;
         coreCS.GetKernelThreadGroupSizes(kernel, out uint tx, out _, out _);
         coreCS.Dispatch(kernel, Mathf.CeilToInt(count / (float)tx), 1, 1);
     }

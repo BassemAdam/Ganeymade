@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Runtime.InteropServices;
 using UnityEngine;
 using System.Linq;
+using Unity.Collections;
 
 /// <summary>
 /// Minimal C# wrapper for the native Vulkan compute plugin (RenderingPlugin.dll).
@@ -255,6 +256,7 @@ public class UseComputePlugin : MonoBehaviour
     private WaterDrain[] _cachedDrains;
     private DrainZoneNative[] _drainNatives = new DrainZoneNative[MAX_DRAIN_ZONES];
     private float[] _sdfData;
+    private float[] _sliceTmp;
     private int _sdfDimX, _sdfDimY, _sdfDimZ;
     private Vector3 _sdfOrigin; // world-space origin of the SDF grid
     private float _sdfCellSize; // actual cell size in use (may come from VoxelTracer)
@@ -936,7 +938,13 @@ public class UseComputePlugin : MonoBehaviour
         int nz = voxelTracerRef.Nz;
         int totalVoxels = nx * ny * nz;
 
-        if (totalVoxels <= 0 || totalVoxels > 4 * 1024 * 1024)
+        // Cap must match VoxelTracerSystem's budget (maxVoxelCountMillions).
+        // The old hard-coded 4M limit silently disabled SDF collision whenever
+        // the grid grew beyond ~159³ — e.g. when a dynamic object expanded
+        // the auto-fit bounds. 8M is a safe CPU-side memory limit (~32 MB for
+        // the float array) and comfortably covers typical static-only grids
+        // now that dynamic objects no longer inflate grid bounds.
+        if (totalVoxels <= 0 || totalVoxels > 8 * 1024 * 1024)
         {
             _sdfDimX = _sdfDimY = _sdfDimZ = 0;
             return;
@@ -1000,8 +1008,19 @@ public class UseComputePlugin : MonoBehaviour
             var slice = _sdfReadbackRequest.GetData<float>(z);
             int n = Mathf.Min(slice.Length, sliceSize);
             int dstBase = HEADER + z * sliceSize;
-            for (int i = 0; i < n; i++)
-                _sdfData[dstBase + i] = slice[i] - skin;
+
+            // Bulk copy into temp array then Array.Copy to destination offset.
+            // Much faster than per-element indexing on large grids.
+            if (_sliceTmp == null || _sliceTmp.Length < n)
+                _sliceTmp = new float[n];
+            slice.Slice(0, n).CopyTo(_sliceTmp);
+            System.Array.Copy(_sliceTmp, 0, _sdfData, dstBase, n);
+
+            if (skin != 0f)
+            {
+                for (int i = dstBase; i < dstBase + n; i++)
+                    _sdfData[i] -= skin;
+            }
         }
 
         // Commit the snapshot's metadata only after we have data to back it.
