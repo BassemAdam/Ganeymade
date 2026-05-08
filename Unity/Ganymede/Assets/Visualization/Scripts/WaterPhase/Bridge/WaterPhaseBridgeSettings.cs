@@ -5,7 +5,8 @@ using UnityEngine.Serialization;
 public enum WaterSurfaceRenderMode
 {
     RaymarchVolume,
-    MarchingCubesLiquidWithVapour
+    MarchingCubesLiquidWithVapour,
+    ScreenSpaceFluid
 }
 
 [Serializable]
@@ -157,4 +158,17 @@ public class WaterPhaseRenderingSettings
     [Tooltip("Iso threshold applied to normalized density (0..1-ish). Higher values make the surface shrink.")]
     [Range(0f, 1f)]
     public float marchingCubesIsoLevel = 0.2f;
+
+    [Header("Screen-Space Fluid")]
+    [Tooltip("Billboard particle radius in world units. Modulated by neighborCount at runtime.")]
+    [Min(0.01f)]
+    public float screenSpaceParticleRadius = 0.15f;
+
+    [Tooltip("Narrow-range filter kernel size (in pixels at depth=1). Larger = smoother but heavier.")]
+    [Range(4, 64)]
+    public int screenSpaceFilterSize = 32;
+
+    [Tooltip("Neighbor count below which particles are treated as spray (no depth smoothing).")]
+    [Range(0f, 30f)]
+    public float screenSpaceSprayThreshold = 6f;
 }

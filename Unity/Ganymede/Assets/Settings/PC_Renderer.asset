@@ -60,7 +60,8 @@ MonoBehaviour:
   - {fileID: -3054354437649072508}
   - {fileID: 3354853973594575606}
   - {fileID: 9138924694721728022}
-  m_RendererFeatureMap: ad6b866f10d7b46c84fec955d2c09cd5f6926909ead58e2e160eeff996fbd37e
+  - {fileID: 1026905197285234427}
+  m_RendererFeatureMap: ad6b866f10d7b46c84fec955d2c09cd5f6926909ead58e2e160eeff996fbd37efb56300ed64c400e
   m_UseNativeRenderPass: 1
   xrSystemData: {fileID: 0}
   postProcessData: {fileID: 11400000, guid: 41439944d30ece34e96484bdb6645b55, type: 2}
@@ -89,6 +90,26 @@ MonoBehaviour:
   m_DepthTextureFormat: 0
   m_AccurateGbufferNormals: 0
   m_IntermediateTextureMode: 0
+--- !u!114 &1026905197285234427
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: a1193549f59973c4faa79981508869bf, type: 3}
+  m_Name: ScreenSpaceFluidFeature
+  m_EditorClassIdentifier: Assembly-CSharp::ScreenSpaceFluidFeature
+  m_Active: 1
+  settings:
+    depthShader: {fileID: 4800000, guid: f6be3ae8f5cb3bd45b981771ec669918, type: 3}
+    thicknessShader: {fileID: 4800000, guid: ce5f54f54b85e584a918dd7ade361d2d, type: 3}
+    filterShader: {fileID: 4800000, guid: e269c9496cbbe0b44b38a5350b7914a0, type: 3}
+    compositeShader: {fileID: 4800000, guid: 09d5f2780b1ede747a3a8a3005199027, type: 3}
+    environmentCubemap: {fileID: 0}
+    debugMode: 0
 --- !u!114 &3354853973594575606
 MonoBehaviour:
   m_ObjectHideFlags: 0
