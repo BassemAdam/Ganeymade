@@ -260,7 +260,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: ccc445b9f904c1446bcac3f66c2b47db, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::WaterSource
-  spawnMode: 1
+  spawnMode: 0
   tapExhausted: 0
   emissionRate: 100
   emissionDirection: {x: 0, y: -1, z: 0}
@@ -846,7 +846,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 7193c26c385088b48869367ff217e876, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::VoxelSolidMaterial
-  temperature: 100
+  temperature: 230
   thermalDiffusivity: 30
   coolingRate: 0.01
   isContinuousHeatSource: 1
