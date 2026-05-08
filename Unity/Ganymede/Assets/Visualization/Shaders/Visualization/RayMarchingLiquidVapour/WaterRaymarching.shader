@@ -8,9 +8,6 @@ Shader "Custom/WaterRaymarching"
         _IsoLevel ("Iso Level (surface threshold)", Float) = 0.01
         [Header(Debug)]
         _DebugViewMode ("Debug View", Float) = 0
-        [Header(Proxy Interval)]
-        [Toggle] _UseMarchingCubesProxy ("Use Marching Cubes Proxy", Float) = 0
-        _ProxyIsoLevel ("Proxy Iso Level", Float) = 0.01
         [Header(Liquid Phase)]
         _ScatteringCoefficients ("Liquid Extinction sigma_t (RGB)", Color) = (0.57, 0.06, 0.02, 1.0)
         _LiquidScatterColor ("Liquid Scatter Albedo (RGB)", Color) = (0.002, 0.004, 0.016, 1.0)
@@ -118,8 +115,6 @@ Shader "Custom/WaterRaymarching"
                 float  _StepSize;
                 float  _IsoLevel;
                 float  _DebugViewMode;
-                float  _UseMarchingCubesProxy;
-                float  _ProxyIsoLevel;
                 float  _RefractionStrength;
                 float  _ReflectionStrength;
                 float  _ReflectionVisibilityBoost;
@@ -186,7 +181,10 @@ Shader "Custom/WaterRaymarching"
             half4 frag(WaterRaymarchVaryings IN) : SV_Target
             {
                 WaterRaymarchViewData viewData = BuildWaterRaymarchViewData(IN.positionWS, IN.normalizedScreenPosition);
-                WaterRaymarchVolumeData volumeData = BuildWaterRaymarchVolumeData(viewData);
+                WaterRaymarchVolumeData volumeData = BuildWaterRaymarchVolumeData(
+                    viewData.cameraPositionWS,
+                    viewData.viewRayDirectionWS
+                );
 
                 if (!volumeData.intersectsVolume)
                     return half4(0, 0, 0, 0);

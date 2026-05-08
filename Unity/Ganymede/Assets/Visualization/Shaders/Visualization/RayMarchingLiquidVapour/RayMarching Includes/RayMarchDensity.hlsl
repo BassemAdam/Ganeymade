@@ -26,14 +26,6 @@ float2 SampleDensityRG_WS(float3 posWS)
     return _PhysicsDensityGrid.SampleLevel(sampler_PhysicsDensityGrid, DensityGridUVW(posWS), 0);
 }
 
-// Combined proxy density used ONLY for the marching-cubes shell that bounds the
-// raymarch interval. This deliberately treats liquid/vapour as a union field.
-float SampleCombinedDensityWS(float3 posWS)
-{
-    float2 densityRG = SampleDensityRG_WS(posWS);
-    return max(densityRG.r, densityRG.g);
-}
-
 // Liquid channel only. Use for iso-surface detection, normal gradient estimation,
 // and refraction. Other phases must never feed into surface tests.
 float SampleLiquidDensityWS(float3 posWS)

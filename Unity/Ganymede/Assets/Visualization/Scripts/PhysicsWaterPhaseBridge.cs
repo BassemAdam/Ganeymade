@@ -106,9 +106,6 @@ public class PhysicsWaterPhaseBridge : MonoBehaviour
         if (_particleOutputBridge != null)
             _particleOutputBridge.ClearRegistration();
 
-        if (_raymarchRenderer != null)
-            _raymarchRenderer.Release();
-
         if (_resources != null)
             _resources.Release();
 
@@ -197,12 +194,6 @@ public class PhysicsWaterPhaseBridge : MonoBehaviour
                 return false;
             }
 
-            if (settings.Rendering.raymarchUseCombinedDensityProxy &&
-                (settings.References.marchingCubesCompute == null || settings.References.marchingCubesLUT == null))
-            {
-                Debug.LogWarning("[PhysicsWaterPhaseBridge] Raymarch combined-density proxy is enabled, but marchingCubesCompute and/or marchingCubesLUT are missing. Falling back to the box proxy.");
-            }
-
             return true;
         }
 
@@ -251,14 +242,12 @@ public class PhysicsWaterPhaseBridge : MonoBehaviour
             {
                 visualProxyTransform = _raymarchRenderer.EnsureProxy(visualProxyTransform);
                 _raymarchRenderer.Render(
-                    settings,
                     visualProxyTransform,
                     settings.Rendering.rayMarchingMaterial,
                     _computePlugin,
                     _resources,
                     boundsMin,
-                    boundsMax,
-                    gameObject.layer);
+                    boundsMax);
             }
 
             return;
@@ -330,7 +319,6 @@ public class PhysicsWaterPhaseBridge : MonoBehaviour
         ValidateAdaptiveSmoothing(settings.MarchingCubesSmoothing);
 
         settings.Rendering.marchingCubesIsoLevel = Mathf.Clamp01(settings.Rendering.marchingCubesIsoLevel);
-        settings.Rendering.raymarchProxyIsoLevel = Mathf.Clamp01(settings.Rendering.raymarchProxyIsoLevel);
     }
 
     private static void ValidateAdaptiveSmoothing(WaterPhaseAdaptiveSmoothingSettings smoothing)

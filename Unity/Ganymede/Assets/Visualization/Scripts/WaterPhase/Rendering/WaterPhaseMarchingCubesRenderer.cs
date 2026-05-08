@@ -127,8 +127,6 @@ public sealed class WaterPhaseMarchingCubesRenderer : IDisposable
             _marchingRenderer.Release();
 
         _marchingRenderer = new MarchingCubesRenderer(computeShader, lookupTable, surfaceMaterial);
-        _marchingRenderer.RenderInThicknessPass = true;
-        _marchingRenderer.RenderInProxyIntervalPass = false;
         _activeComputeShader = computeShader;
         _activeLookupTable = lookupTable;
         _activeSurfaceMaterial = surfaceMaterial;
