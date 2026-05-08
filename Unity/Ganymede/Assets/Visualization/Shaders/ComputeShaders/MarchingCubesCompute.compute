@@ -46,10 +46,16 @@ void ClearArgs(uint3 id : SV_DispatchThreadID)
 float SampleDensity(int3 pos)
 {
     bool isEdge = any(pos <= 0) || any(pos >= GridSize - 1);
-    if (isEdge) return isoLevel;
+    float density = isoLevel;
 
-    float3 uvw = ((float3)pos + 0.5) / max((float3)GridSize, 1.0);
-    return -DensityTexture3D.SampleLevel(samplerDensityTexture3D, uvw, 0).r;
+    if (!isEdge)
+    {
+        float3 gridSizeSafe = max((float3)GridSize, float3(1.0, 1.0, 1.0));
+        float3 uvw = ((float3)pos + 0.5) / gridSizeSafe;
+        density = -DensityTexture3D.SampleLevel(samplerDensityTexture3D, uvw, 0).r;
+    }
+
+    return density;
 }
 
 Vertex MakeVertex(int3 ca, int3 cb)
