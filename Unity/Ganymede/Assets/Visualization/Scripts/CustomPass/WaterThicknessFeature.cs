@@ -8,6 +8,7 @@ public class WaterThicknessFeature : ScriptableRendererFeature
 {
     // Global event so procedural drawers (like Marching Cubes) can inject draw calls into this pass
     public static event System.Action<RasterCommandBuffer, Material> OnDrawWaterProcedural;
+    public static event System.Action<RasterCommandBuffer, Material, int> OnDrawWaterProxyProcedural;
 
     [System.Serializable]
     public class Settings
@@ -22,6 +23,7 @@ public class WaterThicknessFeature : ScriptableRendererFeature
     public Settings settings = new Settings();
     private WaterThicknessPass thicknessPass;
     private Material thicknessMaterial;
+    private Material proxyDistanceMaterial;
 
     public override void Create()
     {
@@ -33,7 +35,14 @@ public class WaterThicknessFeature : ScriptableRendererFeature
             thicknessMaterial = CoreUtils.CreateEngineMaterial(settings.thicknessShader);
         }
 
-        thicknessPass = new WaterThicknessPass(settings.waterLayer, thicknessMaterial);
+        if (proxyDistanceMaterial == null)
+        {
+            Shader proxyShader = Shader.Find("Hidden/WaterProxyIntervalGen");
+            if (proxyShader != null)
+                proxyDistanceMaterial = CoreUtils.CreateEngineMaterial(proxyShader);
+        }
+
+        thicknessPass = new WaterThicknessPass(settings.waterLayer, thicknessMaterial, proxyDistanceMaterial);
     }
 
     // call back runs every frame before renderer executes passes
@@ -59,6 +68,11 @@ public class WaterThicknessFeature : ScriptableRendererFeature
         {
             CoreUtils.Destroy(thicknessMaterial);
         }
+
+        if (proxyDistanceMaterial != null)
+        {
+            CoreUtils.Destroy(proxyDistanceMaterial);
+        }
     }
 
     // =========================================================================
@@ -68,13 +82,18 @@ public class WaterThicknessFeature : ScriptableRendererFeature
     {
         private FilteringSettings filteringSettings;
         private Material thicknessMaterial;
+        private Material proxyDistanceMaterial;
         private List<ShaderTagId> shaderTagIdList = new List<ShaderTagId>();
+        private static readonly int ID_WaterThicknessMap = Shader.PropertyToID("_WaterThicknessMap");
+        private static readonly int ID_WaterProxyEntryDistanceMap = Shader.PropertyToID("_WaterProxyEntryDistanceMap");
+        private static readonly int ID_WaterProxyExitDistanceMap = Shader.PropertyToID("_WaterProxyExitDistanceMap");
 
-        public WaterThicknessPass(LayerMask waterLayer, Material material)
+        public WaterThicknessPass(LayerMask waterLayer, Material material, Material proxyMaterial)
         {
             // Filter strictly for the Water layer
             filteringSettings = new FilteringSettings(RenderQueueRange.all, waterLayer);
             thicknessMaterial = material;
+            proxyDistanceMaterial = proxyMaterial;
             
             // Run exactly after the skybox/opaques, so SceneDepth is ready, but before Transparents
             this.renderPassEvent = RenderPassEvent.AfterRenderingSkybox; 
@@ -90,6 +109,13 @@ public class WaterThicknessFeature : ScriptableRendererFeature
         {
             public RendererListHandle rendererList;
             public Material thicknessMaterial;
+        }
+
+        private class ProxyPassData
+        {
+            public Material proxyMaterial;
+            public int passIndex;
+            public Color clearColor;
         }
 
         public override void RecordRenderGraph(RenderGraph renderGraph, ContextContainer frameData)
@@ -135,7 +161,7 @@ public class WaterThicknessFeature : ScriptableRendererFeature
                 builder.UseRendererList(passData.rendererList);
 
                 // Publish this texture globally to shaders AFTER the pass finishes
-                builder.SetGlobalTextureAfterPass(thicknessTexture, Shader.PropertyToID("_WaterThicknessMap"));
+                builder.SetGlobalTextureAfterPass(thicknessTexture, ID_WaterThicknessMap);
 
                 // 4. The actual rendering execution code
                 builder.SetRenderFunc((PassData data, RasterGraphContext context) =>
@@ -151,6 +177,68 @@ public class WaterThicknessFeature : ScriptableRendererFeature
                     {
                         WaterThicknessFeature.OnDrawWaterProcedural.Invoke(context.cmd, data.thicknessMaterial);
                     }
+                });
+            }
+
+            if (proxyDistanceMaterial == null)
+                return;
+
+            RenderTextureDescriptor proxyDesc = cameraData.cameraTargetDescriptor;
+            proxyDesc.colorFormat = RenderTextureFormat.RFloat;
+            proxyDesc.depthBufferBits = 0;
+            proxyDesc.msaaSamples = 1;
+
+            TextureHandle entryTexture = UniversalRenderer.CreateRenderGraphTexture(renderGraph, proxyDesc, "_WaterProxyEntryDistanceMap", false);
+            TextureHandle exitTexture = UniversalRenderer.CreateRenderGraphTexture(renderGraph, proxyDesc, "_WaterProxyExitDistanceMap", false);
+
+            RecordProxyDistancePass(
+                renderGraph,
+                entryTexture,
+                proxyDistanceMaterial,
+                proxyDistanceMaterial.FindPass("ProxyEntryDistance"),
+                new Color(1000000f, 0f, 0f, 0f),
+                ID_WaterProxyEntryDistanceMap,
+                "Capture Water Proxy Entry Distances");
+
+            RecordProxyDistancePass(
+                renderGraph,
+                exitTexture,
+                proxyDistanceMaterial,
+                proxyDistanceMaterial.FindPass("ProxyExitDistance"),
+                Color.clear,
+                ID_WaterProxyExitDistanceMap,
+                "Capture Water Proxy Exit Distances");
+        }
+
+        private static void RecordProxyDistancePass(
+            RenderGraph renderGraph,
+            TextureHandle targetTexture,
+            Material proxyMaterial,
+            int passIndex,
+            Color clearColor,
+            int globalTextureId,
+            string passName)
+        {
+            if (proxyMaterial == null || passIndex < 0)
+                return;
+
+            using (var builder = renderGraph.AddRasterRenderPass<ProxyPassData>(passName, out var passData))
+            {
+                passData.proxyMaterial = proxyMaterial;
+                passData.passIndex = passIndex;
+                passData.clearColor = clearColor;
+
+                builder.SetRenderAttachment(targetTexture, 0, AccessFlags.Write);
+                builder.AllowPassCulling(false);
+                builder.AllowGlobalStateModification(true);
+                builder.SetGlobalTextureAfterPass(targetTexture, globalTextureId);
+
+                builder.SetRenderFunc((ProxyPassData data, RasterGraphContext context) =>
+                {
+                    context.cmd.ClearRenderTarget(false, true, data.clearColor);
+
+                    if (WaterThicknessFeature.OnDrawWaterProxyProcedural != null)
+                        WaterThicknessFeature.OnDrawWaterProxyProcedural.Invoke(context.cmd, data.proxyMaterial, data.passIndex);
                 });
             }
         }

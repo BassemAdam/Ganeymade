@@ -148,6 +148,15 @@ public class WaterPhaseRenderingSettings
     [Tooltip("Material used for the raymarched volume presentation.")]
     public Material rayMarchingMaterial;
 
+    [Header("Raymarch Proxy")]
+    [Tooltip("Uses a marching-cubes hull built from the COMBINED liquid/vapour density field to tighten the raymarch interval. " +
+             "This keeps the visible liquid/vapour shading raymarched, but avoids marching through the entire simulation AABB when most of it is empty.")]
+    public bool raymarchUseCombinedDensityProxy = true;
+
+    [Tooltip("Iso threshold for the combined-density marching-cubes proxy used by raymarch mode. Lower values expand the shell; higher values tighten it.")]
+    [Range(0f, 1f)]
+    public float raymarchProxyIsoLevel = 0.01f;
+
     [Tooltip("Material used for the marching cubes liquid surface.")]
     public Material marchingCubesMaterial;
 

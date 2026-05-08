@@ -28,6 +28,7 @@ int3   GridSize;
 float3 VoxelSize;
 float3 BoundsMinWS;
 float  isoLevel;
+int    densitySource;
 
 // ---- Output ----
 RWStructuredBuffer<Vertex> vertices;
@@ -49,7 +50,11 @@ float SampleDensity(int3 pos)
     if (isEdge) return isoLevel;
 
     float3 uvw = ((float3)pos + 0.5) / max((float3)GridSize, 1.0);
-    return -DensityTexture3D.SampleLevel(samplerDensityTexture3D, uvw, 0).r;
+    float2 densityRG = DensityTexture3D.SampleLevel(samplerDensityTexture3D, uvw, 0);
+    float selectedDensity = (densitySource == 1)
+        ? max(densityRG.r, densityRG.g)
+        : densityRG.r;
+    return -selectedDensity;
 }
 
 Vertex MakeVertex(int3 ca, int3 cb)

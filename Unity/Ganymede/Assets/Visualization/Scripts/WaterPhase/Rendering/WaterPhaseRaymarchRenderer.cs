@@ -10,6 +10,8 @@ public sealed class WaterPhaseRaymarchRenderer
     private static readonly int ID_PhysicsBoundsMinWS = Shader.PropertyToID("_PhysicsBoundsMinWS");
     private static readonly int ID_PhysicsBoundsMaxWS = Shader.PropertyToID("_PhysicsBoundsMaxWS");
     private static readonly int ID_PhysicsVolumeDims = Shader.PropertyToID("_PhysicsVolumeDims");
+    private static readonly int ID_UseMarchingCubesProxy = Shader.PropertyToID("_UseMarchingCubesProxy");
+    private static readonly int ID_ProxyIsoLevel = Shader.PropertyToID("_ProxyIsoLevel");
 
     private readonly Transform _ownerTransform;
     private readonly MeshFilter _sourceMeshFilter;
@@ -17,6 +19,9 @@ public sealed class WaterPhaseRaymarchRenderer
     private readonly MaterialPropertyBlock _propertyBlock = new MaterialPropertyBlock();
 
     private Renderer _proxyRenderer;
+    private MarchingCubesRenderer _proxyMarchingRenderer;
+    private ComputeShader _activeProxyComputeShader;
+    private TextAsset _activeProxyLookupTable;
 
     public WaterPhaseRaymarchRenderer(Transform ownerTransform, MeshFilter sourceMeshFilter, MeshRenderer sourceMeshRenderer)
     {
@@ -77,13 +82,37 @@ public sealed class WaterPhaseRaymarchRenderer
     }
 
     public void Render(
+        WaterPhaseBridgeSettings settings,
         Transform currentProxyTransform,
         Material raymarchMaterial,
         UseComputePlugin computePlugin,
         WaterPhaseResources resources,
         Vector3 boundsMin,
-        Vector3 boundsMax)
+        Vector3 boundsMax,
+        int layer)
     {
+        bool useCombinedDensityProxy = settings != null &&
+                                       settings.Rendering.raymarchUseCombinedDensityProxy &&
+                                       settings.References.marchingCubesCompute != null &&
+                                       settings.References.marchingCubesLUT != null;
+
+        if (useCombinedDensityProxy)
+        {
+            EnsureProxyMarchingRenderer(settings.References.marchingCubesCompute, settings.References.marchingCubesLUT);
+            _proxyMarchingRenderer?.UpdateSurface(
+                resources.PhaseDensityTexture,
+                resources.SurfaceNormalTexture,
+                resources.VolumeDims,
+                boundsMin,
+                boundsMax,
+                Mathf.Clamp01(settings.Rendering.raymarchProxyIsoLevel),
+                MarchingCubesDensitySource.CombinedLiquidVapour);
+        }
+        else
+        {
+            ReleaseProxyMarchingRenderer();
+        }
+
         Transform proxyTransform = EnsureProxy(currentProxyTransform);
         if (_proxyRenderer == null || raymarchMaterial == null)
             return;
@@ -110,6 +139,10 @@ public sealed class WaterPhaseRaymarchRenderer
         _propertyBlock.SetVector(
             ID_PhysicsVolumeDims,
             new Vector4(resources.VolumeDims.x, resources.VolumeDims.y, resources.VolumeDims.z, 0f));
+        _propertyBlock.SetFloat(ID_UseMarchingCubesProxy, useCombinedDensityProxy ? 1f : 0f);
+        _propertyBlock.SetFloat(
+            ID_ProxyIsoLevel,
+            (settings != null) ? Mathf.Clamp01(settings.Rendering.raymarchProxyIsoLevel) : 0f);
         _proxyRenderer.SetPropertyBlock(_propertyBlock);
     }
 
@@ -117,6 +150,44 @@ public sealed class WaterPhaseRaymarchRenderer
     {
         if (_proxyRenderer != null)
             _proxyRenderer.enabled = false;
+    }
+
+    public void Release()
+    {
+        ReleaseProxyMarchingRenderer();
+    }
+
+    private void EnsureProxyMarchingRenderer(ComputeShader computeShader, TextAsset lookupTable)
+    {
+        if (computeShader == null || lookupTable == null)
+            return;
+
+        bool requiresRebuild = _proxyMarchingRenderer == null ||
+                               _activeProxyComputeShader != computeShader ||
+                               _activeProxyLookupTable != lookupTable;
+
+        if (!requiresRebuild)
+            return;
+
+        ReleaseProxyMarchingRenderer();
+
+        _proxyMarchingRenderer = new MarchingCubesRenderer(computeShader, lookupTable);
+        _proxyMarchingRenderer.RenderInThicknessPass = false;
+        _proxyMarchingRenderer.RenderInProxyIntervalPass = true;
+        _activeProxyComputeShader = computeShader;
+        _activeProxyLookupTable = lookupTable;
+    }
+
+    private void ReleaseProxyMarchingRenderer()
+    {
+        if (_proxyMarchingRenderer != null)
+        {
+            _proxyMarchingRenderer.Release();
+            _proxyMarchingRenderer = null;
+        }
+
+        _activeProxyComputeShader = null;
+        _activeProxyLookupTable = null;
     }
 
     private void EnsureSourceMesh()

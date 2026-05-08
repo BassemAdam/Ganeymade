@@ -3,6 +3,12 @@ using System.Linq;
 using UnityEngine;
 using UnityEngine.Rendering;
 
+public enum MarchingCubesDensitySource
+{
+    LiquidOnly = 0,
+    CombinedLiquidVapour = 1
+}
+
 /// <summary>
 /// Self-contained GPU marching cubes renderer.
 /// Owns all MC-specific buffers, dispatches the compute kernel,
@@ -33,6 +39,9 @@ public class MarchingCubesRenderer : IDisposable
     private Material _matInstance;
     private readonly Material _sourceMaterial;
 
+    public bool RenderInThicknessPass { get; set; } = true;
+    public bool RenderInProxyIntervalPass { get; set; }
+
     // ---- Constants ----
     private const int VertexStride = 32; // float4 position + float4 normal
     private const int MaxTrianglesPerVoxel = 5;
@@ -40,17 +49,18 @@ public class MarchingCubesRenderer : IDisposable
     private const string KW_Procedural = "_MARCHING_CUBES_PROCEDURAL";
 
     // ---- Property IDs ----
-    private static readonly int PID_Vertices       = Shader.PropertyToID("vertices");
+    private static readonly int PID_Vertices         = Shader.PropertyToID("vertices");
     private static readonly int PID_DensityTexture3D = Shader.PropertyToID("DensityTexture3D");
-    private static readonly int PID_Lut            = Shader.PropertyToID("lut");
-    private static readonly int PID_Offsets         = Shader.PropertyToID("offsets");
-    private static readonly int PID_Lengths         = Shader.PropertyToID("lengths");
-    private static readonly int PID_GridSize       = Shader.PropertyToID("GridSize");
-    private static readonly int PID_VoxelSize      = Shader.PropertyToID("VoxelSize");
-    private static readonly int PID_BoundsMinWS    = Shader.PropertyToID("BoundsMinWS");
-    private static readonly int PID_IsoLevel       = Shader.PropertyToID("isoLevel");
-    private static readonly int PID_VertexBuffer    = Shader.PropertyToID("_MCVertices");
-    private static readonly int PID_NormalTexture3D = Shader.PropertyToID("NormalTexture3D");
+    private static readonly int PID_Lut              = Shader.PropertyToID("lut");
+    private static readonly int PID_Offsets          = Shader.PropertyToID("offsets");
+    private static readonly int PID_Lengths          = Shader.PropertyToID("lengths");
+    private static readonly int PID_GridSize         = Shader.PropertyToID("GridSize");
+    private static readonly int PID_VoxelSize        = Shader.PropertyToID("VoxelSize");
+    private static readonly int PID_BoundsMinWS      = Shader.PropertyToID("BoundsMinWS");
+    private static readonly int PID_IsoLevel         = Shader.PropertyToID("isoLevel");
+    private static readonly int PID_DensitySource    = Shader.PropertyToID("densitySource");
+    private static readonly int PID_VertexBuffer     = Shader.PropertyToID("_MCVertices");
+    private static readonly int PID_NormalTexture3D  = Shader.PropertyToID("NormalTexture3D");
 
     // ---- Lookup data (moved out of shader to avoid Vulkan constant buffer limits) ----
     private static readonly int[] s_offsets = {0, 0, 3, 6, 12, 15, 21, 27, 36, 39, 45, 51, 60, 66, 75, 84, 90, 93, 99, 105, 114, 120, 129, 138, 150, 156, 165, 174, 186, 195, 207, 219, 228, 231, 237, 243, 252, 258, 267, 276, 288, 294, 303, 312, 324, 333, 345, 357, 366, 372, 381, 390, 396, 405, 417, 429, 438, 447, 459, 471, 480, 492, 507, 522, 528, 531, 537, 543, 552, 558, 567, 576, 588, 594, 603, 612, 624, 633, 645, 657, 666, 672, 681, 690, 702, 711, 723, 735, 750, 759, 771, 783, 798, 810, 825, 840, 852, 858, 867, 876, 888, 897, 909, 915, 924, 933, 945, 957, 972, 984, 999, 1008, 1014, 1023, 1035, 1047, 1056, 1068, 1083, 1092, 1098, 1110, 1125, 1140, 1152, 1167, 1173, 1185, 1188, 1191, 1197, 1203, 1212, 1218, 1227, 1236, 1248, 1254, 1263, 1272, 1284, 1293, 1305, 1317, 1326, 1332, 1341, 1350, 1362, 1371, 1383, 1395, 1410, 1419, 1425, 1437, 1446, 1458, 1467, 1482, 1488, 1494, 1503, 1512, 1524, 1533, 1545, 1557, 1572, 1581, 1593, 1605, 1620, 1632, 1647, 1662, 1674, 1683, 1695, 1707, 1716, 1728, 1743, 1758, 1770, 1782, 1791, 1806, 1812, 1827, 1839, 1845, 1848, 1854, 1863, 1872, 1884, 1893, 1905, 1917, 1932, 1941, 1953, 1965, 1980, 1986, 1995, 2004, 2010, 2019, 2031, 2043, 2058, 2070, 2085, 2100, 2106, 2118, 2127, 2142, 2154, 2163, 2169, 2181, 2184, 2193, 2205, 2217, 2232, 2244, 2259, 2268, 2280, 2292, 2307, 2322, 2328, 2337, 2349, 2355, 2358, 2364, 2373, 2382, 2388, 2397, 2409, 2415, 2418, 2427, 2433, 2445, 2448, 2454, 2457, 2460};
@@ -67,11 +77,10 @@ public class MarchingCubesRenderer : IDisposable
     /// <param name="compute">MarchingCubesCompute.compute asset</param>
     /// <param name="lutAsset">MarchingCubesLUT.txt asset</param>
     /// <param name="material">Material using Custom/WaterLiquid shader</param>
-    public MarchingCubesRenderer(ComputeShader compute, TextAsset lutAsset, Material material)
+    public MarchingCubesRenderer(ComputeShader compute, TextAsset lutAsset, Material material = null)
     {
         if (compute == null) throw new ArgumentNullException(nameof(compute));
         if (lutAsset == null) throw new ArgumentNullException(nameof(lutAsset));
-        if (material == null) throw new ArgumentNullException(nameof(material));
 
         _compute = compute;
         _sourceMaterial = material;
@@ -96,8 +105,9 @@ public class MarchingCubesRenderer : IDisposable
         _compute.SetBuffer(_kMarch, PID_Offsets, _offsetsBuffer);
         _compute.SetBuffer(_kMarch, PID_Lengths, _lengthsBuffer);
 
-        // Register to draw into the custom water depth rendering pass
+        // Register to draw into custom passes
         WaterThicknessFeature.OnDrawWaterProcedural += DrawProceduralThickness;
+        WaterThicknessFeature.OnDrawWaterProxyProcedural += DrawProceduralProxy;
     }
 
     /// <summary>
@@ -111,7 +121,29 @@ public class MarchingCubesRenderer : IDisposable
         Vector3 boundsMin,
         Vector3 boundsMax,
         float isoLevel,
-        int layer)
+        int layer,
+        MarchingCubesDensitySource densitySource = MarchingCubesDensitySource.LiquidOnly)
+    {
+        UpdateSurface(
+            densityTexture3D,
+            normalTexture3D,
+            gridSize,
+            boundsMin,
+            boundsMax,
+            isoLevel,
+            densitySource);
+
+        DrawSurface(boundsMin, boundsMax, layer);
+    }
+
+    public void UpdateSurface(
+        RenderTexture densityTexture3D,
+        RenderTexture normalTexture3D,
+        Vector3Int gridSize,
+        Vector3 boundsMin,
+        Vector3 boundsMax,
+        float isoLevel,
+        MarchingCubesDensitySource densitySource)
     {
         if (_disposed || densityTexture3D == null || normalTexture3D == null) return;
 
@@ -140,21 +172,28 @@ public class MarchingCubesRenderer : IDisposable
         // to any .compute file in the project triggers a cascade reimport), and
         // the next Dispatch fails with "Property (lengths) at kernel index (0)
         // is not set". Rebinding here is cheap and makes the renderer immune.
-        _compute.SetBuffer(_kMarch, PID_Lut,     _lutBuffer);
+        _compute.SetBuffer(_kMarch, PID_Lut, _lutBuffer);
         _compute.SetBuffer(_kMarch, PID_Offsets, _offsetsBuffer);
         _compute.SetBuffer(_kMarch, PID_Lengths, _lengthsBuffer);
         _compute.SetTexture(_kMarch, PID_DensityTexture3D, densityTexture3D);
-        _compute.SetTexture(_kMarch, PID_NormalTexture3D,  normalTexture3D);
+        _compute.SetTexture(_kMarch, PID_NormalTexture3D, normalTexture3D);
         _compute.SetInts(PID_GridSize, dims.x, dims.y, dims.z);
         _compute.SetVector(PID_VoxelSize, new Vector4(voxelSize.x, voxelSize.y, voxelSize.z, 0f));
         _compute.SetVector(PID_BoundsMinWS, new Vector4(boundsMin.x, boundsMin.y, boundsMin.z, 0f));
         _compute.SetFloat(PID_IsoLevel, Mathf.Clamp01(isoLevel));
+        _compute.SetInt(PID_DensitySource, (int)densitySource);
 
         // Dispatch
         int gx = Mathf.CeilToInt(dims.x / 8f);
         int gy = Mathf.CeilToInt(dims.y / 8f);
         int gz = Mathf.CeilToInt(dims.z / 8f);
         _compute.Dispatch(_kMarch, gx, gy, gz);
+    }
+
+    private void DrawSurface(Vector3 boundsMin, Vector3 boundsMax, int layer)
+    {
+        if (_disposed || _sourceMaterial == null || _drawArgsBuffer == null || _vertexBuffer == null)
+            return;
 
         // Ensure material instance
         if (_matInstance == null)
@@ -165,6 +204,7 @@ public class MarchingCubesRenderer : IDisposable
         _matInstance.EnableKeyword(KW_Procedural);
         _matInstance.SetBuffer(PID_VertexBuffer, _vertexBuffer);
 
+        Vector3 sizeWS = boundsMax - boundsMin;
         Bounds drawBounds = new Bounds((boundsMin + boundsMax) * 0.5f, sizeWS);
 
         // Force this procedural mesh to render on the specific "Water" layer 
@@ -214,6 +254,7 @@ public class MarchingCubesRenderer : IDisposable
         _disposed = true;
 
         WaterThicknessFeature.OnDrawWaterProcedural -= DrawProceduralThickness;
+        WaterThicknessFeature.OnDrawWaterProxyProcedural -= DrawProceduralProxy;
 
         _lutBuffer?.Release();
         _offsetsBuffer?.Release();
@@ -227,29 +268,44 @@ public class MarchingCubesRenderer : IDisposable
 
     private void DrawProceduralThickness(RasterCommandBuffer cmd, Material thicknessMat)
     {
-        if (_disposed || _drawArgsBuffer == null || _vertexBuffer == null || thicknessMat == null) return;
-        
+        if (_disposed || !RenderInThicknessPass || _drawArgsBuffer == null || _vertexBuffer == null || thicknessMat == null) return;
+
         // Ensure the thickness material natively has the keyword and buffer attached
         thicknessMat.EnableKeyword(KW_Procedural);
         thicknessMat.SetBuffer(PID_VertexBuffer, _vertexBuffer);
-        
+
         // Also tell the command buffer explicitly
         cmd.EnableShaderKeyword(KW_Procedural);
         cmd.SetGlobalBuffer(PID_VertexBuffer, _vertexBuffer);
-        
+
         // Issue the indirect draw using the thickness material
         int passIndex = thicknessMat.FindPass("WaterThicknessGen");
         if (passIndex < 0) passIndex = 0; // Fallback
 
         cmd.DrawProceduralIndirect(
-            Matrix4x4.identity, 
-            thicknessMat, 
-            passIndex, 
-            MeshTopology.Triangles, 
-            _drawArgsBuffer, 
+            Matrix4x4.identity,
+            thicknessMat,
+            passIndex,
+            MeshTopology.Triangles,
+            _drawArgsBuffer,
             0);
-            
+
         cmd.DisableShaderKeyword(KW_Procedural);
+    }
+
+    private void DrawProceduralProxy(RasterCommandBuffer cmd, Material proxyMat, int passIndex)
+    {
+        if (_disposed || !RenderInProxyIntervalPass || _drawArgsBuffer == null || _vertexBuffer == null || proxyMat == null || passIndex < 0)
+            return;
+
+        cmd.SetGlobalBuffer(PID_VertexBuffer, _vertexBuffer);
+        cmd.DrawProceduralIndirect(
+            Matrix4x4.identity,
+            proxyMat,
+            passIndex,
+            MeshTopology.Triangles,
+            _drawArgsBuffer,
+            0);
     }
 
     public void Dispose() => Release();
