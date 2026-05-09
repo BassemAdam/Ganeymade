@@ -15,28 +15,6 @@ public class PhysicsWaterPhaseBridge : MonoBehaviour
 
     [HideInInspector] public Transform visualProxyTransform;
 
-    // Legacy serialized fields kept temporarily so existing scene/prefab values can migrate into
-    // the grouped settings object without manual re-assignment.
-    [SerializeField, HideInInspector] private ComputeShader particlesToDensityCompute;
-    [SerializeField, HideInInspector] private ComputeShader marchingCubesCompute;
-    [SerializeField, HideInInspector] private TextAsset marchingCubesLUT;
-    [SerializeField, HideInInspector] private Vector3Int volumeDims = new Vector3Int(64, 64, 64);
-    [SerializeField, HideInInspector] private float smoothingRadiusWS = 1f;
-    [SerializeField, HideInInspector] private Material rayMarchingMaterial;
-    [SerializeField, HideInInspector] private Material marchingCubesMaterial;
-    [SerializeField, HideInInspector] private Material vapourRaymarchMaterial;
-    [SerializeField, HideInInspector] private bool useMarchingCubes;
-    [SerializeField, HideInInspector] private float marchingCubesIsoLevel = 0.2f;
-    [SerializeField, HideInInspector] private bool blurVapourDensity = true;
-    [SerializeField, HideInInspector] private bool blurLiquidDensity;
-    [SerializeField, HideInInspector] private int liquidBlurRadius = 1;
-    [SerializeField, HideInInspector] private float liquidBlurSigma = 1.0f;
-    [SerializeField, HideInInspector] private float liquidBlurDetailPreserve;
-    [SerializeField, HideInInspector] private int blurRadius = 1;
-    [SerializeField, HideInInspector] private float blurSigma = 1.0f;
-    [SerializeField, HideInInspector] private float blurDetailPreserve = 0.25f;
-    [SerializeField, HideInInspector] private bool _settingsMigrated;
-
     private UseComputePlugin _computePlugin;
     private MeshFilter _sourceMeshFilter;
     private MeshRenderer _sourceMeshRenderer;
@@ -52,7 +30,6 @@ public class PhysicsWaterPhaseBridge : MonoBehaviour
 
     private void Awake()
     {
-        EnsureSettingsMigrated();
         CacheComponents();
         CreateHelpers();
         _particleStride = Marshal.SizeOf<Particle>();
@@ -63,7 +40,6 @@ public class PhysicsWaterPhaseBridge : MonoBehaviour
 
     private void OnEnable()
     {
-        EnsureSettingsMigrated();
         CacheComponents();
         CreateHelpers();
 
@@ -115,7 +91,6 @@ public class PhysicsWaterPhaseBridge : MonoBehaviour
 
     private bool TryInitializeBridge()
     {
-        EnsureSettingsMigrated();
         CacheComponents();
         CreateHelpers();
 
@@ -260,47 +235,8 @@ public class PhysicsWaterPhaseBridge : MonoBehaviour
             _marchingRenderer.Render(settings, _resources, boundsMin, boundsMax, gameObject.layer);
     }
 
-    private void EnsureSettingsMigrated()
-    {
-        if (settings == null)
-            settings = new WaterPhaseBridgeSettings();
-
-        if (_settingsMigrated)
-            return;
-
-        settings.References.particlesToDensityCompute = particlesToDensityCompute;
-        settings.References.marchingCubesCompute = marchingCubesCompute;
-        settings.References.marchingCubesLUT = marchingCubesLUT;
-
-        settings.DensityGrid.volumeDims = volumeDims;
-        settings.RaymarchSmoothing.liquidSmoothingRadiusWS = smoothingRadiusWS;
-        settings.MarchingCubesSmoothing.liquidSmoothingRadiusWS = smoothingRadiusWS;
-
-        settings.Blur.enabled = blurLiquidDensity || blurVapourDensity;
-        settings.Blur.radius = blurVapourDensity ? blurRadius : liquidBlurRadius;
-        settings.Blur.sigma = blurVapourDensity ? blurSigma : liquidBlurSigma;
-        settings.Blur.detailPreserve = blurVapourDensity ? blurDetailPreserve : liquidBlurDetailPreserve;
-
-        settings.MarchingCubesBlur.enabled = settings.Blur.enabled;
-        settings.MarchingCubesBlur.radius = settings.Blur.radius;
-        settings.MarchingCubesBlur.sigma = settings.Blur.sigma;
-        settings.MarchingCubesBlur.detailPreserve = settings.Blur.detailPreserve;
-
-        settings.Rendering.mode = useMarchingCubes
-            ? WaterSurfaceRenderMode.MarchingCubesLiquidWithVapour
-            : WaterSurfaceRenderMode.RaymarchVolume;
-        settings.Rendering.rayMarchingMaterial = rayMarchingMaterial;
-        settings.Rendering.marchingCubesMaterial = marchingCubesMaterial;
-        settings.Rendering.vapourRaymarchMaterial = vapourRaymarchMaterial;
-        settings.Rendering.marchingCubesIsoLevel = marchingCubesIsoLevel;
-
-        _settingsMigrated = true;
-    }
-
     private void OnValidate()
     {
-        EnsureSettingsMigrated();
-
         settings.DensityGrid.volumeDims.x = Mathf.Max(1, settings.DensityGrid.volumeDims.x);
         settings.DensityGrid.volumeDims.y = Mathf.Max(1, settings.DensityGrid.volumeDims.y);
         settings.DensityGrid.volumeDims.z = Mathf.Max(1, settings.DensityGrid.volumeDims.z);
