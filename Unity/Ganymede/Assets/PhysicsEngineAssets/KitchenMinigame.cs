@@ -107,7 +107,8 @@ public class KitchenMinigame : MonoBehaviour
         if (tapSource != null)
             _tapOn = tapSource.isActive;
 
-        _stoveOn = GetStoveState();
+        _stoveOn = false;
+        SetStoveState(false);
         _stoveTemp = GetStoveTemperature();
 
         // Build UI after state is read so slider starts at the correct value
@@ -190,16 +191,17 @@ public class KitchenMinigame : MonoBehaviour
 
     bool GetStoveState()
     {
-        if (_voxelHeat != null) return _voxelHeat.active;
-        if (_solidMat != null) return _solidMat.isContinuousHeatSource;
+        if (_voxelHeat != null) return _voxelHeat.enabled;
+        if (_heatSourceObj != null) return _heatSourceObj.enabled;
+        if (_solidMat != null) return _solidMat.enabled;
         return false;
     }
 
     void SetStoveState(bool on)
     {
-        if (_voxelHeat != null) _voxelHeat.active = on;
-        if (_heatSourceObj != null) _heatSourceObj.active = on;
-        if (_solidMat != null) _solidMat.isContinuousHeatSource = on;
+        if (_voxelHeat != null) _voxelHeat.enabled = on;
+        if (_heatSourceObj != null) _heatSourceObj.enabled = on;
+        if (_solidMat != null) _solidMat.enabled = on;
     }
 
     float GetStoveTemperature()
@@ -298,8 +300,8 @@ public class KitchenMinigame : MonoBehaviour
         canvas.planeDistance = 1f;
 
         var scaler = canvasGO.AddComponent<CanvasScaler>();
-        scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
-        scaler.referenceResolution = new Vector2(1920, 1080);
+        scaler.uiScaleMode = CanvasScaler.ScaleMode.ConstantPixelSize;
+        scaler.scaleFactor = 1f;
 
         canvasGO.AddComponent<GraphicRaycaster>();
 
