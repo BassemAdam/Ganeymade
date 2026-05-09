@@ -43,6 +43,9 @@ public class ThermalReceiver : MonoBehaviour
     [Tooltip("Log diffusion stats every N frames. 0 = disabled.")]
     public int debugLogInterval = 60;
 
+    [Tooltip("Enable verbose logging. Disable to suppress all info/warning logs.")]
+    public bool verbose = true;
+
     [Header("Voxel Source")]
     public VoxelTracerSystem voxelTracer;
 
@@ -125,14 +128,14 @@ public class ThermalReceiver : MonoBehaviour
         // Check if the grid size changed 
         if (voxelTracer.Nx != gridWidth || voxelTracer.Ny != gridHeight || voxelTracer.Nz != gridDepth)
         {
-            Debug.Log("[ThermalReceiver] Voxel grid changed — reinitializing diffusion.");
+            if (verbose) Debug.Log("[ThermalReceiver] Voxel grid changed — reinitializing diffusion.");
             StartCoroutine(Reinitialize());
             return;
         }
         // Re-read HeatSourceTexture whenever sources appear, disappear, move, or change temperature.  
         if (HeatSourcesChanged() && !_refreshingHeatSources)
         {
-            Debug.Log("[ThermalReceiver] start heat source refresh");
+            if (verbose) Debug.Log("[ThermalReceiver] start heat source refresh");
             StartCoroutine(RefreshHeatSources());
         }
 
@@ -246,13 +249,13 @@ public class ThermalReceiver : MonoBehaviour
         }
         else
         {
-            Debug.LogWarning("[ThermalReceiver] HeatSourceTexture is null — " +
+            if (verbose) Debug.LogWarning("[ThermalReceiver] HeatSourceTexture is null — " +
                              "no heat sources will be pinned.  " +
                              "Apply the VoxelTracerSystem patch to generate this texture.");
             Array.Clear(heatSourceData, 0, heatSourceData.Length);
         }
 
-        Debug.Log("[ThermalReceiver] Texture readback complete. Uploading data to diffusion shader.");
+        if (verbose) Debug.Log("[ThermalReceiver] Texture readback complete. Uploading data to diffusion shader.");
 
         SetDiffusivityData(diffusivityData, gx * gy * gz);
     }
@@ -293,7 +296,7 @@ public class ThermalReceiver : MonoBehaviour
 
         int pinnedCount = 0;
         foreach (float v in heatSourceData) if (v > 0f) pinnedCount++;
-        Debug.Log($"[ThermalReceiver] Heat sources refreshed — {pinnedCount} pinned voxels.");
+        if (verbose) Debug.Log($"[ThermalReceiver] Heat sources refreshed — {pinnedCount} pinned voxels.");
     }
 
     // ─── Change detection ────────────────────────────────────────────────
@@ -551,7 +554,7 @@ public class ThermalReceiver : MonoBehaviour
                         $"diffusedNeighbours={diffusedNeighbours}  diffusedAvg={diffusedAvg:F2}°");
         }
 
-        Debug.Log(sb.ToString());
+        if (verbose) Debug.Log(sb.ToString());
         _prevMaxTemp = maxT;
         _prevAvgTemp = avgT;
     }
@@ -605,6 +608,8 @@ public class ThermalReceiver : MonoBehaviour
         }
 
         float avgDiff = sumDiff / totalCells;
+
+        if (!verbose) return;
 
         Debug.Log($"[ThermalReceiver] === Texture Readback Debug ===");
         Debug.Log($"[ThermalReceiver] Grid: {gridWidth}x{gridHeight}x{gridDepth} = {totalCells} total cells");

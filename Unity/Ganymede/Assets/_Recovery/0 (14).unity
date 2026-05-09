@@ -644,7 +644,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 7193c26c385088b48869367ff217e876, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::VoxelSolidMaterial
-  temperature: 25
+  temperature: 70
   thermalDiffusivity: 100
   coolingRate: 0.01
   isContinuousHeatSource: 0
@@ -1295,8 +1295,9 @@ MonoBehaviour:
   defaultAmbientTemp: 70
   visualizationInterval: 2
   debugLogInterval: 60
-  voxelTracer: {fileID: 0}
-  voxelTracerCamera: {fileID: 0}
+  verbose: 1
+  voxelTracer: {fileID: 1465852633}
+  voxelTracerCamera: {fileID: 1886338143}
 --- !u!1 &1886338140
 GameObject:
   m_ObjectHideFlags: 0

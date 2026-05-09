@@ -675,6 +675,19 @@ public class UseComputePlugin : MonoBehaviour
                         for (int k = tapStartIdx; k < idx; k++)
                             TapReservedSlots.Add(k);
                     }
+                    // ── LATTICE MODE ─────────────────────────────────────────
+                    // Park as dormant; SpawnManager.TryBulkSpawn places them at grid positions.
+                    else if (sources[s].spawnMode == WaterSource.SpawnMode.Lattice)
+                    {
+                        for (int k = 0; k < thisCount && idx < count; k++)
+                        {
+                            Vector3 scattered = dormantParkPosition + new Vector3(idx * smoothingRadius * 2f, 0f, 0f);
+                            Particle p = Particle.Create(scattered, Vector3.zero, particleMass);
+                            p.fixedId = idx;
+                            p.phase = -1;
+                            particles[idx++] = p;
+                        }
+                    }
                     // ── SPHERE MODE ───────────────────────────────────────────
                     else
                     {

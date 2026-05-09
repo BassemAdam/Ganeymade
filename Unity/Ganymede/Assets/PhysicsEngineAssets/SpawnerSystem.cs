@@ -162,6 +162,10 @@ public class SpawnManager : MonoBehaviour
             if (src.spawnMode == WaterSource.SpawnMode.Tap && src.tapExhausted)
                 continue;
 
+            // Lattice mode is one-shot at Start via TryBulkSpawn; skip per-frame emission
+            if (src.spawnMode == WaterSource.SpawnMode.Lattice)
+                continue;
+
             // Accumulate fractional particles owed this frame
             _emitAccumulators[s] += src.emissionRate * dt;
             float maxAccum = src.emissionRate * Time.fixedDeltaTime * 2f;
@@ -360,46 +364,86 @@ public class SpawnManager : MonoBehaviour
         // Only bulk-spawn if majority of particles are dormant (spawn pool is full)
         if (dormantCount < _particleCount / 2) return false;
 
-        // Find sphere-mode sources to distribute particles to
+        // Collect lattice sources and sphere sources separately
+        var latticeSources = new List<WaterSource>();
         var sphereSources = new List<WaterSource>();
         foreach (var src in _sources)
         {
-            if (src != null && src.isActive && src.spawnMode == WaterSource.SpawnMode.Sphere)
+            if (src == null || !src.isActive) continue;
+            if (src.spawnMode == WaterSource.SpawnMode.Lattice)
+                latticeSources.Add(src);
+            else if (src.spawnMode == WaterSource.SpawnMode.Sphere)
                 sphereSources.Add(src);
         }
-        if (sphereSources.Count == 0) return false;
+        if (sphereSources.Count == 0 && latticeSources.Count == 0) return false;
 
-        // Distribute dormant slots evenly among sphere sources
-        int perSource = dormantCount / sphereSources.Count;
-        int sourceIdx = 0;
-        int assigned = 0;
-
-        for (int i = 0; i < _particleCount && sourceIdx < sphereSources.Count; i++)
+        // Build a queue of dormant slot indices
+        var dormantSlots = new List<int>(dormantCount);
+        for (int i = 0; i < _particleCount; i++)
         {
             if (_tapReservedSlots.Contains(i)) continue;
-            if (_cpuParticles[i].phase != -1) continue;
+            if (_cpuParticles[i].phase == -1) dormantSlots.Add(i);
+        }
+        int slotHead = 0;
 
-            var src = sphereSources[sourceIdx];
+        // --- Lattice sources: place particles at exact grid positions ---
+        var latticePositions = new List<Vector3>();
+        foreach (var src in latticeSources)
+        {
+            src.GetLatticePositions(latticePositions, _sim.smoothingRadius);
             Vector3 dir = src.emissionDirection.sqrMagnitude > 0.0001f
                 ? src.emissionDirection.normalized : Vector3.down;
 
-            Vector3 offset = UnityEngine.Random.insideUnitSphere * src.emissionRadius;
-            Particle p = default;
-            p.position = src.transform.position + offset;
-            p.velocity = dir * src.emissionSpeed;
-            p.mass = _sim.particleMass;
-            p.temperature = src.initialTemperature;
-            p.phase = 0;
-            p.density = _sim.restDensity;
-            p.fixedId = i;
-
-            _cpuParticles[i] = p;
-            assigned++;
-
-            if (assigned >= perSource && sourceIdx < sphereSources.Count - 1)
+            for (int j = 0; j < latticePositions.Count && slotHead < dormantSlots.Count; j++)
             {
-                assigned = 0;
-                sourceIdx++;
+                int slot = dormantSlots[slotHead++];
+                Particle p = default;
+                p.position = latticePositions[j];
+                p.velocity = Vector3.zero;
+                p.mass = _sim.particleMass;
+                p.temperature = src.initialTemperature;
+                p.phase = 0;
+                p.density = _sim.restDensity;
+                p.fixedId = slot;
+                _cpuParticles[slot] = p;
+            }
+
+            if (verbose)
+                Debug.Log($"[SpawnManager] Lattice '{src.name}': placed {Mathf.Min(latticePositions.Count, slotHead)} particles.");
+        }
+
+        // --- Sphere sources: distribute remaining dormant slots ---
+        if (sphereSources.Count > 0)
+        {
+            int remaining = dormantSlots.Count - slotHead;
+            int perSource = remaining / sphereSources.Count;
+            int sourceIdx = 0;
+            int assigned = 0;
+
+            while (slotHead < dormantSlots.Count && sourceIdx < sphereSources.Count)
+            {
+                int slot = dormantSlots[slotHead++];
+                var src = sphereSources[sourceIdx];
+                Vector3 dir = src.emissionDirection.sqrMagnitude > 0.0001f
+                    ? src.emissionDirection.normalized : Vector3.down;
+
+                Vector3 offset = UnityEngine.Random.insideUnitSphere * src.emissionRadius;
+                Particle p = default;
+                p.position = src.transform.position + offset;
+                p.velocity = dir * src.emissionSpeed;
+                p.mass = _sim.particleMass;
+                p.temperature = src.initialTemperature;
+                p.phase = 0;
+                p.density = _sim.restDensity;
+                p.fixedId = slot;
+                _cpuParticles[slot] = p;
+                assigned++;
+
+                if (assigned >= perSource && sourceIdx < sphereSources.Count - 1)
+                {
+                    assigned = 0;
+                    sourceIdx++;
+                }
             }
         }
 

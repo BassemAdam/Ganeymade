@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.Rendering;
 using UnityEngine.Rendering.Universal;
@@ -30,6 +31,11 @@ public class VoxelNormalGizmos : MonoBehaviour
 
     [Tooltip("How often to refresh the voxel data (seconds). 0 = every frame.")]
     [Min(0)] public float refreshInterval = 0.2f;
+
+    [Header("Layer Filter")]
+    [Tooltip("Only show normals for voxels overlapping objects on these layers. " +
+             "Set to 'Everything' to show all surface normals.")]
+    public LayerMask normalLayers = ~0;
 
     Material _lineMat;
     Mesh _lineMesh;
@@ -142,6 +148,25 @@ public class VoxelNormalGizmos : MonoBehaviour
         RenderTexture.ReleaseTemporary(tempRT);
         Destroy(tempTex);
 
+        // Collect AABB bounds of renderers on the target layers for filtering.
+        // When normalLayers == Everything (~0), skip the per-voxel check entirely.
+        bool filterByLayer = normalLayers.value != ~0;
+        List<Bounds> layerBounds = null;
+        if (filterByLayer)
+        {
+            layerBounds = new List<Bounds>();
+            foreach (var mr in FindObjectsByType<MeshRenderer>(FindObjectsSortMode.None))
+            {
+                if ((normalLayers.value & (1 << mr.gameObject.layer)) != 0)
+                    layerBounds.Add(mr.bounds);
+            }
+            foreach (var smr in FindObjectsByType<SkinnedMeshRenderer>(FindObjectsSortMode.None))
+            {
+                if ((normalLayers.value & (1 << smr.gameObject.layer)) != 0)
+                    layerBounds.Add(smr.bounds);
+            }
+        }
+
         // Build normal lines from surface voxels
         float unit = voxelSystem.ActiveVoxelSize;
         float halfUnit = unit * 0.5f;
@@ -197,6 +222,10 @@ public class VoxelNormalGizmos : MonoBehaviour
                         start.z + unit * z + halfUnit
                     );
 
+                    // Skip voxels not overlapping any renderer on the target layers
+                    if (filterByLayer && !IsInsideAnyBounds(center, layerBounds))
+                        continue;
+
                     _lineStarts[_lineCount] = center;
                     _lineEnds[_lineCount] = center + normal * normalLength;
                     _lineCount++;
@@ -239,6 +268,16 @@ public class VoxelNormalGizmos : MonoBehaviour
         _lineMesh.vertices = verts;
         _lineMesh.colors = colors;
         _lineMesh.SetIndices(indices, MeshTopology.Lines, 0);
+    }
+
+    static bool IsInsideAnyBounds(Vector3 point, List<Bounds> boundsList)
+    {
+        for (int i = 0; i < boundsList.Count; i++)
+        {
+            if (boundsList[i].Contains(point))
+                return true;
+        }
+        return false;
     }
 
     float GetFill(int x, int y, int z, int nx, int ny, int nz)
