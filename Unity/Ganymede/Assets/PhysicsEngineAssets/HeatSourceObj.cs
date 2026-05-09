@@ -11,9 +11,14 @@ public class HeatSourceObj : MonoBehaviour
     [Range(0f, 1000f)]
     public float temperature = 100f;
 
+    [Tooltip("Whether this heat source is currently active.")]
+    public bool active = true;
+
     // Called by ThermalReceiver to check if a world point is adjacent to this source
     public bool IsAdjacentToSource(Vector3 worldPoint, float threshold)
     {
+        if (!active) return false;
+
         Collider col = GetComponent<Collider>();
         if (col == null) 
             return false;

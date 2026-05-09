@@ -285,6 +285,26 @@ public class UseComputePlugin : MonoBehaviour
     /// <summary>Number of fluid/gas particles (excluding boundary). SpawnManager should use this for its pool.</summary>
     public int FluidParticleCount => _boundaryStartIndex > 0 ? _boundaryStartIndex : particleCount;
 
+    /// <summary>
+    /// Reads back particle data from the GPU and computes average temperature
+    /// of active (non-dormant) fluid particles. Returns ambient if no data available.
+    /// </summary>
+    public float GetAverageFluidTemperature()
+    {
+        if (!initialized || readbackData == null) return ambientTemperature;
+        GetComputeResult(readbackData, particleCount);
+        int fluidCount = FluidParticleCount;
+        float sum = 0f;
+        int active = 0;
+        for (int i = 0; i < fluidCount; i++)
+        {
+            if (readbackData[i].phase < 0) continue; // skip dormant
+            sum += readbackData[i].temperature;
+            active++;
+        }
+        return active > 0 ? sum / active : ambientTemperature;
+    }
+
     // --------------------------------------------------------------------
 
     private bool initialized;
