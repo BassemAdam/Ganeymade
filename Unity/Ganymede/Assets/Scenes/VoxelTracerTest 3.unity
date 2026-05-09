@@ -228,6 +228,7 @@ MonoBehaviour:
   temperature: 70
   thermalDiffusivity: 0.1
   coolingRate: 0.01
+  isContinuousHeatSource: 0
   density: 2500
   mass: 0
   phase: 0
@@ -418,6 +419,9 @@ MonoBehaviour:
   lightColor: {r: 1, g: 1, b: 1, a: 1}
   ambientColor: {r: 0.12, g: 0.12, b: 0.18, a: 1}
   maxSteps: 4096
+  tempTexture: {fileID: 0}
+  minDisplayTemp: 0
+  maxDisplayTemp: 100
 --- !u!114 &987774560
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -449,6 +453,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   voxelSystem: {fileID: 1603268498}
+  thermalReceiver: {fileID: 0}
   axis: 0
   slicePosition: 0.5
   filledColor: {r: 1, g: 1, b: 1, a: 1}
@@ -458,6 +463,7 @@ MonoBehaviour:
   sdfDisplayRange: 5
   heatMapMin: 0
   heatMapMax: 100
+  diffusivityMax: 1
   toggleKey: 32
 --- !u!114 &987774562
 MonoBehaviour:
@@ -629,6 +635,17 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 936650645ccee63498a91baf801762fa, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::VoxelDynamic
+  enableFluidForces: 1
+  buoyancyMode: 0
+  objectDensity: 15
+  dragCoefficient: 1
+  angularDragCoefficient: 0.5
+  sinkFactor: 0.3
+  stayUpright: 0
+  autoSetMass: 1
+  submergedFraction: 0
+  lastBuoyancyForce: {x: 0, y: 0, z: 0}
+  lastDragForce: {x: 0, y: 0, z: 0}
 --- !u!114 &1128183671
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -675,6 +692,17 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 936650645ccee63498a91baf801762fa, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
+  enableFluidForces: 1
+  buoyancyMode: 0
+  objectDensity: 15
+  dragCoefficient: 1
+  angularDragCoefficient: 0.5
+  sinkFactor: 0.3
+  stayUpright: 0
+  autoSetMass: 1
+  submergedFraction: 0
+  lastBuoyancyForce: {x: 0, y: 0, z: 0}
+  lastDragForce: {x: 0, y: 0, z: 0}
 --- !u!114 &1317242625
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -736,7 +764,7 @@ MeshRenderer:
   m_RenderingLayerMask: 1
   m_RendererPriority: 0
   m_Materials:
-  - {fileID: 10303, guid: 0000000000000000f000000000000000, type: 0}
+  - {fileID: 2100000, guid: 31321ba15b8f8eb4c954353edc038b1d, type: 2}
   m_StaticBatchInfo:
     firstSubMesh: 0
     subMeshCount: 0
@@ -826,6 +854,9 @@ MonoBehaviour:
   includeSkinnedMeshRenderers: 1
   includeTerrains: 1
   terrainSampleStep: 1
+  voxelizeLayers:
+    serializedVersion: 2
+    m_Bits: 4294967295
   defaultSolidTemperature: 25
   defaultSolidDiffusivity: 0.1
   maxVoxelsPerAxis: 512
@@ -1042,7 +1073,7 @@ MeshRenderer:
   m_RenderingLayerMask: 1
   m_RendererPriority: 0
   m_Materials:
-  - {fileID: 10303, guid: 0000000000000000f000000000000000, type: 0}
+  - {fileID: 2100000, guid: 31321ba15b8f8eb4c954353edc038b1d, type: 2}
   m_StaticBatchInfo:
     firstSubMesh: 0
     subMeshCount: 0
@@ -1114,6 +1145,17 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 936650645ccee63498a91baf801762fa, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
+  enableFluidForces: 1
+  buoyancyMode: 0
+  objectDensity: 15
+  dragCoefficient: 1
+  angularDragCoefficient: 0.5
+  sinkFactor: 0.3
+  stayUpright: 0
+  autoSetMass: 1
+  submergedFraction: 0
+  lastBuoyancyForce: {x: 0, y: 0, z: 0}
+  lastDragForce: {x: 0, y: 0, z: 0}
 --- !u!114 &2043068043
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -1161,6 +1203,7 @@ MonoBehaviour:
   temperature: 25
   thermalDiffusivity: 0.1
   coolingRate: 0.01
+  isContinuousHeatSource: 0
   density: 2500
   mass: 0
   phase: 0

@@ -205,13 +205,15 @@ public class SpawnManager : MonoBehaviour
                     float streamSpacing = _sim.smoothingRadius * 1.1f;
                     int streamIndex = _tapEmitCount % Mathf.Max(1, Mathf.RoundToInt(src.emissionRadius / streamSpacing));
 
-                    float radial = UnityEngine.Random.Range(0f, _sim.smoothingRadius * 0.5f);
+                    // Use emissionRadius for spawn spread so the user can tighten the stream.
+                    // sqrt gives uniform-area disk distribution; for a coherent stream keep emissionRadius small.
+                    float radial = Mathf.Sqrt(UnityEngine.Random.Range(0f, 1f)) * src.emissionRadius;
                     float angle  = UnityEngine.Random.Range(0f, Mathf.PI * 2f);
                     p.position = src.transform.position + right * (radial * Mathf.Cos(angle)) + up2 * (radial * Mathf.Sin(angle)) + dir * (streamIndex * streamSpacing);
 
-                    // Axial jitter larger than radial so velocity spread stays within the stream rather than diverging outward.
-                    float jitterAxial  = UnityEngine.Random.Range(-0.05f, 0.05f) * src.emissionSpeed;
-                    float jitterRadial = UnityEngine.Random.Range(-0.02f, 0.02f) * src.emissionSpeed;
+                    // Minimal jitter keeps the stream coherent; SPH pressure handles natural spreading.
+                    float jitterAxial  = UnityEngine.Random.Range(-0.02f, 0.02f) * src.emissionSpeed;
+                    float jitterRadial = UnityEngine.Random.Range(-0.005f, 0.005f) * src.emissionSpeed;
                     p.velocity = dir * (src.emissionSpeed + jitterAxial) + right * (jitterRadial * Mathf.Cos(angle)) + up2 * (jitterRadial * Mathf.Sin(angle));
 
                     _tapEmitCount++;
