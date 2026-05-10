@@ -127,8 +127,8 @@ Material:
     - _DebugNormals: 1
     - _DebugReflectionCubemapMode: 2
     - _DebugViewMode: 0
-    - _DensityMultiplier: 0.7
-    - _DensityOffset: -0.22
+    - _DensityMultiplier: 1
+    - _DensityOffset: -0.37
     - _DensityPower: 1.5
     - _DetailAlbedoMapScale: 1
     - _DetailNormalMapScale: 1
@@ -139,7 +139,7 @@ Material:
     - _GlossMapScale: 0
     - _Glossiness: 0
     - _GlossyReflections: 0
-    - _IsoLevel: 0.001
+    - _IsoLevel: 0.01
     - _Jitter: 1
     - _LightStepSize: 0.289
     - _MarchSteps: 64

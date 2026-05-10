@@ -14,8 +14,7 @@
 #pragma kernel ClearGrid
 #pragma kernel SplatParticles
 #pragma kernel NormalizeToTexture
-#pragma kernel BlurLiquidDensity
-#pragma kernel BlurVapourDensity
+#pragma kernel BlurDensity
 #pragma kernel BakeNormals
 
 struct Particle
@@ -45,7 +44,7 @@ StructuredBuffer<Particle>  _ParticleBuffer;
 // N = _VolumeDims.x * _VolumeDims.y * _VolumeDims.z
 RWStructuredBuffer<uint>    _DensityGrid;
 RWTexture3D<float2>         _DensityTexture3D_RG;  // R = liquid, G = vapour
-// Read-only binding used by BlurVapourDensity to avoid
+// Read-only binding used by the density blur passes to avoid
 // reading and writing the same texture in the same dispatch (hazard-free pipeline).
 Texture3D<float2>           _DensityTexture3D_Read;
 RWTexture3D<float4>         _NormalTexture3D;         // xyz = outward surface normal, w = unused
@@ -65,16 +64,11 @@ float  _AdaptiveDensityCurve;   // gamma applied to t before lerp. 1 = linear, <
 int    _KernelRadiusVoxels;   // loop bound covering the LARGER of the two radii (bulk). Falloff zeroes smaller-h splats automatically.
 float2 _InvDensityScaleRG;    // x = liquid scale, y = vapour scale (vapour rest density is lower)
 
-// ── Gaussian blur params (vapour) ───────────────────────────────────────────
+// ── Gaussian blur params (rebound per dispatch) ─────────────────────────────
 int    _BlurRadius;              // neighborhood half-size in voxels (1 = 3^3, 2 = 5^3, etc.)
 float  _BlurSigma;               // Gaussian sigma in voxels; controls falloff rate
 float  _BlurDetailPreserve;      // 0 = pure smooth, 1 = original detail fully added back (sharpening)
-// ─────────────────────────────────────────────────────────────────────────────
-
-// ── Gaussian blur params (liquid) ────────────────────────────────────────────
-int    _LiquidBlurRadius;        // neighborhood half-size in voxels
-float  _LiquidBlurSigma;         // Gaussian sigma in voxels
-float  _LiquidBlurDetailPreserve;// 0 = pure smooth, 1 = original detail fully added back
+int    _BlurChannel;             // 0 = liquid (R), 1 = vapour (G)
 // ─────────────────────────────────────────────────────────────────────────────
 
 uint GridIndex(int3 v)
@@ -249,77 +243,30 @@ void NormalizeToTexture(uint3 id : SV_DispatchThreadID)
     _DensityTexture3D_RG[id] = float2(saturate(liquidNorm), saturate(vapourNorm));
 }
 
-// ── BlurLiquidDensity kernel ─────────────────────────────────────────────────────
+// ── BlurDensity kernel ────────────────────────────────────────────────────────
 // Runs AFTER NormalizeToTexture. Reads from _DensityTexture3D_Read and writes a
-// Gaussian-blurred liquid channel to _DensityTexture3D_RG.
-// Vapour (G channel) is copied unchanged — blur only applies to liquid (R).
-// ────────────────────────────────────────────────────────────────────────────────
+// Gaussian-blurred density channel to _DensityTexture3D_RG.
+// _BlurChannel selects which channel is blurred:
+//   0 = liquid (R), preserve vapour (G)
+//   1 = vapour (G), preserve liquid (R)
+// The same kernel is dispatched twice from C# with different _BlurChannel values
+// AND different radius/sigma/detail settings for each channel.
+// ───────────────────────────────────────────────────────────────────────────────
 [numthreads(8, 8, 8)]
-void BlurLiquidDensity(uint3 id : SV_DispatchThreadID)
+void BlurDensity(uint3 id : SV_DispatchThreadID)
 {
     if (id.x >= (uint)_VolumeDims.x || id.y >= (uint)_VolumeDims.y || id.z >= (uint)_VolumeDims.z)
         return;
 
-    int3  dims     = _VolumeDims;
-    float original = _DensityTexture3D_Read[(int3)id].r;
+    int3 sampleId = (int3)id;
+    int3 dims = _VolumeDims;
+    float2 originalSample = _DensityTexture3D_Read[(int3)id];
 
-    float liquidSum  = 0.0;
-    float weightSum  = 0.0;
-    float invTwoSig2 = 1.0 / max(2.0 * _LiquidBlurSigma * _LiquidBlurSigma, 1e-6);
-    int   r          = clamp(_LiquidBlurRadius, 1, 4);
-
-    [loop]
-    for (int dz = -r; dz <= r; dz++)
-    {
-    [loop]
-    for (int dy = -r; dy <= r; dy++)
-    {
-    [loop]
-    for (int dx = -r; dx <= r; dx++)
-    {
-        float dist2 = (float)(dx*dx + dy*dy + dz*dz);
-        float w     = exp(-dist2 * invTwoSig2);
-        int3  coord = clamp((int3)id + int3(dx, dy, dz), int3(0, 0, 0), dims - 1);
-        liquidSum  += w * _DensityTexture3D_Read[coord].r;
-        weightSum  += w;
-    }
-    }
-    }
-
-    float blurred     = liquidSum / max(weightSum, 1e-6);
-    float finalLiquid = blurred + _LiquidBlurDetailPreserve * (original - blurred);
-
-    float vapour = _DensityTexture3D_Read[(int3)id].g;  // vapour stays exact
-    _DensityTexture3D_RG[id] = float2(saturate(finalLiquid), vapour);
-}
-
-// ── BlurVapourDensity kernel ──────────────────────────────────────────────────────
-// Runs AFTER NormalizeToTexture. Reads from _DensityTexture3D_Read and writes a
-// Gaussian-blurred vapour channel to _DensityTexture3D_RG.
-// Liquid (R channel) is copied unchanged — blur only applies to vapour (G).
-//
-// Blur parameters (set from C# each frame):
-//   _BlurRadius        - half-size of the kernel in voxels (1→3^3, 2→5^3, 3→7^3)
-//   _BlurSigma         - Gaussian sigma in voxels; small = sharp falloff, large = wide blur
-//   _BlurDetailPreserve- [0,1] mix: 0 = pure blurred, 1 = full original detail added back
-//
-// Detail preservation: finalVapour = blurred + detailPreserve * (original - blurred)
-// At 0 this gives a completely smooth field (best for noisy sparse splats).
-// At 1 the original high-frequency structure is fully restored on top of the smooth base.
-// ────────────────────────────────────────────────────────────────────────────────
-[numthreads(8, 8, 8)]
-void BlurVapourDensity(uint3 id : SV_DispatchThreadID)
-{
-    if (id.x >= (uint)_VolumeDims.x || id.y >= (uint)_VolumeDims.y || id.z >= (uint)_VolumeDims.z)
-        return;
-
-    int3  dims     = _VolumeDims;
-    float original = _DensityTexture3D_Read[(int3)id].g;
-
-    float vapourSum  = 0.0;
-    float weightSum  = 0.0;
+    float original = (_BlurChannel == 0) ? originalSample.r : originalSample.g;
+    float valueSum = 0.0;
+    float weightSum = 0.0;
     float invTwoSig2 = 1.0 / max(2.0 * _BlurSigma * _BlurSigma, 1e-6);
-    int   r          = clamp(_BlurRadius, 1, 4);
+    int r = clamp(_BlurRadius, 1, 4);
 
     [loop]
     for (int dz = -r; dz <= r; dz++)
@@ -331,20 +278,25 @@ void BlurVapourDensity(uint3 id : SV_DispatchThreadID)
     for (int dx = -r; dx <= r; dx++)
     {
         float dist2 = (float)(dx*dx + dy*dy + dz*dz);
-        float w     = exp(-dist2 * invTwoSig2);
-        int3  coord = clamp((int3)id + int3(dx, dy, dz), int3(0, 0, 0), dims - 1);
-        vapourSum  += w * _DensityTexture3D_Read[coord].g;
-        weightSum  += w;
+        float w = exp(-dist2 * invTwoSig2);
+        int3 coord = clamp(sampleId + int3(dx, dy, dz), int3(0, 0, 0), dims - 1);
+        float2 sampleValue = _DensityTexture3D_Read[coord];
+        valueSum += w * ((_BlurChannel == 0) ? sampleValue.r : sampleValue.g);
+        weightSum += w;
     }
     }
     }
 
-    float blurred     = vapourSum / max(weightSum, 1e-6);
-    // Detail preservation: add back the high-frequency residual from the original.
-    float finalVapour = blurred + _BlurDetailPreserve * (original - blurred);
+    float blurred = valueSum / max(weightSum, 1e-6);
+    float finalValue = blurred + _BlurDetailPreserve * original ;
 
-    float liquid = _DensityTexture3D_Read[(int3)id].r;  // liquid stays exact
-    _DensityTexture3D_RG[id] = float2(liquid, saturate(finalVapour));
+    float2 outputSample = originalSample;
+    if (_BlurChannel == 0)
+        outputSample.r = saturate(finalValue);
+    else
+        outputSample.g = saturate(finalValue);
+
+    _DensityTexture3D_RG[id] = outputSample;
 }
 
 // ── BakeNormals kernel ────────────────────────────────────────────────────────

@@ -243,13 +243,8 @@ public class PhysicsWaterPhaseBridge : MonoBehaviour
         settings.DensityGrid.vapourSmoothingRadiusWS = Mathf.Max(0f, settings.DensityGrid.vapourSmoothingRadiusWS);
         settings.DensityGrid.maxKernelRadiusVoxels = Mathf.Clamp(settings.DensityGrid.maxKernelRadiusVoxels, 1, 8);
 
-        settings.Blur.radius = Mathf.Clamp(settings.Blur.radius, 1, 4);
-        settings.Blur.sigma = Mathf.Clamp(settings.Blur.sigma, 0.1f, 4.0f);
-        settings.Blur.detailPreserve = Mathf.Clamp01(settings.Blur.detailPreserve);
-
-        settings.MarchingCubesBlur.radius = Mathf.Clamp(settings.MarchingCubesBlur.radius, 1, 4);
-        settings.MarchingCubesBlur.sigma = Mathf.Clamp(settings.MarchingCubesBlur.sigma, 0.1f, 4.0f);
-        settings.MarchingCubesBlur.detailPreserve = Mathf.Clamp01(settings.MarchingCubesBlur.detailPreserve);
+        settings.RaymarchBlur.Clamp();
+        settings.MarchingCubesBlur.Clamp();
 
         ValidateAdaptiveSmoothing(settings.RaymarchSmoothing);
         ValidateAdaptiveSmoothing(settings.MarchingCubesSmoothing);
