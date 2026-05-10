@@ -34,6 +34,10 @@ public class KitchenMinigame : MonoBehaviour
     public WaterSource tapSource;
     public GameObject stoveObject;
 
+    [Header("Duck")]
+    [Tooltip("The rubber duck with a DuckMouseFollow component. Mouse-follow is toggled from the UI.")]
+    public DuckMouseFollow duckMouseFollow;
+
     [Header("Temperature")]
     [Tooltip("Min stove temperature for the UI slider")]
     public float minStoveTemp = 0f;
@@ -58,6 +62,12 @@ public class KitchenMinigame : MonoBehaviour
     bool _tapOn;
     bool _stoveOn;
 
+    bool DuckFollowOn
+    {
+        get => duckMouseFollow != null && duckMouseFollow.isEnabled;
+        set { if (duckMouseFollow != null) duckMouseFollow.isEnabled = value; }
+    }
+
     FirstPersonCamera _fpsCamera;
     VoxelHeatSource _voxelHeat;
     HeatSourceObj _heatSourceObj;
@@ -78,7 +88,10 @@ public class KitchenMinigame : MonoBehaviour
     TMP_Text _tapToggleBtnText;
     TMP_Text _stoveToggleBtnText;
     TMP_Text _stoveTempSliderLabel;
+    TMP_Text _duckFollowBtnText;
+    TMP_Text _duckErrorText;
     Slider _stoveTempSlider;
+    float _duckErrorTimer;
 
     // ── Lifecycle ────────────────────────────────────────────────────────
 
@@ -109,6 +122,7 @@ public class KitchenMinigame : MonoBehaviour
 
         _stoveOn = false;
         SetStoveState(false);
+
         _stoveTemp = GetStoveTemperature();
 
         // Build UI after state is read so slider starts at the correct value
@@ -154,6 +168,12 @@ public class KitchenMinigame : MonoBehaviour
 
     void GoTo(Station station)
     {
+        // Disable duck follow when leaving the Tap station
+        if (_currentStation == Station.Tap && station != Station.Tap)
+        {
+            DuckFollowOn = false;
+        }
+
         _currentStation = station;
         _targetAnchor = station switch
         {
@@ -187,6 +207,35 @@ public class KitchenMinigame : MonoBehaviour
     {
         _stoveOn = !_stoveOn;
         SetStoveState(_stoveOn);
+    }
+
+    void ToggleDuckFollow()
+    {
+        if (duckMouseFollow == null)
+        {
+            ShowDuckError("No duck assigned!");
+            Debug.LogWarning("[KitchenMinigame] duckMouseFollow is not assigned in the Inspector.");
+            return;
+        }
+
+        if (!DuckFollowOn && _tapOn)
+        {
+            ShowDuckError("Turn off the tap first!");
+            return;
+        }
+
+        DuckFollowOn = !DuckFollowOn;
+        Debug.Log($"[KitchenMinigame] Duck follow toggled to: {DuckFollowOn}");
+    }
+
+    void ShowDuckError(string msg)
+    {
+        if (_duckErrorText != null)
+        {
+            _duckErrorText.text = $"<color=#FF4444>{msg}</color>";
+            _duckErrorTimer = 2.5f;
+            _duckErrorText.gameObject.SetActive(true);
+        }
     }
 
     bool GetStoveState()
@@ -257,6 +306,20 @@ public class KitchenMinigame : MonoBehaviour
             _stoveTempSliderLabel.text = $"{_stoveTemp:F0} C";
         if (_stoveToggleBtnText != null)
             _stoveToggleBtnText.text = _stoveOn ? $"[{KeyName(stoveToggle)}]  Turn OFF" : $"[{KeyName(stoveToggle)}]  Turn ON";
+
+        if (_duckFollowBtnText != null)
+        {
+            string dCol = DuckFollowOn ? "#33FF66" : "#FF4444";
+            _duckFollowBtnText.text = $"Duck Follow:  <color={dCol}><b>{(DuckFollowOn ? "ON" : "OFF")}</b></color>";
+        }
+
+        // Auto-hide duck error message after timeout
+        if (_duckErrorText != null && _duckErrorText.gameObject.activeSelf)
+        {
+            _duckErrorTimer -= Time.deltaTime;
+            if (_duckErrorTimer <= 0f)
+                _duckErrorText.gameObject.SetActive(false);
+        }
     }
 
     // ── Build UI at runtime ─────────────────────────────────────────────
@@ -326,6 +389,11 @@ public class KitchenMinigame : MonoBehaviour
         AddTitle(_tapPanel.transform, "TAP", uiLayer);
         _tapStatusText = AddLabel(_tapPanel.transform, "Status: OFF", uiLayer);
         _tapToggleBtnText = AddButton(_tapPanel.transform, $"[{KeyName(tapToggle)}]  Turn ON", () => ToggleTap(), uiLayer);
+        _duckFollowBtnText = AddButton(_tapPanel.transform,
+            DuckFollowOn ? "Duck Follow: ON" : "Duck Follow: OFF",
+            () => ToggleDuckFollow(), uiLayer);
+        _duckErrorText = AddLabel(_tapPanel.transform, "", uiLayer);
+        _duckErrorText.gameObject.SetActive(false);
         AddButton(_tapPanel.transform, $"[{KeyName(tapGoBack)}]  Back", () => GoTo(Station.Overview), uiLayer);
 
         // ── Stove panel ──
