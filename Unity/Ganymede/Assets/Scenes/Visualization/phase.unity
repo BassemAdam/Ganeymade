@@ -2581,7 +2581,7 @@ MonoBehaviour:
       vapourSmoothingRadiusWS: 0.1
       maxKernelRadiusVoxels: 2
     raymarchBlur:
-      liquidBlurEnabled: 0
+      liquidBlurEnabled: 1
       liquidBlurRadius: 2
       liquidBlurSigma: 4
       liquidBlurDetailPreserve: 0.057
