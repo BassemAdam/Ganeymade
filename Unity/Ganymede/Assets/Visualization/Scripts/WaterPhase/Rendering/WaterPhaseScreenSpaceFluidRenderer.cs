@@ -27,8 +27,9 @@ public sealed class WaterPhaseScreenSpaceFluidRenderer
     public WaterPhaseScreenSpaceFluidRenderer(MeshRenderer sourceMeshRenderer)
     {
         _sourceMeshRenderer = sourceMeshRenderer;
-        WaterScreenSpaceFluidFeature.OnDrawDepth     += DrawParticlesDepth;
-        WaterScreenSpaceFluidFeature.OnDrawThickness += DrawParticlesThickness;
+        WaterScreenSpaceFluidFeature.OnDrawDepth      += DrawParticlesDepth;
+        WaterScreenSpaceFluidFeature.OnDrawThickness  += DrawParticlesThickness;
+        WaterScreenSpaceFluidFeature.OnDrawLightDepth += DrawParticlesLightDepth;
     }
 
     // Called every frame by PhysicsWaterPhaseBridge when SSF mode is active.
@@ -56,15 +57,16 @@ public sealed class WaterPhaseScreenSpaceFluidRenderer
             _sourceMeshRenderer.enabled = false;
 
         float configuredParticleRadius = _material.GetFloat(ID_ParticleRadius);
-        _particleRadius = configuredParticleRadius > 0f
-            ? configuredParticleRadius
-            : Mathf.Max(0.001f, computePlugin.smoothingRadius * 1.8f);
+        _particleRadius = configuredParticleRadius;
 
         _active = true;
 
         // Push state to the feature
-        WaterScreenSpaceFluidFeature.ActiveMaterial  = _material;
-        WaterScreenSpaceFluidFeature.IsActive        = true;
+        WaterScreenSpaceFluidFeature.ActiveMaterial = _material;
+        WaterScreenSpaceFluidFeature.IsActive       = true;
+        WaterScreenSpaceFluidFeature.BoundsMin      = boundsMin;
+        WaterScreenSpaceFluidFeature.BoundsMax      = boundsMax;
+        WaterScreenSpaceFluidFeature.HasBounds      = true;
     }
 
     public void SetInactive()
@@ -75,12 +77,14 @@ public sealed class WaterPhaseScreenSpaceFluidRenderer
         _material       = null;
         WaterScreenSpaceFluidFeature.IsActive       = false;
         WaterScreenSpaceFluidFeature.ActiveMaterial = null;
+        WaterScreenSpaceFluidFeature.HasBounds      = false;
     }
 
     public void Release()
     {
-        WaterScreenSpaceFluidFeature.OnDrawDepth     -= DrawParticlesDepth;
-        WaterScreenSpaceFluidFeature.OnDrawThickness -= DrawParticlesThickness;
+        WaterScreenSpaceFluidFeature.OnDrawDepth      -= DrawParticlesDepth;
+        WaterScreenSpaceFluidFeature.OnDrawThickness  -= DrawParticlesThickness;
+        WaterScreenSpaceFluidFeature.OnDrawLightDepth -= DrawParticlesLightDepth;
         SetInactive();
     }
 
@@ -103,6 +107,16 @@ public sealed class WaterPhaseScreenSpaceFluidRenderer
         BindParticleState(mat);
         int pass = mat.FindPass("ScreenSpaceFluidThickness");
         if (pass < 0) pass = 1;
+        DrawQuads(cmd, mat, pass);
+    }
+
+    private void DrawParticlesLightDepth(RasterCommandBuffer cmd, Material mat)
+    {
+        if (!_active || mat == null || _particleBuffer == null || _particleCount <= 0) return;
+
+        BindParticleState(mat);
+        int pass = mat.FindPass("ScreenSpaceFluidLightDepth");
+        if (pass < 0) pass = 2;
         DrawQuads(cmd, mat, pass);
     }
 

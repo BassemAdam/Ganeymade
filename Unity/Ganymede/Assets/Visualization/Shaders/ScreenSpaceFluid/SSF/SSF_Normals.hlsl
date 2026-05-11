@@ -2,106 +2,67 @@
 #define SSF_NORMALS_INCLUDED
 
 // ============================================================
-// Pass 5 — ScreenSpaceFluidNormals
+// Pass: ScreenSpaceFluidNormals  (Simon Green Step 3)
 //
-// Reconstructs view-space normals from the smoothed raw eye-depth
-// depth texture via finite differences.
+// Reconstruct view-space normals from the smoothed eye-depth via
+// finite differences. Edge hack: pick the side with the smaller
+// |Δz| so silhouette pixels do not pull samples from background.
 //
-// Output: RGBAHalf
-//   RGB = view-space normal encoded to [0..1]  (N * 0.5 + 0.5)
-//   A   = validity flag: 1.0 = valid, 0.0 = empty/border pixel
+// Output (RGBAHalf):
+//   RGB = (N * 0.5 + 0.5)
+//   A   = 1.0 valid / 0.0 empty
 // ============================================================
 
-// Source texture + texel size set explicitly from C# (no reliance on _BlitTexture/_BlitTexture_TexelSize)
-TEXTURE2D(_WaterSSFInput);
-float4 _WaterSSFInputTexelSize; // (1/w, 1/h, w, h)
-TEXTURE2D(_WaterSSFThickness);
-SAMPLER(sampler_WaterSSFThickness);
+// Input: smoothed eye-depth written by the blur pass.
+TEXTURE2D(_WaterSSFDepthSmooth);
+float4 _WaterSSFDepthTexelSize;            // (1/w, 1/h, w, h)
 
 float _NormalStepPixels;
-float _ThicknessCutoff;
 
-// Reconstruct view-space position from a UV and positive eye-depth in metres.
-float3 ViewPosFromEyeDepth(float2 uv, float eyeDepth)
+bool SSFTryEyePos(float2 uv, out float3 viewPos)
 {
-    float2 ndc     = uv * 2.0 - 1.0;
-    float3 vs;
-    vs.z = -eyeDepth;                               // Unity: view Z negative = forward
-    vs.x = ndc.x * eyeDepth / UNITY_MATRIX_P[0][0];
-    vs.y = ndc.y * eyeDepth / UNITY_MATRIX_P[1][1];
-    return vs;
+    float d = SAMPLE_TEXTURE2D(_WaterSSFDepthSmooth, sampler_PointClamp, uv).r;
+    if (d < 1e-4) { viewPos = 0.0; return false; }
+    viewPos = SSFViewPosFromEyeDepth(uv, d);
+    return true;
 }
 
-half4 fragNormals(Varyings IN) : SV_Target
+half4 fragSSFNormals(Varyings IN) : SV_Target
 {
     float2 uv = IN.texcoord;
-    float2 ts = _WaterSSFInputTexelSize.xy * max(_NormalStepPixels, 1.0); // correct: set from C# with real camera dimensions
+    float2 ts = _WaterSSFDepthTexelSize.xy * max(_NormalStepPixels, 1.0);
 
-    float centerThickness = SAMPLE_TEXTURE2D(_WaterSSFThickness, sampler_WaterSSFThickness, uv).r;
-    if (centerThickness < _ThicknessCutoff)
-        return half4(0.5, 0.5, 1.0, 0.0);
+    // Only require valid blurred depth — thickness is the composite's concern.
+    float d = SAMPLE_TEXTURE2D(_WaterSSFDepthSmooth, sampler_PointClamp, uv).r;
+    if (d < 1e-4) return half4(0.5, 0.5, 1.0, 0.0);
 
-    float d = SAMPLE_TEXTURE2D(_WaterSSFInput, sampler_PointClamp, uv).r;
-    if (d < 1e-4) return half4(0.5, 0.5, 1.0, 0.0); // empty centre
+    float3 p = SSFViewPosFromEyeDepth(uv, d);
 
-    float3 p = ViewPosFromEyeDepth(uv, d);
+    float3 pxF, pxB, pyF, pyB;
+    bool hxF = SSFTryEyePos(uv + float2( ts.x, 0.0), pxF);
+    bool hxB = SSFTryEyePos(uv + float2(-ts.x, 0.0), pxB);
+    bool hyF = SSFTryEyePos(uv + float2(0.0,  ts.y), pyF);
+    bool hyB = SSFTryEyePos(uv + float2(0.0, -ts.y), pyB);
 
-    // Use the reference min-gradient technique: compare forward and backward
-    // finite differences and pick whichever has the smaller depth discontinuity.
-    // This avoids smeared normals at depth edges (e.g. water silhouette).
-    float dxFwd  = SAMPLE_TEXTURE2D(_WaterSSFInput, sampler_PointClamp, uv + float2( ts.x, 0)).r;
-    float dxBwd  = SAMPLE_TEXTURE2D(_WaterSSFInput, sampler_PointClamp, uv + float2(-ts.x, 0)).r;
-    float dyFwd  = SAMPLE_TEXTURE2D(_WaterSSFInput, sampler_PointClamp, uv + float2(0,  ts.y)).r;
-    float dyBwd  = SAMPLE_TEXTURE2D(_WaterSSFInput, sampler_PointClamp, uv + float2(0, -ts.y)).r;
+    float3 ddx  = hxF ? (pxF - p) : float3(0,0,0);
+    float3 ddx2 = hxB ? (p - pxB) : float3(0,0,0);
+    if (!hxF || (hxB && abs(ddx.z) > abs(ddx2.z))) ddx = ddx2;
 
-    // Pick forward neighbour; fall back to backward if it has a smaller Z jump.
-    // An empty neighbour (< 1e-4) is treated as a very large depth so we always
-    // prefer the non-empty direction when one side is at the silhouette edge.
-    float useXDepth = (dxFwd >= 1e-4) ? dxFwd : dxBwd;
-    float useYDepth = (dyFwd >= 1e-4) ? dyFwd : dyBwd;
+    float3 ddy  = hyF ? (pyF - p) : float3(0,0,0);
+    float3 ddy2 = hyB ? (p - pyB) : float3(0,0,0);
+    if (!hyF || (hyB && abs(ddy.z) > abs(ddy2.z))) ddy = ddy2;
 
-    // Among valid samples, prefer whichever has the smaller depth change
-    if (dxFwd >= 1e-4 && dxBwd >= 1e-4 && abs(dxBwd - d) < abs(dxFwd - d)) useXDepth = dxBwd;
-    if (dyFwd >= 1e-4 && dyBwd >= 1e-4 && abs(dyBwd - d) < abs(dyFwd - d)) useYDepth = dyBwd;
+    // Degenerate case (flat surface, no valid neighbours): synthesise a
+    // camera-facing tangent frame so we get a valid a=1 normal output.
+    if (dot(ddx, ddx) < 1e-10)
+        ddx = float3(_WaterSSFDepthTexelSize.x * 2.0 * d / UNITY_MATRIX_P[0][0], 0.0, 0.0);
+    if (dot(ddy, ddy) < 1e-10)
+        ddy = float3(0.0, _WaterSSFDepthTexelSize.y * 2.0 * d / UNITY_MATRIX_P[1][1], 0.0);
 
-    bool hasXFwd = dxFwd >= 1e-4;
-    bool hasXBwd = dxBwd >= 1e-4;
-    bool hasYFwd = dyFwd >= 1e-4;
-    bool hasYBwd = dyBwd >= 1e-4;
-
-    float3 ddx = 0.0;
-    float3 ddy = 0.0;
-
-    if (hasXFwd && hasXBwd)
-    {
-        float3 pxFwd = ViewPosFromEyeDepth(uv + float2( ts.x, 0), dxFwd);
-        float3 pxBwd = ViewPosFromEyeDepth(uv + float2(-ts.x, 0), dxBwd);
-        ddx = pxFwd - pxBwd;
-    }
-    else if (useXDepth >= 1e-4)
-    {
-        float2 xUV  = uv + (useXDepth == dxFwd ? float2( ts.x, 0) : float2(-ts.x, 0));
-        float3 px = ViewPosFromEyeDepth(xUV, useXDepth);
-        ddx = px - p;
-    }
-
-    if (hasYFwd && hasYBwd)
-    {
-        float3 pyFwd = ViewPosFromEyeDepth(uv + float2(0,  ts.y), dyFwd);
-        float3 pyBwd = ViewPosFromEyeDepth(uv + float2(0, -ts.y), dyBwd);
-        ddy = pyFwd - pyBwd;
-    }
-    else if (useYDepth >= 1e-4)
-    {
-        float2 yUV  = uv + (useYDepth == dyFwd ? float2(0,  ts.y) : float2(0, -ts.y));
-        float3 py = ViewPosFromEyeDepth(yUV, useYDepth);
-        ddy = py - p;
-    }
-
-    if (dot(ddx, ddx) < 1e-8 || dot(ddy, ddy) < 1e-8)
-        return half4(0.5, 0.5, 1.0, 0.0);
-
-    float3 N   = normalize(cross(ddy, ddx));
+    // Simon Green reference: n = normalize(cross(ddx, ddy)).
+    float3 N = normalize(cross(ddx, ddy));
+    // Ensure normal faces toward the camera (view-space +Z convention).
+    if (N.z < 0.0) N = -N;
     return half4(N * 0.5 + 0.5, 1.0);
 }
 

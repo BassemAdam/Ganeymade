@@ -30,8 +30,11 @@ Material:
     - _BlurRadius: 4
     - _BlurSigma: 2.25
     - _CompositeStrength: 0.96
+    - _DiffuseStrength: 0.3
+    - _DiffuseWrap: 0.22
     - _FluidSmoothness: 0.96
     - _FresnelPower: 4
+    - _FresnelR0: 0.02
     - _ParticleRadius: 0.1
     - _NormalStepPixels: 2
     - _ReflectionStrength: 0.7
@@ -40,6 +43,7 @@ Material:
     - _RefractionThicknessScale: 0.35
     - _ThicknessAbsorption: 2.4
     - _ThicknessCutoff: 0.002
+    - _ThicknessSplatSigma: 0.45
     m_Colors:
     - _DeepColor: {r: 0.02, g: 0.08, b: 0.18, a: 1}
     - _FluidColor: {r: 0.11999995, g: 0.45, b: 0.85, a: 1}
