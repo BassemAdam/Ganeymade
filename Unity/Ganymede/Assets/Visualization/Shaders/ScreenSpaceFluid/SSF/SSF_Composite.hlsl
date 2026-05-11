@@ -188,74 +188,123 @@ CompositeOut fragSSFComposite(Varyings IN)
         discard;
 
     // -- Reconstruct surface geometry from depth + normals --
-    // Normals are stored as (N * 0.5 + 0.5) in RGB, unpack to [-1..1].
     float3 nVS = normalize(nEnc.xyz * 2.0 - 1.0);           // view-space normal
     float3 pVS = SSFViewPosFromEyeDepth(uv, eyeDepth);      // view-space position
     float3 pWS = SSFWorldFromView(pVS);                      // world-space position
     float3 nWS = SSFNormalWorldFromView(nVS);                // world-space normal
 
-    float3 V    = normalize(_WorldSpaceCameraPos.xyz - pWS); // view direction (surface -> camera)
+    // Optional surface noise perturbation
+    nWS = SSFPerturbNormalWS(nWS, pWS);
 
-    // -- Get main directional light --
-    Light  mainLight = GetMainLight();
-    float3 Ldir      = normalize(mainLight.direction);
+    float3 V = normalize(_WorldSpaceCameraPos.xyz - pWS);    // surface → camera
 
-    // ============================================================
-    // STEP 1 — Wrapped Diffuse (Half-Lambert)
-    //
-    // Standard Lambert: diffuse = max(dot(N, L), 0)
-    //   Problem: back-facing pixels go fully black, harsh terminator.
-    //
-    // Half-Lambert (Valve, Half-Life 2):
-    //   diffuse = dot(N, L) * 0.5 + 0.5
-    //   Remaps [-1..1] -> [0..1], so the dark side never fully blacks out.
-    //   Looks softer and works well for translucent/volumetric surfaces.
-    // ============================================================
-    float NdotL       = dot(nWS, Ldir);
-    float diffuseWrap = NdotL * 0.5 + 0.5;                         // half-Lambert
-    half3 diffuse     = _FluidColor.rgb * mainLight.color * diffuseWrap * _DiffuseStrength;
+    // Thickness for volume absorption
+    float thickness = SAMPLE_TEXTURE2D(_WaterSSFThickness, sampler_WaterSSFThickness, uv).r;
 
     // ============================================================
-    // STEP 2 — Blinn-Phong Specular
+    // STEP 1 — Beer-Lambert Transmittance
     //
-    // Phong uses the reflect vector R = reflect(-L, N).
-    // Blinn-Phong uses the *half-vector* H = normalize(L + V) instead.
-    //   - Cheaper (no reflect())
-    //   - Slightly wider, smoother highlight
-    //   - Intensity = saturate(dot(N, H))^shininess
+    // Water absorbs light differently per wavelength.
+    // _FluidColor.rgb describes what colour is TRANSMITTED (i.e. least
+    // absorbed). The complement (1 - color) is the absorption per channel:
     //
-    // We map the [0..1] _FluidSmoothness property to a shininess
-    // exponent via exp2(smoothness*10+1) so the slider feels linear.
+    //   transmittance = exp(-absorption * thickness)
+    //                 = exp(-_ThicknessAbsorption * thickness * (1 - _FluidColor))
+    //
+    // Thick water → transmittance → 0 → scene behind is tinted to _FluidColor.
+    // Thin water  → transmittance → 1 → scene behind is barely tinted.
+    //
+    // Matches: fluid.wgsl  transmittance = exp(-density * 10 * thickness * (1-diffuseColor))
     // ============================================================
-    float3 H        = normalize(Ldir + V);
-    float  specPow  = exp2(_FluidSmoothness * 10.0 + 1.0);         // smoothness -> shininess
-    float  specular = pow(saturate(dot(nWS, H)), specPow)
-                    * saturate(NdotL);                              // no spec on back face
-    half3  spec     = _FluidSpecularColor.rgb * mainLight.color * specular;
+    half3 transmittance = exp(-_ThicknessAbsorption * max(thickness, 0.0)
+                              * max(1.0 - _FluidColor.rgb, 0.0));
+
+    // ============================================================
+    // STEP 2 — Physical Refraction  (Snell's law, IOR = 1.333 for water)
+    //
+    // refract(I, N, eta):
+    //   I   = incident direction, pointing TOWARD the surface
+    //         In view-space, camera is at origin, so I = normalize(pVS).
+    //   N   = surface normal, pointing AWAY from the surface (toward camera)
+    //         nVS already points toward camera (z > 0).
+    //   eta = n1/n2 = 1.0/1.333  (air → water)
+    //
+    // We then project the exit point (surface + dir * thickness) to
+    // screen space and compute the UV OFFSET from the current pixel.
+    // Using a delta avoids any platform-specific Y-flip in NDC→UV.
+    //
+    // Matches: fluid.wgsl  refractionDirView = refract(rayDirView, normal, 1/1.333)
+    //          + calcReflactedTexCoord projected exit point approach
+    // ============================================================
+    float3 incidentVS = normalize(pVS);                      // camera→surface in VS
+    float3 refrDirVS  = normalize(refract(incidentVS, nVS, 1.0 / 1.333));
+
+    // Project current surface position and refracted exit point to screen
+    float4 curClip  = mul(UNITY_MATRIX_P, float4(pVS, 1.0));
+    float4 exitClip = mul(UNITY_MATRIX_P, float4(pVS + refrDirVS * max(thickness, 0.0) * _RefractionStrength, 1.0));
+    float2 deltaNDC = (exitClip.xy / exitClip.w) - (curClip.xy / curClip.w);
+    float2 deltaUV  = deltaNDC * 0.5;
+#if UNITY_UV_STARTS_AT_TOP
+    deltaUV.y = -deltaUV.y;
+#endif
+    float2 refrUV = clamp(uv + deltaUV, 0.001, 0.999);
+
+    half3 bgColor    = SAMPLE_TEXTURE2D(_WaterSSFSceneCopy, sampler_WaterSSFSceneCopy, refrUV).rgb;
+    half3 refrColor  = bgColor * transmittance;
 
     // ============================================================
     // STEP 3 — Schlick Fresnel
     //
-    // Water becomes mirror-like at glancing angles (Fresnel effect).
-    // Full Fresnel equations are expensive; Schlick's approximation:
+    //   F(θ) = R0 + (1-R0)·(1-cosθ)^power
     //
-    //   F(theta) = R0 + (1 - R0) * (1 - cos(theta))^exponent
+    // cosθ = dot(N, V).  At θ=0 (looking straight down) → F≈R0 (mostly refraction).
+    // At θ=90 (glancing)                                 → F≈1  (mostly reflection).
     //
-    // where:
-    //   cos(theta) = dot(N, V)    — angle between normal and view
-    //   R0         ~ 0.02         — reflectance at normal incidence
-    //   exponent   = 4 or 5       — controls edge sharpness
-    //
-    // At theta=0  (looking straight down): F ~ R0   (mostly refractive)
-    // At theta=90 (glancing):              F ~ 1.0  (fully reflective)
-    //
-    // We use fresnel to scale how much specular we add at the edges.
+    // Matches: fluid.wgsl  fresnel = F0 + (1-F0)*(1-dot(normal,-rayDir))^5
     // ============================================================
     float cosTheta = saturate(dot(nWS, V));
     float fresnel  = saturate(_FresnelR0 + (1.0 - _FresnelR0) * pow(1.0 - cosTheta, _FresnelPower));
 
-    // Fresnel boosts specular at glancing angles: base spec + edge boost
-    half3 result = diffuse + spec * (0.35 + 0.65 * fresnel);
+    // ============================================================
+    // STEP 4 — Environment Reflection (baked skybox × Fresnel)
+    //
+    // reflect(-V, N) gives the mirror direction in world space.
+    // GlossyEnvironmentReflection samples the baked probe at the
+    // mip level corresponding to the surface roughness.
+    //
+    // Matches: fluid.wgsl  reflectionColor = envmap.sample(reflect(rayDir, normal))
+    // ============================================================
+    float3 R_WS     = reflect(-V, nWS);
+    float  roughness = 1.0 - _FluidSmoothness;
+    half3  reflColor = (half3)SampleEnvironment(R_WS, pWS, uv, roughness);
+
+    // ============================================================
+    // STEP 5 — Blinn-Phong specular highlight (sun / directional light)
+    //
+    // The reference sets specular contribution to 0 for simplicity,
+    // but a small highlight is critical for water to look realistic.
+    // We keep it additive on top of the refract/reflect mix.
+    // ============================================================
+    Light  mainLight = GetMainLight();
+    float3 Ldir      = normalize(mainLight.direction);
+    float3 H         = normalize(Ldir + V);
+    float  specPow   = exp2(_FluidSmoothness * 10.0 + 1.0);
+    float  specular  = pow(saturate(dot(nWS, H)), specPow) * saturate(dot(nWS, Ldir));
+    half3  spec      = _FluidSpecularColor.rgb * mainLight.color * specular;
+
+    // ============================================================
+    // Combine — mix refraction and reflection by Fresnel, add specular
+    //
+    //   result = lerp(refrColor, reflColor, fresnel) + spec
+    //
+    // This is the core formula from fluid.wgsl:
+    //   finalColor = mix(refractionColor, reflectionColor, fresnel)
+    // We add a specular highlight on top.
+    // ============================================================
+    half3 result = lerp(refrColor, reflColor * _ReflectionStrength, fresnel) + spec;
+
+    // Optional light-view shadow attenuation
+    result *= SSFLightShadowAtten(pWS);
 
     CompositeOut o;
     o.color = half4(result, 1.0);

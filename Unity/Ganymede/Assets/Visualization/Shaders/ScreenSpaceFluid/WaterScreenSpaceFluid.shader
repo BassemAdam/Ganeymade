@@ -15,9 +15,11 @@ Shader "Custom/WaterScreenSpaceFluid"
     {
         // -- Surface reconstruction --
         _ParticleRadius           ("Particle Radius (WS)",         Float) = 0.10
-        _BlurRadius               ("Blur Radius (taps)",           Float) = 6
-        _BlurSigma                ("Blur Spatial Sigma (px)",      Float) = 3.5
-        _BlurDepthSigma           ("Blur Depth Sigma (rel)",       Float) = 0.12
+        // Narrow-Range Filter (Truong et al. 2018)
+        _NRF_MaxFilterSize        ("NRF Max Filter Radius (px)",   Float) = 20
+        _NRF_ProjectedParticleK   ("NRF Projected Particle K",     Float) = 80
+        _NRF_Mu                   ("NRF Mu (snap offset, m)",      Float) = 0.5
+        _NRF_DepthThreshold       ("NRF Depth Threshold (m)",      Float) = 0.3
         _NormalStepPixels         ("Normal Step Pixels",           Range(1,4)) = 1
         _ThicknessCutoff          ("Thickness Cutoff",             Float) = 0.0005
         _ThicknessSplatSigma      ("Thickness Splat Sigma",        Range(0.15,1.0)) = 0.45

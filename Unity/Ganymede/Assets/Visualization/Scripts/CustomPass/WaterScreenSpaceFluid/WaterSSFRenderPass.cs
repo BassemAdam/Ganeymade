@@ -31,14 +31,16 @@ public sealed class WaterSSFRenderPass : ScriptableRenderPass
     private const int PASS_CAUSTICS     = 6;
 
     // ---- Shader property IDs ----
-    private static readonly int ID_BlurRadius             = Shader.PropertyToID("_BlurRadius");
-    private static readonly int ID_BlurSigma              = Shader.PropertyToID("_BlurSigma");
-    private static readonly int ID_BlurDepthSigma         = Shader.PropertyToID("_BlurDepthSigma");
-    private static readonly int ID_WaterSSFDepthRaw       = Shader.PropertyToID("_WaterSSFDepthRaw");
-    private static readonly int ID_WaterSSFDepthSource    = Shader.PropertyToID("_WaterSSFDepthSource");
-    private static readonly int ID_WaterSSFDepthSmooth    = Shader.PropertyToID("_WaterSSFDepthSmooth");
-    private static readonly int ID_WaterSSFDepthTexelSize = Shader.PropertyToID("_WaterSSFDepthTexelSize");
-    private static readonly int ID_WaterSSFThickness      = Shader.PropertyToID("_WaterSSFThickness");
+    private static readonly int ID_NRF_MaxFilterSize       = Shader.PropertyToID("_NRF_MaxFilterSize");
+    private static readonly int ID_NRF_ProjectedParticleK  = Shader.PropertyToID("_NRF_ProjectedParticleK");
+    private static readonly int ID_NRF_Mu                  = Shader.PropertyToID("_NRF_Mu");
+    private static readonly int ID_NRF_DepthThreshold      = Shader.PropertyToID("_NRF_DepthThreshold");
+    private static readonly int ID_WaterSSFDepthRaw        = Shader.PropertyToID("_WaterSSFDepthRaw");
+    private static readonly int ID_WaterSSFDepthSource     = Shader.PropertyToID("_WaterSSFDepthSource");
+    private static readonly int ID_WaterSSFDepthSmooth     = Shader.PropertyToID("_WaterSSFDepthSmooth");
+    private static readonly int ID_WaterSSFDepthTexelSize  = Shader.PropertyToID("_WaterSSFDepthTexelSize");
+    private static readonly int ID_WaterSSFBlurDirection   = Shader.PropertyToID("_WaterSSFBlurDirection");
+    private static readonly int ID_WaterSSFThickness       = Shader.PropertyToID("_WaterSSFThickness");
     private static readonly int ID_WaterSSFNormals        = Shader.PropertyToID("_WaterSSFNormals");
     private static readonly int ID_WaterSSFSceneCopy      = Shader.PropertyToID("_WaterSSFSceneCopy");
     private static readonly int ID_WaterSSFLightDepth     = Shader.PropertyToID("_WaterSSFLightDepth");
@@ -75,9 +77,10 @@ public sealed class WaterSSFRenderPass : ScriptableRenderPass
         var resourceData = frameData.Get<UniversalResourceData>();
 
         // -- Snapshot live parameters --
-        int   blurRadius     = Mathf.RoundToInt(Material.GetFloat(ID_BlurRadius));
-        float blurSigma      = Material.GetFloat(ID_BlurSigma);
-        float blurDepthSigma = Material.GetFloat(ID_BlurDepthSigma);
+        float nrfMaxSize  = Material.GetFloat(ID_NRF_MaxFilterSize);
+        float nrfProjK    = Material.GetFloat(ID_NRF_ProjectedParticleK);
+        float nrfMu       = Material.GetFloat(ID_NRF_Mu);
+        float nrfThresh   = Material.GetFloat(ID_NRF_DepthThreshold);
 
         // ============================================================
         // 1) Texture descriptors + handles
@@ -95,6 +98,7 @@ public sealed class WaterSSFRenderPass : ScriptableRenderPass
         TextureHandle depthRaw      = UniversalRenderer.CreateRenderGraphTexture(rg, depthDesc,     "_WaterSSFDepthRaw",      false);
         TextureHandle depthHWBuf    = UniversalRenderer.CreateRenderGraphTexture(rg, hwDepthDesc,   "_WaterSSFDepthBuffer",   false);
         TextureHandle thickness     = UniversalRenderer.CreateRenderGraphTexture(rg, thicknessDesc, "_WaterSSFThickness",     false);
+        TextureHandle depthSmoothA  = UniversalRenderer.CreateRenderGraphTexture(rg, depthDesc,     "_WaterSSFDepthSmoothA",  false);
         TextureHandle depthSmooth   = UniversalRenderer.CreateRenderGraphTexture(rg, depthDesc,     "_WaterSSFDepthSmooth",   false);
         TextureHandle normalsTex    = UniversalRenderer.CreateRenderGraphTexture(rg, normalsDesc,   "_WaterSSFNormals",       false);
         TextureHandle sceneCopy     = UniversalRenderer.CreateRenderGraphTexture(rg, colorDesc,     "_WaterSSFSceneCopy",     false);
@@ -153,9 +157,10 @@ public sealed class WaterSSFRenderPass : ScriptableRenderPass
         }
 
         // ============================================================
-        // 5) Bilateral blur — single 2D pass, no separability artefacts
+        // 5) Narrow-Range Filter X then Y (separable, two passes)
         // ============================================================
-        RecordBlur(rg, "Water SSF Blur", depthRaw, depthSmooth, blurRadius, blurSigma, blurDepthSigma, baseDesc.width, baseDesc.height);
+        RecordBlur(rg, "Water SSF Blur X", depthRaw,     depthSmoothA, nrfMaxSize, nrfProjK, nrfMu, nrfThresh, baseDesc.width, baseDesc.height, new Vector2(1f / baseDesc.width,  0f), false);
+        RecordBlur(rg, "Water SSF Blur Y", depthSmoothA, depthSmooth,  nrfMaxSize, nrfProjK, nrfMu, nrfThresh, baseDesc.width, baseDesc.height, new Vector2(0f, 1f / baseDesc.height), true);
 
         // ============================================================
         // 6) Normals from smoothed depth
@@ -248,37 +253,45 @@ public sealed class WaterSSFRenderPass : ScriptableRenderPass
     {
         public TextureHandle source;
         public Material      material;
-        public int           blurRadius;
-        public float         blurSigma;
-        public float         blurDepthSigma;
+        public float         nrfMaxFilterSize;
+        public float         nrfProjK;
+        public float         nrfMu;
+        public float         nrfDepthThreshold;
         public Vector4       texelSize;
+        public Vector2       blurDirection;
     }
 
     private void RecordBlur(RenderGraph rg, string passName, TextureHandle src, TextureHandle dst,
-        int radius, float sigma, float depthSigma, int w, int h)
+        float maxSize, float projK, float mu, float thresh, int w, int h,
+        Vector2 blurDirection, bool exposeAsSmooth)
     {
         using (var builder = rg.AddRasterRenderPass<BlurData>(passName, out var data))
         {
-            data.source         = src;
-            data.material       = Material;
-            data.blurRadius     = radius;
-            data.blurSigma      = sigma;
-            data.blurDepthSigma = depthSigma;
-            data.texelSize      = new Vector4(1f / w, 1f / h, w, h);
+            data.source            = src;
+            data.material          = Material;
+            data.nrfMaxFilterSize  = maxSize;
+            data.nrfProjK          = projK;
+            data.nrfMu             = mu;
+            data.nrfDepthThreshold = thresh;
+            data.texelSize         = new Vector4(1f / w, 1f / h, w, h);
+            data.blurDirection     = blurDirection;
 
             builder.UseTexture(src, AccessFlags.Read);
             builder.SetRenderAttachment(dst, 0, AccessFlags.Write);
-            builder.SetGlobalTextureAfterPass(dst, ID_WaterSSFDepthSmooth);
+            if (exposeAsSmooth)
+                builder.SetGlobalTextureAfterPass(dst, ID_WaterSSFDepthSmooth);
             builder.AllowPassCulling(false);
             builder.AllowGlobalStateModification(true);
 
             builder.SetRenderFunc((BlurData d, RasterGraphContext ctx) =>
             {
-                ctx.cmd.SetGlobalTexture(ID_WaterSSFDepthSource, d.source);
-                ctx.cmd.SetGlobalVector(ID_WaterSSFDepthTexelSize, d.texelSize);
-                d.material.SetFloat(ID_BlurRadius,     d.blurRadius);
-                d.material.SetFloat(ID_BlurSigma,      d.blurSigma);
-                d.material.SetFloat(ID_BlurDepthSigma, d.blurDepthSigma);
+                ctx.cmd.SetGlobalTexture(ID_WaterSSFDepthSource,    d.source);
+                ctx.cmd.SetGlobalVector (ID_WaterSSFDepthTexelSize,  d.texelSize);
+                ctx.cmd.SetGlobalVector (ID_WaterSSFBlurDirection,   d.blurDirection);
+                d.material.SetFloat(ID_NRF_MaxFilterSize,      d.nrfMaxFilterSize);
+                d.material.SetFloat(ID_NRF_ProjectedParticleK, d.nrfProjK);
+                d.material.SetFloat(ID_NRF_Mu,                 d.nrfMu);
+                d.material.SetFloat(ID_NRF_DepthThreshold,     d.nrfDepthThreshold);
                 Blitter.BlitTexture(ctx.cmd, d.source, new Vector4(1, 1, 0, 0), d.material, PASS_BLUR);
             });
         }
