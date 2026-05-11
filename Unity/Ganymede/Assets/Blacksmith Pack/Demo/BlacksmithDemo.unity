@@ -499,6 +499,10 @@ PrefabInstance:
     serializedVersion: 3
     m_TransformParent: {fileID: 1468781460}
     m_Modifications:
+    - target: {fileID: 321100159321170711, guid: 1bb7adf8799fd09408b8c69d8d55168c, type: 3}
+      propertyPath: 'm_Materials.Array.data[0]'
+      value: 
+      objectReference: {fileID: 2100000, guid: b773ec2c4a3a51a44ad3aeb0b55abada, type: 2}
     - target: {fileID: 2624196645939633960, guid: 1bb7adf8799fd09408b8c69d8d55168c, type: 3}
       propertyPath: m_Name
       value: Anvil
@@ -558,7 +562,10 @@ PrefabInstance:
     m_RemovedComponents: []
     m_RemovedGameObjects: []
     m_AddedGameObjects: []
-    m_AddedComponents: []
+    m_AddedComponents:
+    - targetCorrespondingSourceObject: {fileID: 2624196645939633960, guid: 1bb7adf8799fd09408b8c69d8d55168c, type: 3}
+      insertIndex: -1
+      addedObject: {fileID: 783827700}
   m_SourcePrefab: {fileID: 100100000, guid: 1bb7adf8799fd09408b8c69d8d55168c, type: 3}
 --- !u!4 &116823936 stripped
 Transform:
@@ -669,6 +676,40 @@ GameObject:
   m_CorrespondingSourceObject: {fileID: 1434464227692993030, guid: 86686d9ba4426da47bfdbf13f5dbad1c, type: 3}
   m_PrefabInstance: {fileID: 1638638138}
   m_PrefabAsset: {fileID: 0}
+--- !u!1 &183804647
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 183804648}
+  m_Layer: 0
+  m_Name: Ingot Placement Slots
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &183804648
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 183804647}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 4.877, y: 0.72, z: -3.433}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children:
+  - {fileID: 1303839049}
+  - {fileID: 1591653609}
+  - {fileID: 247721537}
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1001 &221588119
 PrefabInstance:
   m_ObjectHideFlags: 0
@@ -755,12 +796,12 @@ Transform:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 247721536}
   serializedVersion: 2
-  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: 3.57, y: 0.04, z: -1.13}
+  m_LocalRotation: {x: -0, y: -0, z: -0, w: 1}
+  m_LocalPosition: {x: -3.599, y: -0.31300002, z: 1.4000001}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
-  m_Father: {fileID: 0}
+  m_Father: {fileID: 183804648}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &273922617
 GameObject:
@@ -802,7 +843,7 @@ MonoBehaviour:
   holdDistance: 0.55
   holdVerticalOffset: -0.18
   holdFollowSpeed: 18
-  forgeHeatSource: {fileID: 1643634215}
+  ingotGripOffset: {x: -0.12, y: 0.1, z: 0.5}
   placeDuration: 0.6
 --- !u!4 &273922619
 Transform:
@@ -920,7 +961,7 @@ MonoBehaviour:
   defaultAmbientTemp: 70
   visualizationInterval: 2
   debugLogInterval: 60
-  verbose: 1
+  verbose: 0
   voxelTracer: {fileID: 715083171}
   voxelTracerCamera: {fileID: 963194233}
 --- !u!4 &291748430
@@ -1699,7 +1740,7 @@ PrefabInstance:
     m_AddedComponents:
     - targetCorrespondingSourceObject: {fileID: 8444940477996869029, guid: 863063dd2c984c14ca44c0db5e057ef4, type: 3}
       insertIndex: -1
-      addedObject: {fileID: 1643634215}
+      addedObject: {fileID: 1643634219}
     - targetCorrespondingSourceObject: {fileID: 1707594315766124731, guid: 863063dd2c984c14ca44c0db5e057ef4, type: 3}
       insertIndex: -1
       addedObject: {fileID: 729397956}
@@ -2013,7 +2054,7 @@ MonoBehaviour:
   boundsMode: 1
   gridMin: {x: -10, y: -2, z: -10}
   gridMax: {x: 10, y: 10, z: 10}
-  voxelSize: 0.25
+  voxelSize: 0.1
   autoFitPadding: 1
   fillVolume: 1
   fillSweepRounds: 1
@@ -2365,7 +2406,7 @@ MonoBehaviour:
   initialTemperature: 25
   isActive: 1
   latticeSpacing: 0
-  latticeSize: {x: 1, y: 1, z: 1}
+  latticeSize: {x: 0.4, y: 0.4, z: 0.4}
 --- !u!4 &777317390
 Transform:
   m_ObjectHideFlags: 0
@@ -2375,7 +2416,7 @@ Transform:
   m_GameObject: {fileID: 777317388}
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalPosition: {x: 1.25, y: 0.439, z: -2.05}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
@@ -2443,6 +2484,30 @@ Transform:
   m_CorrespondingSourceObject: {fileID: 6868400422929082279, guid: 40c009177e14cf343aff7b0ab1a93d2b, type: 3}
   m_PrefabInstance: {fileID: 781078942}
   m_PrefabAsset: {fileID: 0}
+--- !u!1 &783827699 stripped
+GameObject:
+  m_CorrespondingSourceObject: {fileID: 2624196645939633960, guid: 1bb7adf8799fd09408b8c69d8d55168c, type: 3}
+  m_PrefabInstance: {fileID: 116823935}
+  m_PrefabAsset: {fileID: 0}
+--- !u!114 &783827700
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 783827699}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 7193c26c385088b48869367ff217e876, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::VoxelSolidMaterial
+  temperature: 0
+  thermalDiffusivity: 10
+  coolingRate: 0.01
+  isContinuousHeatSource: 0
+  density: 2500
+  mass: 0
+  phase: 0
 --- !u!1 &784075263
 GameObject:
   m_ObjectHideFlags: 0
@@ -2483,6 +2548,29 @@ Transform:
   m_CorrespondingSourceObject: {fileID: 9059617976462303856, guid: 81ee63f83c0f2174ea42d19ba986f2f3, type: 3}
   m_PrefabInstance: {fileID: 2128229611}
   m_PrefabAsset: {fileID: 0}
+--- !u!114 &790007053
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 661459968}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 936650645ccee63498a91baf801762fa, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::VoxelDynamic
+  enableFluidForces: 1
+  buoyancyMode: 0
+  objectDensity: 15
+  dragCoefficient: 1
+  angularDragCoefficient: 0.5
+  sinkFactor: 0.3
+  stayUpright: 0
+  autoSetMass: 1
+  submergedFraction: 0
+  lastBuoyancyForce: {x: 0, y: 0, z: 0}
+  lastDragForce: {x: 0, y: 0, z: 0}
 --- !u!1001 &807230634
 PrefabInstance:
   m_ObjectHideFlags: 0
@@ -2797,7 +2885,10 @@ PrefabInstance:
     m_RemovedComponents: []
     m_RemovedGameObjects: []
     m_AddedGameObjects: []
-    m_AddedComponents: []
+    m_AddedComponents:
+    - targetCorrespondingSourceObject: {fileID: 7670083043565362168, guid: 9a8f0a018495bfd4494c9119773d7e47, type: 3}
+      insertIndex: -1
+      addedObject: {fileID: 1451956705}
   m_SourcePrefab: {fileID: 100100000, guid: 9a8f0a018495bfd4494c9119773d7e47, type: 3}
 --- !u!4 &898028515 stripped
 Transform:
@@ -4380,12 +4471,12 @@ Transform:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 1303839048}
   serializedVersion: 2
-  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: 4.877, y: 0.72, z: -3.433}
+  m_LocalRotation: {x: -0, y: -0, z: -0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
-  m_Father: {fileID: 0}
+  m_Father: {fileID: 183804648}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1001 &1312147097
 PrefabInstance:
@@ -4816,6 +4907,29 @@ GameObject:
   m_CorrespondingSourceObject: {fileID: 7670083043565362168, guid: 9a8f0a018495bfd4494c9119773d7e47, type: 3}
   m_PrefabInstance: {fileID: 898028514}
   m_PrefabAsset: {fileID: 0}
+--- !u!114 &1451956705
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1451956702}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 936650645ccee63498a91baf801762fa, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::VoxelDynamic
+  enableFluidForces: 1
+  buoyancyMode: 0
+  objectDensity: 15
+  dragCoefficient: 1
+  angularDragCoefficient: 0.5
+  sinkFactor: 0.3
+  stayUpright: 0
+  autoSetMass: 1
+  submergedFraction: 0
+  lastBuoyancyForce: {x: 0, y: 0, z: 0}
+  lastDragForce: {x: 0, y: 0, z: 0}
 --- !u!1001 &1452971231
 PrefabInstance:
   m_ObjectHideFlags: 0
@@ -5244,12 +5358,12 @@ Transform:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 1591653608}
   serializedVersion: 2
-  m_LocalRotation: {x: 0, y: -0.7071068, z: 0, w: 0.7071068}
-  m_LocalPosition: {x: -0, y: 1.293, z: -3.2887}
+  m_LocalRotation: {x: -0, y: -0.7071068, z: -0, w: 0.7071068}
+  m_LocalPosition: {x: -1.7619998, y: -0.06, z: 1}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
-  m_Father: {fileID: 0}
+  m_Father: {fileID: 183804648}
   m_LocalEulerAnglesHint: {x: 0, y: -90, z: 0}
 --- !u!1 &1596431934
 GameObject:
@@ -5301,6 +5415,14 @@ PrefabInstance:
     - target: {fileID: 1340585115186609873, guid: 18cf1fa5220a198409fde72db8b3e2a5, type: 3}
       propertyPath: m_Name
       value: Physics
+      objectReference: {fileID: 0}
+    - target: {fileID: 4161998456328252244, guid: 18cf1fa5220a198409fde72db8b3e2a5, type: 3}
+      propertyPath: particleCount
+      value: 125
+      objectReference: {fileID: 0}
+    - target: {fileID: 4161998456328252244, guid: 18cf1fa5220a198409fde72db8b3e2a5, type: 3}
+      propertyPath: spawnPoolReserve
+      value: 125
       objectReference: {fileID: 0}
     - target: {fileID: 5891988049623486879, guid: 18cf1fa5220a198409fde72db8b3e2a5, type: 3}
       propertyPath: m_LocalPosition.x
@@ -5464,7 +5586,10 @@ PrefabInstance:
     m_RemovedComponents: []
     m_RemovedGameObjects: []
     m_AddedGameObjects: []
-    m_AddedComponents: []
+    m_AddedComponents:
+    - targetCorrespondingSourceObject: {fileID: 1434464227692993030, guid: 86686d9ba4426da47bfdbf13f5dbad1c, type: 3}
+      insertIndex: -1
+      addedObject: {fileID: 1805879697}
   m_SourcePrefab: {fileID: 100100000, guid: 86686d9ba4426da47bfdbf13f5dbad1c, type: 3}
 --- !u!1001 &1640529988
 PrefabInstance:
@@ -5533,7 +5658,7 @@ GameObject:
   m_CorrespondingSourceObject: {fileID: 8444940477996869029, guid: 863063dd2c984c14ca44c0db5e057ef4, type: 3}
   m_PrefabInstance: {fileID: 643354738}
   m_PrefabAsset: {fileID: 0}
---- !u!114 &1643634215
+--- !u!114 &1643634219
 MonoBehaviour:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
@@ -5935,6 +6060,29 @@ Transform:
   m_CorrespondingSourceObject: {fileID: 222675585049058248, guid: 86686d9ba4426da47bfdbf13f5dbad1c, type: 3}
   m_PrefabInstance: {fileID: 1638638138}
   m_PrefabAsset: {fileID: 0}
+--- !u!114 &1805879697
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 160051127}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 936650645ccee63498a91baf801762fa, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::VoxelDynamic
+  enableFluidForces: 1
+  buoyancyMode: 0
+  objectDensity: 15
+  dragCoefficient: 1
+  angularDragCoefficient: 0.5
+  sinkFactor: 0.3
+  stayUpright: 0
+  autoSetMass: 1
+  submergedFraction: 0
+  lastBuoyancyForce: {x: 0, y: 0, z: 0}
+  lastDragForce: {x: 0, y: 0, z: 0}
 --- !u!1001 &1831883616
 PrefabInstance:
   m_ObjectHideFlags: 0
@@ -7217,7 +7365,10 @@ PrefabInstance:
     m_RemovedComponents: []
     m_RemovedGameObjects: []
     m_AddedGameObjects: []
-    m_AddedComponents: []
+    m_AddedComponents:
+    - targetCorrespondingSourceObject: {fileID: 4466782673903253282, guid: 81ee63f83c0f2174ea42d19ba986f2f3, type: 3}
+      insertIndex: -1
+      addedObject: {fileID: 790007053}
   m_SourcePrefab: {fileID: 100100000, guid: 81ee63f83c0f2174ea42d19ba986f2f3, type: 3}
 --- !u!1001 &2135233121
 PrefabInstance:
@@ -7356,6 +7507,4 @@ SceneRoots:
   - {fileID: 777317390}
   - {fileID: 428379224}
   - {fileID: 273922619}
-  - {fileID: 1303839049}
-  - {fileID: 1591653609}
-  - {fileID: 247721537}
+  - {fileID: 183804648}
