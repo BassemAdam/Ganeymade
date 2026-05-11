@@ -5,7 +5,8 @@ using UnityEngine.Serialization;
 public enum WaterSurfaceRenderMode
 {
     RaymarchVolume,
-    MarchingCubesLiquidWithVapour
+    MarchingCubesLiquidWithVapour,
+    ScreenSpaceFluid
 }
 
 [Serializable]
@@ -208,6 +209,9 @@ public class WaterPhaseRenderingSettings
 
     [Tooltip("Material used for the vapour volumetric box when marching cubes mode is active.")]
     public Material vapourRaymarchMaterial;
+
+    [Tooltip("Material used for screen-space fluid rendering. Particle radius, blur, smoothness, refraction, and reflection are configured on this material/shader.")]
+    public Material screenSpaceFluidMaterial;
 
     [Tooltip("Iso threshold applied to normalized density (0..1-ish). Higher values make the surface shrink.")]
     [Range(0f, 1f)]

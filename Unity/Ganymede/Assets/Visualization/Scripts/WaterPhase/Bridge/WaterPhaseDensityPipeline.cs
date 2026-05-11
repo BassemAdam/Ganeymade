@@ -112,30 +112,22 @@ public sealed class WaterPhaseDensityPipeline
         var grid = settings.DensityGrid;
         var smoothing = settings.ActiveSmoothing;
 
-        float surfaceRadius = smoothing.liquidSmoothingRadiusWS >= 0f
-            ? smoothing.liquidSmoothingRadiusWS
-            : computePlugin.smoothingRadius;
-        surfaceRadius = Mathf.Max(0f, surfaceRadius);
+        float surfaceRadius = Mathf.Max(0f, smoothing.liquidSmoothingRadiusWS);
+
 
         float bulkRadius = smoothing.adaptiveRadiusEnabled
-            ? Mathf.Max(surfaceRadius, smoothing.liquidBulkSmoothingRadiusWS)
+            ? smoothing.liquidBulkSmoothingRadiusWS
             : surfaceRadius;
 
         float vapourRadius = Mathf.Max(0f, grid.vapourSmoothingRadiusWS);
 
-        // Loop bound on the GPU must cover the LARGEST footprint across all phases,
-        // otherwise particles get clipped. The poly6 falloff zeroes out smaller-h
-        // splats automatically, so it's safe for surface / vapour particles too.
         float loopRadius = Mathf.Max(Mathf.Max(surfaceRadius, bulkRadius), vapourRadius);
 
         _computeShader.SetFloat(ID_SmoothingRadiusWS_LiquidSmall, surfaceRadius);
         _computeShader.SetFloat(ID_SmoothingRadiusWS_LiquidBulk, bulkRadius);
         _computeShader.SetFloat(ID_SmoothingRadiusWS_Vapour, vapourRadius);
         _computeShader.SetFloat(ID_AdaptiveDensitySurface, Mathf.Max(0f, smoothing.adaptiveDensitySurface));
-        _computeShader.SetFloat(
-            ID_AdaptiveDensityBulk,
-            Mathf.Max(smoothing.adaptiveDensitySurface + 0.01f, smoothing.adaptiveDensityBulk));
-
+        _computeShader.SetFloat(ID_AdaptiveDensityBulk, Mathf.Max(smoothing.adaptiveDensitySurface + 0.01f, smoothing.adaptiveDensityBulk));
         _computeShader.SetFloat(ID_AdaptiveDensityCurve, Mathf.Max(0.01f, smoothing.adaptiveDensityCurve));
 
         _computeShader.SetInt(
