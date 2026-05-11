@@ -127,8 +127,8 @@ Material:
     - _DebugNormals: 1
     - _DebugReflectionCubemapMode: 2
     - _DebugViewMode: 0
-    - _DensityMultiplier: 1
-    - _DensityOffset: -0.4
+    - _DensityMultiplier: 1.2
+    - _DensityOffset: -0.76
     - _DensityPower: 1.5
     - _DetailAlbedoMapScale: 1
     - _DetailNormalMapScale: 1
@@ -155,7 +155,7 @@ Material:
     - _ReceiveShadows: 1
     - _ReflectionStrength: 1
     - _ReflectionVisibilityBoost: 16
-    - _ReflectionVisibilityFloor: 0
+    - _ReflectionVisibilityFloor: 1
     - _RefractionStrength: 1
     - _Smoothness: 0.5
     - _SmoothnessTextureChannel: 0
