@@ -4,30 +4,21 @@ using UnityEngine.EventSystems;
 
 /// <summary>
 /// Manages the full ingot lifecycle:
-///   Table (pick pliers → pick ingot) → Forge → Anvil → Barrel → Table (return)
-///
-/// SETUP:
-/// 1. Attach to a manager GameObject (or the Camera).
-/// 2. Assign the 3 ingot GameObjects, the pliers, and the 4 placement
-///    transforms (ForgeSlot, AnvilSlot, BarrelSlot) in the Inspector.
-/// 3. The StationNavigator on the Camera drives GoToForge / GoToAnvil etc.
-///    via the public methods below — wire those up in the Inspector or
-///    subscribe to OnStationReached.
 /// </summary>
 public class IngotInteraction : MonoBehaviour
 {
-    // ── References ─────────────────────────────────────────────────────────────
+    // ----- References ----------------------------------------------
 
-    [Header("Ingots (assign all 3)")]
+    [Header("Ingots")]
     public GameObject[] ingots;                  // Gold, Copper, Silver
 
     [Header("Pliers")]
     public GameObject pliers;
 
     [Header("Placement Slots (empty GameObjects marking where ingot sits)")]
-    public Transform forgeSlot;                  // where ingot rests inside forge
-    public Transform anvilSlot;                  // where ingot rests on anvil
-    public Transform barrelSlot;                 // where ingot sinks into barrel
+    public Transform forgeSlot;                  
+    public Transform anvilSlot;                  
+    public Transform barrelSlot;                
 
     [Header("Hold Settings")]
     [Tooltip("Distance in front of camera when ingot+pliers are held.")]
@@ -37,39 +28,35 @@ public class IngotInteraction : MonoBehaviour
     [Tooltip("How quickly the held object tracks the hold point.")]
     public float holdFollowSpeed = 18f;
 
-    [Header("Forge Reference")]
-    [Tooltip("The VoxelSolidMaterial on the forge. isContinuousHeatSource is " +
-             "enabled/disabled when the ingot enters/leaves.")]
-    public VoxelSolidMaterial forgeHeatSource;
+    [Tooltip("Local-space offset applied to the ingot relative to the hold point, " +
+             "so it sits at the pliers head rather than the arm.")]
+    public Vector3 ingotGripOffset = new Vector3(-0.08f, 0f, 0.12f);
 
     [Header("Animation")]
     [Tooltip("Time in seconds for the ingot to travel to a slot.")]
     public float placeDuration = 0.6f;
 
-    // ── State ──────────────────────────────────────────────────────────────────
+    // ---- State ------------------------------------------------------
 
     public enum WorkflowStage
     {
-        WaitingForPliers,
-        WaitingForIngotPick,
-        IngotHeld,
-        AtForge,
-        AtAnvil,
-        AtBarrel,
-        Returning
+        WaitingForPliers, WaitingForIngotPick, IngotHeld, AtForge, AtAnvil, AtBarrel, Returning
     }
 
     public WorkflowStage Stage { get; private set; } = WorkflowStage.WaitingForPliers;
 
-    private GameObject    _heldIngot;
-    private int           _heldIngotIndex   = -1;
-    private Vector3[]     _ingotHomePositions;
-    private Quaternion[]  _ingotHomeRotations;
-    private Transform     _holdPoint;          // auto-created child of Camera
-    private Camera        _cam;
-    private bool          _pliersPicked       = false;
+    private GameObject _heldIngot;
+    private int _heldIngotIndex = -1;
+    private Vector3[] _ingotHomePositions;
+    private Quaternion[] _ingotHomeRotations;
+    private Vector3 _pliersHomePosition;
+    private Quaternion _pliersHomeRotation;
+    private Transform _holdPoint;          // auto-created child of Camera
+    private Transform _ingotGripPoint;     // child of _holdPoint, offset to pliers head
+    private Camera _cam;
+    private bool _pliersPicked = false;
 
-    // ── Events (StationNavigator listens to these to know when to unlock Next) ─
+    // ----Events (Blacksmith minigame listens to these to know when to unlock Next) --
 
     public event System.Action OnIngotPickedUp;
     public event System.Action OnIngotPlacedInForge;
@@ -77,12 +64,13 @@ public class IngotInteraction : MonoBehaviour
     public event System.Action OnIngotPlacedInBarrel;
     public event System.Action OnIngotReturned;
 
-    // ── Unity Lifecycle ────────────────────────────────────────────────────────
+    // ----- Unity Lifecycle ----------------------------------------------
 
     private void Start()
     {
         _cam = Camera.main;
-        if (_cam == null) _cam = FindObjectOfType<Camera>();
+        if (_cam == null) 
+            _cam = FindObjectOfType<Camera>();
 
         // Create the hold point as a child of the camera
         GameObject hp = new GameObject("IngotHoldPoint");
@@ -90,6 +78,14 @@ public class IngotInteraction : MonoBehaviour
         hp.transform.localPosition = new Vector3(0f, holdVerticalOffset, holdDistance);
         hp.transform.localRotation = Quaternion.identity;
         _holdPoint = hp.transform;
+
+        // Create the grip point as a child of the hold point.
+        // The ingot parents to this so ingotGripOffset shifts it to the pliers head.
+        GameObject gp = new GameObject("IngotGripPoint");
+        gp.transform.SetParent(_holdPoint, false);
+        gp.transform.localPosition = ingotGripOffset;
+        gp.transform.localRotation = Quaternion.identity;
+        _ingotGripPoint = gp.transform;
 
         // Cache home transforms for all ingots
         _ingotHomePositions = new Vector3[ingots.Length];
@@ -100,46 +96,50 @@ public class IngotInteraction : MonoBehaviour
             _ingotHomeRotations[i] = ingots[i].transform.rotation;
         }
 
-        // Pliers start clickable; ingots are locked until pliers are picked up
+        // Cache pliers home so we can return them correctly after the cycle
+        _pliersHomePosition = pliers.transform.position;
+        _pliersHomeRotation = pliers.transform.rotation;
+
+        // Pliers start clickable while ingots are locked until pliers are picked up
         SetIngotCollidersEnabled(false);
         SetPliersColliderEnabled(true);
-
-        if (forgeHeatSource != null)
-            forgeHeatSource.isContinuousHeatSource = false;
     }
 
     private void Update()
     {
-        // Smoothly move held object toward the hold point every frame
+        // Sync grip offset every frame so you can tweak it live in the Inspector
+        if (_ingotGripPoint != null)
+            _ingotGripPoint.localPosition = ingotGripOffset;
+
+        // Smoothly move held ingot toward the grip point every frame
         if (_heldIngot != null && Stage == WorkflowStage.IngotHeld)
-            _heldIngot.transform.position = Vector3.Lerp(
-                _heldIngot.transform.position,
-                _holdPoint.position,
+            _heldIngot.transform.position = Vector3.Lerp(_heldIngot.transform.position, _ingotGripPoint.position,
                 Time.deltaTime * holdFollowSpeed);
 
         HandleClicks();
     }
 
-    // ── Click Handling ─────────────────────────────────────────────────────────
+    // ------ click Handling --------------------------------------------------
 
     private void HandleClicks()
     {
-        if (!Input.GetMouseButtonDown(0)) return;
+        if (!Input.GetMouseButtonDown(0)) 
+            return;
 
-        // ── Block click if it landed on a UI element (e.g. the Next button) ───
+        // ---- Block click if it landed on a UI element (like the Next button) ----
         if (EventSystem.current != null && EventSystem.current.IsPointerOverGameObject())
         {
-            Debug.Log("[IngotInteraction] Click blocked — pointer is over UI.");
+            Debug.Log("[IngotInteraction] Click blocked , the pointer is over UI.");
             return;
         }
 
-        // ── Diagnostic: draw the ray in the Scene view for 3 seconds ──────────
+        // ---- Diagnostic: draw the ray in the Scene view for 3 seconds -------
         Ray ray = _cam.ScreenPointToRay(Input.mousePosition);
         Debug.DrawRay(ray.origin, ray.direction * 50f, Color.red, 3f);
         Debug.Log($"[IngotInteraction] Ray origin={ray.origin:F2}  dir={ray.direction:F2}  " +
                   $"mousePos={Input.mousePosition}  cursorLocked={Cursor.lockState}");
 
-        // Cast against ALL layers so we can see what (if anything) is in the way
+        // Cast against ALL layers so we can see what is in the way
         RaycastHit[] allHits = Physics.RaycastAll(ray, 50f);
         if (allHits.Length == 0)
         {
@@ -168,7 +168,12 @@ public class IngotInteraction : MonoBehaviour
         bool foundHit = false;
         foreach (var h in allHits)
         {
-            if (!h.collider.isTrigger) { hit = h; foundHit = true; break; }
+            if (!h.collider.isTrigger) 
+            { 
+                hit = h; 
+                foundHit = true; 
+                break; 
+            }
         }
 
         if (!foundHit)
@@ -196,44 +201,56 @@ public class IngotInteraction : MonoBehaviour
                     }
                 }
                 break;
+
+            case WorkflowStage.IngotHeld:
+                // Allow swapping ingot while still at the table (before pressing Next)
+                for (int i = 0; i < ingots.Length; i++)
+                {
+                    if (i != _heldIngotIndex && hit.collider.gameObject == ingots[i])
+                    {
+                        SwapIngot(i);
+                        break;
+                    }
+                }
+                break;
         }
     }
 
-    // ── Step 0 : Pick up pliers ────────────────────────────────────────────────
+    // ---- pick up pliers ---------------------------
 
     private void PickUpPliers()
     {
         _pliersPicked = true;
 
-        // Pliers are now held — disable their collider so it doesn't interfere
+        // disable the plier collider so it doesn't interfere
         SetPliersColliderEnabled(false);
 
-        // Parent pliers to the hold point so they ride with the camera
+        // Parent pliers to the hold point to preserve their current world transform
         pliers.transform.SetParent(_holdPoint, true);
-        StartCoroutine(MoveToLocal(pliers.transform, Vector3.zero, Quaternion.identity, placeDuration));
 
-        // Now let the user click an ingot
+        // animate position to hold point 
+        StartCoroutine(MoveToLocal(pliers.transform,Vector3.zero,pliers.transform.localRotation,placeDuration));
+
+        // allow clicking an ingot
         SetIngotCollidersEnabled(true);
         Stage = WorkflowStage.WaitingForIngotPick;
 
         Debug.Log("[IngotInteraction] Pliers picked up. Click an ingot.");
     }
 
-    // ── Step 1 : Pick up ingot ─────────────────────────────────────────────────
+    // --- pick up ingot ----------------------------
 
     private void PickUpIngot(int index)
     {
         _heldIngotIndex = index;
-        _heldIngot      = ingots[index];
+        _heldIngot = ingots[index];
 
-        // Disable other ingots so only the chosen one matters going forward
-        for (int i = 0; i < ingots.Length; i++)
-            if (i != index) ingots[i].SetActive(false);
+        // Disable only the picked ingot's collider (others stay enabled for swapping)
+        foreach (var col in _heldIngot.GetComponentsInChildren<Collider>())
+            col.enabled = false;
 
-        SetIngotCollidersEnabled(false);
-
-        // Smoothly float ingot up to hold point (slightly behind pliers)
-        _heldIngot.transform.SetParent(_holdPoint, true);
+        // Parent ingot to the grip point so it sits at the pliers head
+        _heldIngot.transform.SetParent(_ingotGripPoint, true);
 
         Stage = WorkflowStage.IngotHeld;
         OnIngotPickedUp?.Invoke();
@@ -241,7 +258,25 @@ public class IngotInteraction : MonoBehaviour
         Debug.Log($"[IngotInteraction] Picked up ingot [{index}] — {_heldIngot.name}. Press Next.");
     }
 
-    // ── Step 2 : Place ingot in forge (called by StationNavigator on arrival) ──
+    // ---- swap ingot while still at table ----------------------------
+
+    private void SwapIngot(int newIndex)
+    {
+        // Return the current ingot to its home instantly
+        _heldIngot.transform.SetParent(null, true);
+        _heldIngot.transform.position = _ingotHomePositions[_heldIngotIndex];
+        _heldIngot.transform.rotation = _ingotHomeRotations[_heldIngotIndex];
+
+        Debug.Log($"[IngotInteraction] Swapped from [{_heldIngotIndex}] to [{newIndex}] — {ingots[newIndex].name}.");
+
+        // Re-enable colliders on all ingots so the unchosen ones remain clickable
+        SetIngotCollidersEnabled(true);
+
+        // Pick up the new one
+        PickUpIngot(newIndex);
+    }
+
+    // --------- place ingot in forge ---------------------
 
     public void PlaceInForge()
     {
@@ -250,80 +285,85 @@ public class IngotInteraction : MonoBehaviour
 
         StartCoroutine(PlaceAtSlot(forgeSlot, () =>
         {
-            // Activate forge heat source
-            if (forgeHeatSource != null)
-                forgeHeatSource.isContinuousHeatSource = true;
+            // Re-parent to grip point so the next transition (forge -> anvil)
+            // carries the ingot at the pliers head, not the arm
+            _heldIngot.transform.SetParent(_ingotGripPoint, true);
 
             OnIngotPlacedInForge?.Invoke();
             Debug.Log("[IngotInteraction] Ingot placed in forge. Forge heating ON.");
         }));
     }
 
-    // ── Step 3 : Place ingot on anvil ──────────────────────────────────────────
+    // --------- place ingot on anvil -----------------------
 
     public void PlaceOnAnvil()
     {
         if (_heldIngot == null) return;
         Stage = WorkflowStage.AtAnvil;
 
-        // Detach from hold point so it rests on the anvil independently
+        // Detach from grip point so it animates freely to the anvil slot
         _heldIngot.transform.SetParent(null, true);
-
-        // Forge no longer heating
-        if (forgeHeatSource != null)
-            forgeHeatSource.isContinuousHeatSource = false;
 
         StartCoroutine(PlaceAtSlot(anvilSlot, () =>
         {
+            // Re-parent to grip point so the next transition (anvil -> barrel)
+            // carries the ingot at the pliers head, not the arm
+            _heldIngot.transform.SetParent(_ingotGripPoint, true);
+
             OnIngotPlacedOnAnvil?.Invoke();
             Debug.Log("[IngotInteraction] Ingot placed on anvil.");
         }));
     }
 
-    // ── Step 4 : Drop ingot into barrel ───────────────────────────────────────
+    // --------- drop ingot into barrel -----------------------
 
     public void PlaceInBarrel()
     {
         if (_heldIngot == null) return;
         Stage = WorkflowStage.AtBarrel;
 
+        // Detach from grip point so it animates freely into the barrel
         _heldIngot.transform.SetParent(null, true);
 
         StartCoroutine(PlaceAtSlot(barrelSlot, () =>
         {
+            // Re-parent to grip point so the final transition (barrel → table)
+            // carries the ingot at the pliers head
+            _heldIngot.transform.SetParent(_ingotGripPoint, true);
+
             OnIngotPlacedInBarrel?.Invoke();
             Debug.Log("[IngotInteraction] Ingot quenched in barrel.");
         }));
     }
 
-    // ── Step 5 : Return ingot to table ────────────────────────────────────────
+    // --------- return ingot to table -----------------------------
 
     public void ReturnIngotToTable()
     {
         if (_heldIngot == null) return;
         Stage = WorkflowStage.Returning;
 
+        // Unparent ingot so it moves independently back to its exact home
         _heldIngot.transform.SetParent(null, true);
 
-        // Drop pliers back on table too
+        // Return pliers to their own cached home position/rotation
         if (pliers != null)
         {
             pliers.transform.SetParent(null, true);
-            StartCoroutine(MoveToWorld(pliers.transform,
-                _ingotHomePositions[_heldIngotIndex] + Vector3.right * 0.15f,
-                _ingotHomeRotations[_heldIngotIndex],
-                placeDuration));
+            StartCoroutine(MoveToWorld(pliers.transform,_pliersHomePosition,_pliersHomeRotation,placeDuration));
         }
 
-        StartCoroutine(PlaceAtHome(_heldIngotIndex, () =>
-        {
-            // Restore hidden ingots
-            for (int i = 0; i < ingots.Length; i++)
-                ingots[i].SetActive(true);
+        // Use cached index before clearing state
+        int returnIndex = _heldIngotIndex;
 
-            _heldIngot      = null;
+        StartCoroutine(PlaceAtHome(returnIndex, () =>
+        {
+            _heldIngot = null;
             _heldIngotIndex = -1;
-            _pliersPicked   = false;
+            _pliersPicked = false;
+
+            // Re-enable pliers collider for next round
+            SetPliersColliderEnabled(true);
 
             Stage = WorkflowStage.WaitingForPliers;
             OnIngotReturned?.Invoke();
@@ -331,36 +371,29 @@ public class IngotInteraction : MonoBehaviour
         }));
     }
 
-    // ── Helpers ────────────────────────────────────────────────────────────────
+    // -------- helpers ----------------------------
 
-    /// Moves an object (already unparented) to a world-space slot transform.
+    // Move an object (already unparented) to a world-space slot transform.
     private IEnumerator PlaceAtSlot(Transform slot, System.Action onDone)
     {
-        yield return StartCoroutine(MoveToWorld(
-            _heldIngot.transform,
-            slot.position,
-            slot.rotation,
-            placeDuration));
-
+        yield return StartCoroutine(MoveToWorld(_heldIngot.transform,slot.position, slot.rotation, placeDuration));
         onDone?.Invoke();
     }
 
-    /// Moves an object back to its original home position on the table.
+    // Move an object back to its original home position on the table.
     private IEnumerator PlaceAtHome(int index, System.Action onDone)
     {
-        yield return StartCoroutine(MoveToWorld(
-            _heldIngot.transform,
-            _ingotHomePositions[index],
-            _ingotHomeRotations[index],
-            placeDuration));
+        // Capture reference now , _heldIngot will be cleared in the callback
+        Transform t = _heldIngot.transform;
 
+        yield return StartCoroutine(MoveToWorld(t, _ingotHomePositions[index],_ingotHomeRotations[index], placeDuration));
         onDone?.Invoke();
     }
 
-    /// Smoothly moves a transform to a world position/rotation over duration.
+    // move a transform to a world position/rotation over duration smoothly
     private IEnumerator MoveToWorld(Transform t, Vector3 targetPos, Quaternion targetRot, float duration)
     {
-        Vector3    startPos = t.position;
+        Vector3 startPos = t.position;
         Quaternion startRot = t.rotation;
         float elapsed = 0f;
 
@@ -377,10 +410,10 @@ public class IngotInteraction : MonoBehaviour
         t.rotation = targetRot;
     }
 
-    /// Smoothly moves a transform to a local position/rotation over duration.
+    //move a transform to a local position/rotation over duration smoothly
     private IEnumerator MoveToLocal(Transform t, Vector3 localPos, Quaternion localRot, float duration)
     {
-        Vector3    startPos = t.localPosition;
+        Vector3 startPos = t.localPosition;
         Quaternion startRot = t.localRotation;
         float elapsed = 0f;
 
