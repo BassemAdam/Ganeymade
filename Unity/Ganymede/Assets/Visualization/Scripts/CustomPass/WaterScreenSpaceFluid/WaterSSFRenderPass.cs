@@ -123,8 +123,14 @@ public sealed class WaterSSFRenderPass : ScriptableRenderPass
         TextureHandle thickness       = UniversalRenderer.CreateRenderGraphTexture(rg, thicknessDesc, "_WaterSSFThickness",       false);
         TextureHandle thicknessBlurA  = UniversalRenderer.CreateRenderGraphTexture(rg, thicknessDesc, "_WaterSSFThicknessBlurA",  false);
         TextureHandle thicknessSmooth = UniversalRenderer.CreateRenderGraphTexture(rg, thicknessDesc, "_WaterSSFThicknessSmooth", false);
-        TextureHandle depthSmoothA    = UniversalRenderer.CreateRenderGraphTexture(rg, depthDesc,     "_WaterSSFDepthSmoothA",    false);
-        TextureHandle depthSmooth     = UniversalRenderer.CreateRenderGraphTexture(rg, depthDesc,     "_WaterSSFDepthSmooth",     false);
+        // NRF depth blur: one unique handle per intermediate step — URP RenderGraph requires
+        // each transient handle to be written by exactly one pass.
+        TextureHandle depthBlur1X     = UniversalRenderer.CreateRenderGraphTexture(rg, depthDesc, "_WaterSSFDepthBlur1X", false); // iter1 X out
+        TextureHandle depthBlur1Y     = UniversalRenderer.CreateRenderGraphTexture(rg, depthDesc, "_WaterSSFDepthBlur1Y", false); // iter1 Y out
+        TextureHandle depthBlur2X     = UniversalRenderer.CreateRenderGraphTexture(rg, depthDesc, "_WaterSSFDepthBlur2X", false); // iter2 X out
+        TextureHandle depthBlur2Y     = UniversalRenderer.CreateRenderGraphTexture(rg, depthDesc, "_WaterSSFDepthBlur2Y", false); // iter2 Y out
+        TextureHandle depthBlur3X     = UniversalRenderer.CreateRenderGraphTexture(rg, depthDesc, "_WaterSSFDepthBlur3X", false); // iter3 X out
+        TextureHandle depthSmooth     = UniversalRenderer.CreateRenderGraphTexture(rg, depthDesc, "_WaterSSFDepthSmooth",  false); // iter3 Y out (final)
         TextureHandle normalsTex      = UniversalRenderer.CreateRenderGraphTexture(rg, normalsDesc,   "_WaterSSFNormals",         false);
         TextureHandle sceneCopy       = UniversalRenderer.CreateRenderGraphTexture(rg, colorDesc,     "_WaterSSFSceneCopy",       false);
 
@@ -196,15 +202,17 @@ public sealed class WaterSSFRenderPass : ScriptableRenderPass
         //    We run 3× 1D(X+Y) which achieves equivalent smoothing.
         //    Ping-pong: depthSmoothA (temp) ↔ depthSmooth (accumulated result).
         // ============================================================
+        // Each src→dst pair uses a UNIQUE destination handle — required by URP RenderGraph
+        // (a transient texture may only be the render attachment of exactly one pass).
         // Iteration 1
-        RecordBlur(rg, "Water SSF Blur X1", depthRaw,     depthSmoothA, nrfMaxSize, nrfProjK, nrfMu, nrfThresh, baseDesc.width, baseDesc.height, new Vector2(1f / baseDesc.width,  0f), false);
-        RecordBlur(rg, "Water SSF Blur Y1", depthSmoothA, depthSmooth,  nrfMaxSize, nrfProjK, nrfMu, nrfThresh, baseDesc.width, baseDesc.height, new Vector2(0f, 1f / baseDesc.height), false);
+        RecordBlur(rg, "Water SSF Blur X1", depthRaw,    depthBlur1X, nrfMaxSize, nrfProjK, nrfMu, nrfThresh, baseDesc.width, baseDesc.height, new Vector2(1f / baseDesc.width,  0f), false);
+        RecordBlur(rg, "Water SSF Blur Y1", depthBlur1X, depthBlur1Y, nrfMaxSize, nrfProjK, nrfMu, nrfThresh, baseDesc.width, baseDesc.height, new Vector2(0f, 1f / baseDesc.height), false);
         // Iteration 2
-        RecordBlur(rg, "Water SSF Blur X2", depthSmooth,  depthSmoothA, nrfMaxSize, nrfProjK, nrfMu, nrfThresh, baseDesc.width, baseDesc.height, new Vector2(1f / baseDesc.width,  0f), false);
-        RecordBlur(rg, "Water SSF Blur Y2", depthSmoothA, depthSmooth,  nrfMaxSize, nrfProjK, nrfMu, nrfThresh, baseDesc.width, baseDesc.height, new Vector2(0f, 1f / baseDesc.height), false);
+        RecordBlur(rg, "Water SSF Blur X2", depthBlur1Y, depthBlur2X, nrfMaxSize, nrfProjK, nrfMu, nrfThresh, baseDesc.width, baseDesc.height, new Vector2(1f / baseDesc.width,  0f), false);
+        RecordBlur(rg, "Water SSF Blur Y2", depthBlur2X, depthBlur2Y, nrfMaxSize, nrfProjK, nrfMu, nrfThresh, baseDesc.width, baseDesc.height, new Vector2(0f, 1f / baseDesc.height), false);
         // Iteration 3 (expose final result as global _WaterSSFDepthSmooth)
-        RecordBlur(rg, "Water SSF Blur X3", depthSmooth,  depthSmoothA, nrfMaxSize, nrfProjK, nrfMu, nrfThresh, baseDesc.width, baseDesc.height, new Vector2(1f / baseDesc.width,  0f), false);
-        RecordBlur(rg, "Water SSF Blur Y3", depthSmoothA, depthSmooth,  nrfMaxSize, nrfProjK, nrfMu, nrfThresh, baseDesc.width, baseDesc.height, new Vector2(0f, 1f / baseDesc.height), true);
+        RecordBlur(rg, "Water SSF Blur X3", depthBlur2Y, depthBlur3X, nrfMaxSize, nrfProjK, nrfMu, nrfThresh, baseDesc.width, baseDesc.height, new Vector2(1f / baseDesc.width,  0f), false);
+        RecordBlur(rg, "Water SSF Blur Y3", depthBlur3X, depthSmooth,  nrfMaxSize, nrfProjK, nrfMu, nrfThresh, baseDesc.width, baseDesc.height, new Vector2(0f, 1f / baseDesc.height), true);
 
         // ============================================================
         // 6) Normals from smoothed depth
