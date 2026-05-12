@@ -99,49 +99,24 @@ half3 SampleBackground(float2 uv, float3 N_VS, float thickness)
     return col / 5.0;
 }
 
-// Cheap value-noise gradient using a 3D hash.
-// Used to perturb the normal in WORLD space so detail moves with
-// the fluid rather than swimming in screen space.
-float SSFHash31(float3 p)
-{
-    p = frac(p * 0.3183099 + 0.1);
-    p *= 17.0;
-    return frac(p.x * p.y * p.z * (p.x + p.y + p.z));
-}
-
-float SSFValueNoise(float3 p)
-{
-    float3 i = floor(p);
-    float3 f = frac(p);
-    float3 u = f * f * (3.0 - 2.0 * f);
-    float n000 = SSFHash31(i + float3(0,0,0));
-    float n100 = SSFHash31(i + float3(1,0,0));
-    float n010 = SSFHash31(i + float3(0,1,0));
-    float n110 = SSFHash31(i + float3(1,1,0));
-    float n001 = SSFHash31(i + float3(0,0,1));
-    float n101 = SSFHash31(i + float3(1,0,1));
-    float n011 = SSFHash31(i + float3(0,1,1));
-    float n111 = SSFHash31(i + float3(1,1,1));
-    float nx00 = lerp(n000, n100, u.x);
-    float nx10 = lerp(n010, n110, u.x);
-    float nx01 = lerp(n001, n101, u.x);
-    float nx11 = lerp(n011, n111, u.x);
-    float nxy0 = lerp(nx00, nx10, u.y);
-    float nxy1 = lerp(nx01, nx11, u.y);
-    return lerp(nxy0, nxy1, u.z) * 2.0 - 1.0;
-}
+// 3D noise texture for surface normal perturbation.
+// Assign a Repeat-wrapped 3D texture in the material (_SurfaceNoiseTex3D).
+// When not assigned, Unity provides a 1×1×1 black fallback → gradient = 0 → no perturbation.
+TEXTURE3D(_SurfaceNoiseTex3D);  SAMPLER(sampler_SurfaceNoiseTex3D);
 
 float3 SSFPerturbNormalWS(float3 N, float3 posWS)
 {
     if (_SurfaceNoiseStrength <= 1e-4) return N;
-    float t = _Time.y * _SurfaceNoiseSpeed;
-    float s = max(_SurfaceNoiseScale, 1e-3);
+    float  t = _Time.y * _SurfaceNoiseSpeed;
+    float  s = max(_SurfaceNoiseScale, 1e-3);
+    // Animate with per-axis offsets so the pattern doesn't look planar.
     float3 P = posWS * s + float3(t, t * 0.7, t * 1.3);
-    float e = 0.5;
-    float n0 = SSFValueNoise(P);
-    float nx = SSFValueNoise(P + float3(e, 0, 0));
-    float ny = SSFValueNoise(P + float3(0, e, 0));
-    float nz = SSFValueNoise(P + float3(0, 0, e));
+    // Central-difference gradient — 3 extra taps in X, Y, Z.
+    float e  = 0.04;
+    float n0 = SAMPLE_TEXTURE3D(_SurfaceNoiseTex3D, sampler_SurfaceNoiseTex3D, P            ).r * 2.0 - 1.0;
+    float nx = SAMPLE_TEXTURE3D(_SurfaceNoiseTex3D, sampler_SurfaceNoiseTex3D, P+float3(e,0,0)).r * 2.0 - 1.0;
+    float ny = SAMPLE_TEXTURE3D(_SurfaceNoiseTex3D, sampler_SurfaceNoiseTex3D, P+float3(0,e,0)).r * 2.0 - 1.0;
+    float nz = SAMPLE_TEXTURE3D(_SurfaceNoiseTex3D, sampler_SurfaceNoiseTex3D, P+float3(0,0,e)).r * 2.0 - 1.0;
     float3 grad = float3(nx - n0, ny - n0, nz - n0);
     return normalize(N + grad * _SurfaceNoiseStrength);
 }
@@ -184,11 +159,13 @@ CompositeOut fragSSFComposite(Varyings IN)
     half4  nEnc    = SAMPLE_TEXTURE2D(_WaterSSFNormals, sampler_WaterSSFNormals, uv);
 
     // Discard background pixels (no particle depth written here)
-    if (eyeDepth < 1e-4 || nEnc.a < 0.5)
+    if (eyeDepth < 1e-4)
         discard;
 
     // -- Reconstruct surface geometry from depth + normals --
-    float3 nVS = normalize(nEnc.xyz * 2.0 - 1.0);           // view-space normal
+    // Normals stored as RGHalf (XY only); Z is always >= 0 (view-space, faces camera).
+    float2 nXY = nEnc.xy * 2.0 - 1.0;
+    float3 nVS = normalize(float3(nXY, sqrt(max(0.0, 1.0 - dot(nXY, nXY)))));  // view-space normal
     float3 pVS = SSFViewPosFromEyeDepth(uv, eyeDepth);      // view-space position
     float3 pWS = SSFWorldFromView(pVS);                      // world-space position
     float3 nWS = SSFNormalWorldFromView(nVS);                // world-space normal

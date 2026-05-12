@@ -71,6 +71,8 @@ public sealed class WaterSSFRenderPass : ScriptableRenderPass
     public Vector3 BoundsMin;
     public Vector3 BoundsMax;
 
+    private Light _cachedLight;
+
     // ---------------------------------------------------------------
     public override void RecordRenderGraph(RenderGraph rg, ContextContainer frameData)
     {
@@ -114,7 +116,7 @@ public sealed class WaterSSFRenderPass : ScriptableRenderPass
 
         var depthDesc     = baseDesc; depthDesc.colorFormat     = RenderTextureFormat.RFloat;
         var thicknessDesc = baseDesc; thicknessDesc.colorFormat = RenderTextureFormat.RHalf;
-        var normalsDesc   = baseDesc; normalsDesc.colorFormat   = RenderTextureFormat.ARGBHalf;
+        var normalsDesc   = baseDesc; normalsDesc.colorFormat   = RenderTextureFormat.RGHalf;
         var colorDesc     = baseDesc;
         var hwDepthDesc   = baseDesc; hwDepthDesc.colorFormat   = RenderTextureFormat.Depth; hwDepthDesc.depthBufferBits = 24;
 
@@ -128,9 +130,7 @@ public sealed class WaterSSFRenderPass : ScriptableRenderPass
         TextureHandle depthBlur1X     = UniversalRenderer.CreateRenderGraphTexture(rg, depthDesc, "_WaterSSFDepthBlur1X", false); // iter1 X out
         TextureHandle depthBlur1Y     = UniversalRenderer.CreateRenderGraphTexture(rg, depthDesc, "_WaterSSFDepthBlur1Y", false); // iter1 Y out
         TextureHandle depthBlur2X     = UniversalRenderer.CreateRenderGraphTexture(rg, depthDesc, "_WaterSSFDepthBlur2X", false); // iter2 X out
-        TextureHandle depthBlur2Y     = UniversalRenderer.CreateRenderGraphTexture(rg, depthDesc, "_WaterSSFDepthBlur2Y", false); // iter2 Y out
-        TextureHandle depthBlur3X     = UniversalRenderer.CreateRenderGraphTexture(rg, depthDesc, "_WaterSSFDepthBlur3X", false); // iter3 X out
-        TextureHandle depthSmooth     = UniversalRenderer.CreateRenderGraphTexture(rg, depthDesc, "_WaterSSFDepthSmooth",  false); // iter3 Y out (final)
+        TextureHandle depthBlur2Y     = UniversalRenderer.CreateRenderGraphTexture(rg, depthDesc, "_WaterSSFDepthBlur2Y", false); // iter2 Y out (final)
         TextureHandle normalsTex      = UniversalRenderer.CreateRenderGraphTexture(rg, normalsDesc,   "_WaterSSFNormals",         false);
         TextureHandle sceneCopy       = UniversalRenderer.CreateRenderGraphTexture(rg, colorDesc,     "_WaterSSFSceneCopy",       false);
 
@@ -207,17 +207,14 @@ public sealed class WaterSSFRenderPass : ScriptableRenderPass
         // Iteration 1
         RecordBlur(rg, "Water SSF Blur X1", depthRaw,    depthBlur1X, nrfMaxSize, nrfProjK, nrfMu, nrfThresh, baseDesc.width, baseDesc.height, new Vector2(1f / baseDesc.width,  0f), false);
         RecordBlur(rg, "Water SSF Blur Y1", depthBlur1X, depthBlur1Y, nrfMaxSize, nrfProjK, nrfMu, nrfThresh, baseDesc.width, baseDesc.height, new Vector2(0f, 1f / baseDesc.height), false);
-        // Iteration 2
+        // Iteration 2 (final — expose result as global _WaterSSFDepthSmooth)
         RecordBlur(rg, "Water SSF Blur X2", depthBlur1Y, depthBlur2X, nrfMaxSize, nrfProjK, nrfMu, nrfThresh, baseDesc.width, baseDesc.height, new Vector2(1f / baseDesc.width,  0f), false);
-        RecordBlur(rg, "Water SSF Blur Y2", depthBlur2X, depthBlur2Y, nrfMaxSize, nrfProjK, nrfMu, nrfThresh, baseDesc.width, baseDesc.height, new Vector2(0f, 1f / baseDesc.height), false);
-        // Iteration 3 (expose final result as global _WaterSSFDepthSmooth)
-        RecordBlur(rg, "Water SSF Blur X3", depthBlur2Y, depthBlur3X, nrfMaxSize, nrfProjK, nrfMu, nrfThresh, baseDesc.width, baseDesc.height, new Vector2(1f / baseDesc.width,  0f), false);
-        RecordBlur(rg, "Water SSF Blur Y3", depthBlur3X, depthSmooth,  nrfMaxSize, nrfProjK, nrfMu, nrfThresh, baseDesc.width, baseDesc.height, new Vector2(0f, 1f / baseDesc.height), true);
+        RecordBlur(rg, "Water SSF Blur Y2", depthBlur2X, depthBlur2Y, nrfMaxSize, nrfProjK, nrfMu, nrfThresh, baseDesc.width, baseDesc.height, new Vector2(0f, 1f / baseDesc.height), true);
 
         // ============================================================
         // 6) Normals from smoothed depth
         // ============================================================
-        RecordNormals(rg, depthSmooth, thicknessSmooth, normalsTex, baseDesc.width, baseDesc.height);
+        RecordNormals(rg, depthBlur2Y, thicknessSmooth, normalsTex, baseDesc.width, baseDesc.height);
 
         // ============================================================
         // 7) Scene copy (needed by composite)
@@ -225,11 +222,24 @@ public sealed class WaterSSFRenderPass : ScriptableRenderPass
         RecordSceneCopy(rg, resourceData.activeColorTexture, sceneCopy);
 
         // ============================================================
-        // 8) Composite — DEBUG: shows blurred depth as greyscale
+        // 8) Composite
         // ============================================================
-        RecordComposite(rg, depthSmooth, normalsTex, thicknessSmooth, sceneCopy,
+        RecordComposite(rg, depthBlur2Y, normalsTex, thicknessSmooth, sceneCopy,
             lightDepth, lightVP, useLightShadow,
             resourceData.activeColorTexture, resourceData.activeDepthTexture);
+
+        // ============================================================
+        // 9) Caustics — additive brightening of underwater geometry
+        //    Runs after composite so it brightens the fully-lit scene.
+        //    Uses URP's _CameraDepthTexture (opaque-scene depth copy)
+        //    to detect geometry that sits behind the water surface.
+        // ============================================================
+        if (EnableCaustics)
+        {
+            RecordCaustics(rg, depthBlur2Y, thicknessSmooth,
+                lightDepth, useLightShadow,
+                resourceData.activeColorTexture);
+        }
     }
 
     // ----------------------------------------------------------------
@@ -527,7 +537,6 @@ public sealed class WaterSSFRenderPass : ScriptableRenderPass
     {
         public TextureHandle smoothDepth;
         public TextureHandle thickness;
-        public TextureHandle sceneDepth;
         public TextureHandle lightDepth;
         public Material      material;
         public bool          shadowEnabled;
@@ -535,21 +544,19 @@ public sealed class WaterSSFRenderPass : ScriptableRenderPass
 
     private void RecordCaustics(RenderGraph rg,
         TextureHandle smoothDepth, TextureHandle thickness,
-        TextureHandle lightDepth, Matrix4x4 lightVP, bool shadowEnabled,
-        TextureHandle activeColor, TextureHandle activeDepth)
+        TextureHandle lightDepth, bool shadowEnabled,
+        TextureHandle activeColor)
     {
         using (var builder = rg.AddRasterRenderPass<CausticsData>("Water SSF Caustics", out var data))
         {
             data.smoothDepth   = smoothDepth;
             data.thickness     = thickness;
-            data.sceneDepth    = activeDepth;
             data.lightDepth    = lightDepth;
             data.material      = Material;
             data.shadowEnabled = shadowEnabled;
 
             builder.UseTexture(smoothDepth, AccessFlags.Read);
             builder.UseTexture(thickness,   AccessFlags.Read);
-            builder.UseTexture(activeDepth, AccessFlags.Read);
             if (shadowEnabled && lightDepth.IsValid())
                 builder.UseTexture(lightDepth, AccessFlags.Read);
 
@@ -557,9 +564,10 @@ public sealed class WaterSSFRenderPass : ScriptableRenderPass
             builder.AllowPassCulling(false);
             builder.AllowGlobalStateModification(true);
 
+            // _CameraDepthTexture is set globally by URP (opaque-scene depth copy).
+            // Do NOT override it — caustics uses it to detect geometry behind the water surface.
             builder.SetRenderFunc((CausticsData d, RasterGraphContext ctx) =>
             {
-                ctx.cmd.SetGlobalTexture(ID_CameraDepthTexture, d.sceneDepth);
                 if (d.shadowEnabled && d.lightDepth.IsValid())
                     ctx.cmd.SetGlobalTexture(ID_WaterSSFLightDepth, d.lightDepth);
                 Blitter.BlitTexture(ctx.cmd, d.smoothDepth, new Vector4(1, 1, 0, 0), d.material, PASS_CAUSTICS);
@@ -578,14 +586,21 @@ public sealed class WaterSSFRenderPass : ScriptableRenderPass
         Light sun = RenderSettings.sun;
         if (sun == null)
         {
-            // Fallback: scan loaded directional lights.
-            var lights = UnityEngine.Object.FindObjectsByType<Light>(FindObjectsSortMode.None);
-            foreach (var l in lights)
+            // Re-use cached reference; re-scan only when it becomes null/inactive.
+            if (_cachedLight != null && _cachedLight.isActiveAndEnabled)
             {
-                if (l != null && l.isActiveAndEnabled && l.type == LightType.Directional)
+                sun = _cachedLight;
+            }
+            else
+            {
+                var lights = UnityEngine.Object.FindObjectsByType<Light>(FindObjectsSortMode.None);
+                foreach (var l in lights)
                 {
-                    sun = l;
-                    break;
+                    if (l != null && l.isActiveAndEnabled && l.type == LightType.Directional)
+                    {
+                        sun = _cachedLight = l;
+                        break;
+                    }
                 }
             }
         }
@@ -611,12 +626,8 @@ public sealed class WaterSSFRenderPass : ScriptableRenderPass
         float diag = boundsExtent.magnitude + LightShadowExtra;
         Vector3 lightPos = boundsCenter - lightDir * (diag * 2f);
 
-        view = Matrix4x4.LookAt(lightPos, boundsCenter, Mathf.Abs(Vector3.Dot(lightDir, Vector3.up)) > 0.99f ? Vector3.right : Vector3.up).inverse;
-        // Matrix4x4.LookAt returns world→camera-space, but Unity wants camera→world for the inverse used as view. Correct it:
-        view = view; // Already world→view when using LookAt(...).inverse
-        // Use LookAt directly (camera → world) and invert for view matrix:
-        Matrix4x4 lookAt = Matrix4x4.LookAt(lightPos, boundsCenter, Vector3.up);
-        view = lookAt.inverse;
+        Vector3 upVec = Mathf.Abs(Vector3.Dot(lightDir, Vector3.up)) > 0.99f ? Vector3.right : Vector3.up;
+        view = Matrix4x4.LookAt(lightPos, boundsCenter, upVec).inverse;
 
         proj = Matrix4x4.Ortho(-diag, diag, -diag, diag, 0.01f, diag * 4f);
         // Convert to GPU projection (handles flipped Y, reversed Z, etc.) so light VP

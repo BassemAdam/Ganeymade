@@ -27,14 +27,14 @@ bool SSFTryEyePos(float2 uv, out float3 viewPos)
     return true;
 }
 
-half4 fragSSFNormals(Varyings IN) : SV_Target
+half2 fragSSFNormals(Varyings IN) : SV_Target
 {
     float2 uv = IN.texcoord;
     float2 ts = _WaterSSFDepthTexelSize.xy * max(_NormalStepPixels, 1.0);
 
     // Only require valid blurred depth — thickness is the composite's concern.
     float d = SAMPLE_TEXTURE2D(_WaterSSFDepthSmooth, sampler_PointClamp, uv).r;
-    if (d < 1e-4) return half4(0.5, 0.5, 1.0, 0.0);
+    if (d < 1e-4) return half2(0.5, 0.5);
 
     float3 p = SSFViewPosFromEyeDepth(uv, d);
 
@@ -63,7 +63,7 @@ half4 fragSSFNormals(Varyings IN) : SV_Target
     float3 N = normalize(cross(ddx, ddy));
     // Ensure normal faces toward the camera (view-space +Z convention).
     if (N.z < 0.0) N = -N;
-    return half4(N * 0.5 + 0.5, 1.0);
+    return half2(N.xy * 0.5 + 0.5);
 }
 
 #endif // SSF_NORMALS_INCLUDED

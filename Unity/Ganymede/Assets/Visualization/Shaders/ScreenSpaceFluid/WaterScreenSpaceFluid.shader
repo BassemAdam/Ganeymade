@@ -28,27 +28,21 @@ Shader "Custom/WaterScreenSpaceFluid"
 
         // -- Water look --
         [HDR] _FluidColor         ("Fluid Color",                  Color) = (0.12,0.45,0.85,1)
-        [HDR] _ShallowColor       ("Shallow Color",                Color) = (0.25,0.65,0.85,1)
-        [HDR] _DeepColor          ("Deep Color",                   Color) = (0.02,0.08,0.18,1)
         [HDR] _FluidSpecularColor ("Specular Color",               Color) = (0.9,0.95,1,1)
 
         _FluidSmoothness          ("Smoothness",                   Range(0,1)) = 0.96
         _FresnelPower             ("Fresnel Power",                Float) = 4
         _FresnelR0                ("Fresnel R0",                   Range(0,0.16)) = 0.02
-        _DiffuseWrap              ("Diffuse Wrap",                 Range(0,1)) = 0.22
-        _DiffuseStrength          ("Diffuse Strength",             Range(0,2)) = 0.30
         _ThicknessAbsorption      ("Thickness Absorption",         Float) = 2.4
-        _AbsorptionRate           ("Depth Absorption",             Float) = 1.4
         _ReflectionStrength       ("Reflection Strength",          Range(0,1)) = 0.7
         _RefractionStrength       ("Refraction Strength",          Range(0,8)) = 2.4
-        _RefractionBlur           ("Refraction Blur",              Range(0,6)) = 1.75
-        _RefractionThicknessScale ("Refraction Thickness Scale",   Float) = 0.35
-        _CompositeStrength        ("Composite Strength",           Range(0,1)) = 0.96
 
         // -- Surface noise (Step 7) --
         _SurfaceNoiseStrength     ("Surface Noise Strength",       Range(0,1)) = 0.0
         _SurfaceNoiseScale        ("Surface Noise Scale (1/m)",    Float) = 8.0
         _SurfaceNoiseSpeed        ("Surface Noise Speed",          Float) = 0.4
+        [NoScaleOffset]
+        _SurfaceNoiseTex3D        ("Surface Noise 3D Tex (Repeat)", 3D) = "" {}
 
         // -- Caustics (Step 7) --
         _CausticsTex              ("Caustics Texture",             2D) = "black" {}
@@ -155,11 +149,11 @@ Shader "Custom/WaterScreenSpaceFluid"
             ENDHLSL
         }
 
-        // 6 — screen-space caustics projection (post-composite)
+        // 6 — screen-space caustics projection (post-composite, additive)
         Pass
         {
             Name "ScreenSpaceFluidCaustics"
-            Cull Off  ZWrite Off  ZTest Always  Blend One Zero
+            Cull Off  ZWrite Off  ZTest Always  Blend One One
             HLSLPROGRAM
             #pragma target 4.5
             #pragma vertex   Vert
