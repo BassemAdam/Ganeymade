@@ -131,7 +131,7 @@ public class IngotInteraction : MonoBehaviour
         // ---- Block click if it landed on a UI element (like the Next button) ----
         if (EventSystem.current != null && EventSystem.current.IsPointerOverGameObject())
         {
-            Debug.Log("[IngotInteraction] Click blocked , the pointer is over UI.");
+            //Debug.Log("[IngotInteraction] Click blocked , the pointer is over UI.");
             return;
         }
 
