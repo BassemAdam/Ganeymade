@@ -55,6 +55,8 @@ public class IngotInteraction : MonoBehaviour
     private Transform _ingotGripPoint;     // child of _holdPoint, offset to pliers head
     private Camera _cam;
     private bool _pliersPicked = false;
+    private bool _nextPressed = false;
+    public void NotifyNextPressed() => _nextPressed = true;
 
     // ----Events (Blacksmith minigame listens to these to know when to unlock Next) --
 
@@ -99,6 +101,7 @@ public class IngotInteraction : MonoBehaviour
         // Cache pliers home so we can return them correctly after the cycle
         _pliersHomePosition = pliers.transform.position;
         _pliersHomeRotation = pliers.transform.rotation;
+        Debug.Log($"[IngotInteraction] Pliers home cached at {_pliersHomePosition}");
 
         // Pliers start clickable while ingots are locked until pliers are picked up
         SetIngotCollidersEnabled(false);
@@ -285,10 +288,7 @@ public class IngotInteraction : MonoBehaviour
 
         StartCoroutine(PlaceAtSlot(forgeSlot, () =>
         {
-            // Re-parent to grip point so the next transition (forge -> anvil)
-            // carries the ingot at the pliers head, not the arm
-            _heldIngot.transform.SetParent(_ingotGripPoint, true);
-
+            StartCoroutine(SnapToGripAfterClick());
             OnIngotPlacedInForge?.Invoke();
             Debug.Log("[IngotInteraction] Ingot placed in forge. Forge heating ON.");
         }));
@@ -305,11 +305,8 @@ public class IngotInteraction : MonoBehaviour
         _heldIngot.transform.SetParent(null, true);
 
         StartCoroutine(PlaceAtSlot(anvilSlot, () =>
-        {
-            // Re-parent to grip point so the next transition (anvil -> barrel)
-            // carries the ingot at the pliers head, not the arm
-            _heldIngot.transform.SetParent(_ingotGripPoint, true);
-
+    {
+            StartCoroutine(SnapToGripAfterClick());
             OnIngotPlacedOnAnvil?.Invoke();
             Debug.Log("[IngotInteraction] Ingot placed on anvil.");
         }));
@@ -327,10 +324,7 @@ public class IngotInteraction : MonoBehaviour
 
         StartCoroutine(PlaceAtSlot(barrelSlot, () =>
         {
-            // Re-parent to grip point so the final transition (barrel → table)
-            // carries the ingot at the pliers head
-            _heldIngot.transform.SetParent(_ingotGripPoint, true);
-
+            StartCoroutine(SnapToGripAfterClick());
             OnIngotPlacedInBarrel?.Invoke();
             Debug.Log("[IngotInteraction] Ingot quenched in barrel.");
         }));
@@ -343,9 +337,6 @@ public class IngotInteraction : MonoBehaviour
         if (_heldIngot == null) return;
         Stage = WorkflowStage.Returning;
 
-        // Unparent ingot so it moves independently back to its exact home
-        _heldIngot.transform.SetParent(null, true);
-
         // Return pliers to their own cached home position/rotation
         if (pliers != null)
         {
@@ -355,6 +346,7 @@ public class IngotInteraction : MonoBehaviour
 
         // Use cached index before clearing state
         int returnIndex = _heldIngotIndex;
+        _heldIngot.transform.SetParent(null, true); 
 
         StartCoroutine(PlaceAtHome(returnIndex, () =>
         {
@@ -388,6 +380,16 @@ public class IngotInteraction : MonoBehaviour
 
         yield return StartCoroutine(MoveToWorld(t, _ingotHomePositions[index],_ingotHomeRotations[index], placeDuration));
         onDone?.Invoke();
+    }
+
+    private IEnumerator SnapToGripAfterClick()
+    {
+        _nextPressed = false;
+        yield return new WaitUntil(() => _nextPressed);
+        _heldIngot.transform.SetParent(_ingotGripPoint, true);
+        _heldIngot.transform.localPosition = Vector3.zero;
+        _heldIngot.transform.localRotation = Quaternion.identity;
+        _nextPressed = false;
     }
 
     // move a transform to a world position/rotation over duration smoothly

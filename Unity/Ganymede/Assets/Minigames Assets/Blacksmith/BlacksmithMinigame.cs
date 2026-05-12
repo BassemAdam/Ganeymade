@@ -100,7 +100,11 @@ public class BlacksmithMinigame : MonoBehaviour
             ingotInteraction.OnIngotPlacedInForge += ()=> RefreshUI();
             ingotInteraction.OnIngotPlacedOnAnvil += ()=> RefreshUI();
             ingotInteraction.OnIngotPlacedInBarrel+= ()=> RefreshUI();
-            ingotInteraction.OnIngotReturned += ()=> RefreshUI();
+            ingotInteraction.OnIngotReturned += () =>
+            {
+                currentStationIndex = 0;  
+                RefreshUI();
+            };
         }
 
         RefreshUI();
@@ -123,6 +127,8 @@ public class BlacksmithMinigame : MonoBehaviour
     {
         if (isMoving) 
             return;
+        if (ingotInteraction != null) 
+            ingotInteraction.NotifyNextPressed();
         int next = (currentStationIndex + 1) % stations.Length;
         TravelToStation(next);
     }
