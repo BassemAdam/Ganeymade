@@ -10,7 +10,7 @@ public class IngotInteraction : MonoBehaviour
     // ----- References ----------------------------------------------
 
     [Header("Ingots")]
-    public GameObject[] ingots;                  // Gold, Copper, Silver
+    public GameObject[] ingots;                  
 
     [Header("Pliers")]
     public GameObject pliers;
@@ -101,7 +101,6 @@ public class IngotInteraction : MonoBehaviour
         // Cache pliers home so we can return them correctly after the cycle
         _pliersHomePosition = pliers.transform.position;
         _pliersHomeRotation = pliers.transform.rotation;
-        Debug.Log($"[IngotInteraction] Pliers home cached at {_pliersHomePosition}");
 
         // Pliers start clickable while ingots are locked until pliers are picked up
         SetIngotCollidersEnabled(false);
@@ -139,8 +138,8 @@ public class IngotInteraction : MonoBehaviour
         // ---- Diagnostic: draw the ray in the Scene view for 3 seconds -------
         Ray ray = _cam.ScreenPointToRay(Input.mousePosition);
         Debug.DrawRay(ray.origin, ray.direction * 50f, Color.red, 3f);
-        Debug.Log($"[IngotInteraction] Ray origin={ray.origin:F2}  dir={ray.direction:F2}  " +
-                  $"mousePos={Input.mousePosition}  cursorLocked={Cursor.lockState}");
+        // Debug.Log($"[IngotInteraction] Ray origin={ray.origin:F2}  dir={ray.direction:F2}  " +
+        //           $"mousePos={Input.mousePosition}  cursorLocked={Cursor.lockState}");
 
         // Cast against ALL layers so we can see what is in the way
         RaycastHit[] allHits = Physics.RaycastAll(ray, 50f);
@@ -160,10 +159,10 @@ public class IngotInteraction : MonoBehaviour
         }
 
         // Show everything the ray passed through (including triggers)
-        foreach (var h in allHits)
-            Debug.Log($"  RaycastAll hit: '{h.collider.gameObject.name}'  " +
-                      $"dist={h.distance:F2}  layer={LayerMask.LayerToName(h.collider.gameObject.layer)}  " +
-                      $"isTrigger={h.collider.isTrigger}");
+        // foreach (var h in allHits)
+        //     Debug.Log($"  RaycastAll hit: '{h.collider.gameObject.name}'  " +
+        //               $"dist={h.distance:F2}  layer={LayerMask.LayerToName(h.collider.gameObject.layer)}  " +
+        //               $"isTrigger={h.collider.isTrigger}");
 
         // Use the closest non-trigger hit for interaction
         System.Array.Sort(allHits, (a, b) => a.distance.CompareTo(b.distance));
@@ -185,7 +184,6 @@ public class IngotInteraction : MonoBehaviour
             return;
         }
 
-        Debug.Log($"[IngotInteraction] Using hit: '{hit.collider.gameObject.name}' | Stage: {Stage}");
 
         switch (Stage)
         {
@@ -237,8 +235,6 @@ public class IngotInteraction : MonoBehaviour
         // allow clicking an ingot
         SetIngotCollidersEnabled(true);
         Stage = WorkflowStage.WaitingForIngotPick;
-
-        Debug.Log("[IngotInteraction] Pliers picked up. Click an ingot.");
     }
 
     // --- pick up ingot ----------------------------
@@ -257,8 +253,6 @@ public class IngotInteraction : MonoBehaviour
 
         Stage = WorkflowStage.IngotHeld;
         OnIngotPickedUp?.Invoke();
-
-        Debug.Log($"[IngotInteraction] Picked up ingot [{index}] — {_heldIngot.name}. Press Next.");
     }
 
     // ---- swap ingot while still at table ----------------------------
@@ -269,8 +263,6 @@ public class IngotInteraction : MonoBehaviour
         _heldIngot.transform.SetParent(null, true);
         _heldIngot.transform.position = _ingotHomePositions[_heldIngotIndex];
         _heldIngot.transform.rotation = _ingotHomeRotations[_heldIngotIndex];
-
-        Debug.Log($"[IngotInteraction] Swapped from [{_heldIngotIndex}] to [{newIndex}] — {ingots[newIndex].name}.");
 
         // Re-enable colliders on all ingots so the unchosen ones remain clickable
         SetIngotCollidersEnabled(true);
@@ -290,7 +282,6 @@ public class IngotInteraction : MonoBehaviour
         {
             StartCoroutine(SnapToGripAfterClick());
             OnIngotPlacedInForge?.Invoke();
-            Debug.Log("[IngotInteraction] Ingot placed in forge. Forge heating ON.");
         }));
     }
 
@@ -308,7 +299,6 @@ public class IngotInteraction : MonoBehaviour
     {
             StartCoroutine(SnapToGripAfterClick());
             OnIngotPlacedOnAnvil?.Invoke();
-            Debug.Log("[IngotInteraction] Ingot placed on anvil.");
         }));
     }
 
@@ -326,7 +316,6 @@ public class IngotInteraction : MonoBehaviour
         {
             StartCoroutine(SnapToGripAfterClick());
             OnIngotPlacedInBarrel?.Invoke();
-            Debug.Log("[IngotInteraction] Ingot quenched in barrel.");
         }));
     }
 
@@ -359,7 +348,6 @@ public class IngotInteraction : MonoBehaviour
 
             Stage = WorkflowStage.WaitingForPliers;
             OnIngotReturned?.Invoke();
-            Debug.Log("[IngotInteraction] Ingot returned. Ready for next round.");
         }));
     }
 

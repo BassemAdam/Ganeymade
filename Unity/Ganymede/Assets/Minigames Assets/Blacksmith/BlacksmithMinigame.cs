@@ -271,7 +271,7 @@ public class BlacksmithMinigame : MonoBehaviour
     private void RefreshUI()
     {
         if (_stationLabel != null)
-            _stationLabel.text = stations[currentStationIndex].label;
+            _stationLabel.text = GetInstructionText();
 
         bool nextAllowed = !isMoving && IsNextAllowedByIngotStage();
 
@@ -282,16 +282,44 @@ public class BlacksmithMinigame : MonoBehaviour
             _prevButton.interactable = !isMoving;
     }
 
-    /// <summary>
-    /// Returns true when the ingot workflow has completed whatever is needed at the current station and the user may press Next.
-    ///
-    /// Station index mapping :
-    /// 0 = Table : locked until user picks an ingot 
-    /// 1 = Forge : always unlocked 
-    /// 2 = Anvil : always unlocked
-    /// 3 = Barrel : always unlocked
-    /// 4 = Table : locked while ReturnIngotToTable animation plays (Returning stage)
-    /// </summary>
+    private string GetInstructionText()
+    {
+        if (ingotInteraction == null)
+            return stations[currentStationIndex].label;
+
+        switch (currentStationIndex)
+        {
+            case 0:
+                switch (ingotInteraction.Stage)
+                {
+                    case IngotInteraction.WorkflowStage.WaitingForPliers:
+                        return "Pick up the pliers to start";
+                    case IngotInteraction.WorkflowStage.WaitingForIngotPick:
+                        return "Pick gold, copper or steel ingot";
+                    case IngotInteraction.WorkflowStage.IngotHeld:
+                        return "Press Next to head to the forge";
+                    default:
+                        return stations[currentStationIndex].label;
+                }
+            case 1:
+                return "The ingot is heating in the forge, press Next to continue";
+            case 2:
+                return "The ingot is being hammered on the anvil, press Next to continue";
+            case 3:
+                return "The ingot is being quenched in the barrel, press Next to continue";
+            case 4:
+                return "The ingot has been returned. Press Next to start again";
+            default:
+                return stations[currentStationIndex].label;
+        }
+    }
+
+    // Returns true when the ingot workflow has completed whatever is needed at the current station and the user may press Next.
+    // 0 = Table : locked until user picks an ingot 
+    // 1 = Forge : always unlocked 
+    // 2 = Anvil : always unlocked
+    // 3 = Barrel : always unlocked
+    // 4 = Table : locked while ReturnIngotToTable animation plays (Returning stage)
     private bool IsNextAllowedByIngotStage()
     {
         if (ingotInteraction == null) 
