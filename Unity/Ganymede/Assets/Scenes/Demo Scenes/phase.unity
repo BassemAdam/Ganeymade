@@ -255,7 +255,7 @@ MonoBehaviour:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 281062055}
-  m_Enabled: 0
+  m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: ccc445b9f904c1446bcac3f66c2b47db, type: 3}
   m_Name: 
@@ -846,7 +846,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 7193c26c385088b48869367ff217e876, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::VoxelSolidMaterial
-  temperature: 195
+  temperature: 230
   thermalDiffusivity: 30
   coolingRate: 0.01
   isContinuousHeatSource: 1
@@ -974,9 +974,6 @@ MonoBehaviour:
       marchingCubesMaterial: {fileID: 2100000, guid: a5f165da16e6e4a4e8b93a9c48ecc59b, type: 2}
       vapourRaymarchMaterial: {fileID: 2100000, guid: ecfb9a36afdd6404e9a46793705c4a27, type: 2}
       marchingCubesIsoLevel: 0
-      screenSpaceParticleRadius: 0.15
-      screenSpaceFilterSize: 32
-      screenSpaceSprayThreshold: 6
   visualProxyTransform: {fileID: 0}
   particlesToDensityCompute: {fileID: 7200000, guid: 3c585bfcf792db443b823ea9e4d73d39, type: 3}
   marchingCubesCompute: {fileID: 7200000, guid: a22c7c4891409a047968bd3b28af9da8, type: 3}
@@ -1541,7 +1538,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 4161998456328252244, guid: 18cf1fa5220a198409fde72db8b3e2a5, type: 3}
       propertyPath: verbose
-      value: 1
+      value: 0
       objectReference: {fileID: 0}
     - target: {fileID: 4161998456328252244, guid: 18cf1fa5220a198409fde72db8b3e2a5, type: 3}
       propertyPath: tensileK
@@ -1641,7 +1638,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 4161998456328252244, guid: 18cf1fa5220a198409fde72db8b3e2a5, type: 3}
       propertyPath: spawnPoolReserve
-      value: 0
+      value: 32768
       objectReference: {fileID: 0}
     - target: {fileID: 4161998456328252244, guid: 18cf1fa5220a198409fde72db8b3e2a5, type: 3}
       propertyPath: thermalDiffusivity

@@ -46,7 +46,6 @@ public class PhysicsWaterPhaseBridge : MonoBehaviour
     private WaterPhaseDensityPipeline _densityPipeline;
     private WaterPhaseRaymarchRenderer _raymarchRenderer;
     private WaterPhaseMarchingCubesRenderer _marchingRenderer;
-    private WaterPhaseScreenSpaceRenderer _screenSpaceRenderer;
     private UnityParticleOutputBridge _particleOutputBridge;
     private WaterSurfaceRenderMode _lastRenderMode;
     private bool _initialized;
@@ -98,11 +97,7 @@ public class PhysicsWaterPhaseBridge : MonoBehaviour
         _particleOutputBridge.RegisterIfNeeded(_resources.ParticleOutputBuffer);
 
         _computePlugin.GetBoundsWS(out Vector3 boundsMin, out Vector3 boundsMax);
-
-        // Screen-space mode doesn't need the density grid pipeline
-        if (settings.Rendering.mode != WaterSurfaceRenderMode.ScreenSpaceFluid && _densityPipeline != null)
-            _densityPipeline.Execute(_computePlugin, settings, _resources, boundsMin, boundsMax);
-
+        _densityPipeline.Execute(_computePlugin, settings, _resources, boundsMin, boundsMax);
         RenderActivePresentation(boundsMin, boundsMax);
     }
 
@@ -116,9 +111,6 @@ public class PhysicsWaterPhaseBridge : MonoBehaviour
 
         if (_marchingRenderer != null)
             _marchingRenderer.Release();
-
-        if (_screenSpaceRenderer != null)
-            _screenSpaceRenderer.SetInactive();
     }
 
     private bool TryInitializeBridge()
@@ -137,7 +129,7 @@ public class PhysicsWaterPhaseBridge : MonoBehaviour
             return false;
 
         EnsureDensityPipeline();
-        if (_densityPipeline == null && settings.Rendering.mode != WaterSurfaceRenderMode.ScreenSpaceFluid)
+        if (_densityPipeline == null)
             return false;
 
         if (!_initialized)
@@ -178,9 +170,6 @@ public class PhysicsWaterPhaseBridge : MonoBehaviour
 
         if (_marchingRenderer == null && _sourceMeshFilter != null)
             _marchingRenderer = new WaterPhaseMarchingCubesRenderer(transform, _sourceMeshFilter);
-
-        if (_screenSpaceRenderer == null)
-            _screenSpaceRenderer = new WaterPhaseScreenSpaceRenderer();
     }
 
     private bool ValidateConfiguration()
@@ -191,8 +180,7 @@ public class PhysicsWaterPhaseBridge : MonoBehaviour
             return false;
         }
 
-        if (settings.References.particlesToDensityCompute == null &&
-            settings.Rendering.mode != WaterSurfaceRenderMode.ScreenSpaceFluid)
+        if (settings.References.particlesToDensityCompute == null)
         {
             Debug.LogError("[PhysicsWaterPhaseBridge] Missing particles-to-density compute shader.");
             return false;
@@ -206,13 +194,6 @@ public class PhysicsWaterPhaseBridge : MonoBehaviour
                 return false;
             }
 
-            return true;
-        }
-
-        if (settings.Rendering.mode == WaterSurfaceRenderMode.ScreenSpaceFluid)
-        {
-            // Screen-space mode doesn't need density compute or marching cubes,
-            // but still needs the particle output buffer (handled by the bridge).
             return true;
         }
 
@@ -248,8 +229,6 @@ public class PhysicsWaterPhaseBridge : MonoBehaviour
                 _raymarchRenderer.SetInactive();
             if (_marchingRenderer != null)
                 _marchingRenderer.SetInactive();
-            if (_screenSpaceRenderer != null)
-                _screenSpaceRenderer.SetInactive();
 
             _lastRenderMode = settings.Rendering.mode;
         }
@@ -258,8 +237,6 @@ public class PhysicsWaterPhaseBridge : MonoBehaviour
         {
             if (_marchingRenderer != null)
                 _marchingRenderer.SetInactive();
-            if (_screenSpaceRenderer != null)
-                _screenSpaceRenderer.SetInactive();
 
             if (_raymarchRenderer != null)
             {
@@ -276,24 +253,8 @@ public class PhysicsWaterPhaseBridge : MonoBehaviour
             return;
         }
 
-        if (settings.Rendering.mode == WaterSurfaceRenderMode.ScreenSpaceFluid)
-        {
-            if (_raymarchRenderer != null)
-                _raymarchRenderer.SetInactive();
-            if (_marchingRenderer != null)
-                _marchingRenderer.SetInactive();
-
-            if (_screenSpaceRenderer != null)
-                _screenSpaceRenderer.Render(_computePlugin, _resources, settings.Rendering);
-
-            return;
-        }
-
-        // MarchingCubesLiquidWithVapour
         if (_raymarchRenderer != null)
             _raymarchRenderer.SetInactive();
-        if (_screenSpaceRenderer != null)
-            _screenSpaceRenderer.SetInactive();
 
         if (_marchingRenderer != null)
             _marchingRenderer.Render(settings, _resources, boundsMin, boundsMax, gameObject.layer);
