@@ -67,6 +67,10 @@ Unity/Ganymede/Assets/Art/Shaders/Includes/req2.md.meta
 Unity/Ganymede/Assets/AllSkyFree
 Ignore
 
+# Large imported packages (kept on disk for terrain references, not tracked)
+Unity/Ganymede/Assets/TerrainSampleAssets/
+Unity/Ganymede/Assets/TerrainSampleAssets.meta
+
 # Large image/texture assets
 *.exr
 *.exr.meta

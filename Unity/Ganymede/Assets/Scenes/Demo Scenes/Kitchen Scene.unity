@@ -545,7 +545,7 @@ MonoBehaviour:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 681215785}
-  m_Enabled: 0
+  m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: e9eb36d79300fe7428f1000517630b74, type: 3}
   m_Name: 
@@ -584,7 +584,7 @@ MonoBehaviour:
       adaptiveDensityBulk: 260
       adaptiveDensityCurve: 0.4
     rendering:
-      mode: 2
+      mode: 0
       rayMarchingMaterial: {fileID: 2100000, guid: 03c4cd8b0ea45e14190b02d13513c0d9, type: 2}
       marchingCubesMaterial: {fileID: 2100000, guid: a5f165da16e6e4a4e8b93a9c48ecc59b, type: 2}
       vapourRaymarchMaterial: {fileID: 2100000, guid: ecfb9a36afdd6404e9a46793705c4a27, type: 2}
@@ -855,6 +855,10 @@ PrefabInstance:
       value: 1
       objectReference: {fileID: 0}
     - target: {fileID: 4161998456328252244, guid: 18cf1fa5220a198409fde72db8b3e2a5, type: 3}
+      propertyPath: m_Enabled
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 4161998456328252244, guid: 18cf1fa5220a198409fde72db8b3e2a5, type: 3}
       propertyPath: viscosity
       value: 1
       objectReference: {fileID: 0}
@@ -876,7 +880,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 4161998456328252244, guid: 18cf1fa5220a198409fde72db8b3e2a5, type: 3}
       propertyPath: boundsMin.x
-      value: -19.5
+      value: 9.47
       objectReference: {fileID: 0}
     - target: {fileID: 4161998456328252244, guid: 18cf1fa5220a198409fde72db8b3e2a5, type: 3}
       propertyPath: boundsMin.y
@@ -884,7 +888,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 4161998456328252244, guid: 18cf1fa5220a198409fde72db8b3e2a5, type: 3}
       propertyPath: boundsMin.z
-      value: -15.72
+      value: 9.6
       objectReference: {fileID: 0}
     - target: {fileID: 4161998456328252244, guid: 18cf1fa5220a198409fde72db8b3e2a5, type: 3}
       propertyPath: coolingRate
@@ -1677,7 +1681,7 @@ MonoBehaviour:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 1885709156}
-  m_Enabled: 1
+  m_Enabled: 0
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 667f1985ae19fdd44b21f9bb54b29c64, type: 3}
   m_Name: 
@@ -1867,8 +1871,8 @@ MonoBehaviour:
   maxPitch: 85
   interactionDistance: 7.99
   interactionRadius: 3
-  attractStrength: 300
-  repulseStrength: 300
+  attractStrength: 0
+  repulseStrength: 0
   snapInteractionToSimBounds: 0
 --- !u!114 &1886338145
 MonoBehaviour:
@@ -2044,6 +2048,22 @@ PrefabInstance:
       propertyPath: m_Enabled
       value: 0
       objectReference: {fileID: 0}
+    - target: {fileID: 5414983573032476027, guid: df50b00d653da4daeb7be587a0685c4d, type: 3}
+      propertyPath: m_Range
+      value: 80
+      objectReference: {fileID: 0}
+    - target: {fileID: 5414983573032476027, guid: df50b00d653da4daeb7be587a0685c4d, type: 3}
+      propertyPath: m_Intensity
+      value: 10
+      objectReference: {fileID: 0}
+    - target: {fileID: 5562041302328012048, guid: df50b00d653da4daeb7be587a0685c4d, type: 3}
+      propertyPath: m_Range
+      value: 80
+      objectReference: {fileID: 0}
+    - target: {fileID: 5562041302328012048, guid: df50b00d653da4daeb7be587a0685c4d, type: 3}
+      propertyPath: m_Intensity
+      value: 10
+      objectReference: {fileID: 0}
     - target: {fileID: 5812198604820571066, guid: df50b00d653da4daeb7be587a0685c4d, type: 3}
       propertyPath: m_Layer
       value: 3
@@ -2055,6 +2075,14 @@ PrefabInstance:
     - target: {fileID: 6039592006326875279, guid: df50b00d653da4daeb7be587a0685c4d, type: 3}
       propertyPath: m_Layer
       value: 3
+      objectReference: {fileID: 0}
+    - target: {fileID: 6168779239247945944, guid: df50b00d653da4daeb7be587a0685c4d, type: 3}
+      propertyPath: m_Range
+      value: 80
+      objectReference: {fileID: 0}
+    - target: {fileID: 6168779239247945944, guid: df50b00d653da4daeb7be587a0685c4d, type: 3}
+      propertyPath: m_Intensity
+      value: 10
       objectReference: {fileID: 0}
     - target: {fileID: 7050130862013136272, guid: df50b00d653da4daeb7be587a0685c4d, type: 3}
       propertyPath: m_Name
