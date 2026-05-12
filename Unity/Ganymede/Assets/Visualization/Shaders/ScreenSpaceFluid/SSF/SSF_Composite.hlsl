@@ -28,7 +28,7 @@ TEXTURE2D(_WaterSSFNormals);     SAMPLER(sampler_WaterSSFNormals);
 
 // Water look
 half4  _FluidColor;
-half4  _FluidSpecularColor;
+
 float  _FluidSmoothness;
 float  _FresnelPower;
 float  _FresnelR0;
@@ -196,29 +196,14 @@ CompositeOut fragSSFComposite(Varyings IN)
     if (R_WS.y < 0.0) fresnel *= 0.1;
 
     // ============================================================
-    // STEP 5 — Blinn-Phong specular highlight (sun / directional light)
+    // Combine — mix refraction and reflection by Fresnel
     //
-    // The reference sets specular contribution to 0 for simplicity,
-    // but a small highlight is critical for water to look realistic.
-    // We keep it additive on top of the refract/reflect mix.
-    // ============================================================
-    Light  mainLight = GetMainLight();
-    float3 Ldir      = normalize(mainLight.direction);
-    float3 H         = normalize(Ldir + V);
-    float  specPow   = exp2(_FluidSmoothness * 10.0 + 1.0);
-    float  specular  = pow(saturate(dot(nWS, H)), specPow) * saturate(dot(nWS, Ldir));
-    half3  spec      = _FluidSpecularColor.rgb * mainLight.color * specular;
-
-    // ============================================================
-    // Combine — mix refraction and reflection by Fresnel, add specular
+    //   result = lerp(refrColor, reflColor, fresnel)
     //
-    //   result = lerp(refrColor, reflColor, fresnel) + spec
-    //
-    // This is the core formula from fluid.wgsl:
-    //   finalColor = mix(refractionColor, reflectionColor, fresnel)
-    // We add a specular highlight on top.
+    // Matches fluid.wgsl: finalColor = mix(refractionColor, reflectionColor, fresnel)
+    // No Blinn-Phong specular — fluid.wgsl uses 0.0 * specular (none).
     // ============================================================
-    half3 result = lerp(refrColor, reflColor * _ReflectionStrength, fresnel) + spec;
+    half3 result = lerp(refrColor, reflColor * _ReflectionStrength, fresnel);
 
     // Optional light-view shadow attenuation
     result *= SSFLightShadowAtten(pWS);

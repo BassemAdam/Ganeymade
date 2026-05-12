@@ -25,29 +25,19 @@ Material:
     m_TexEnvs: []
     m_Ints: []
     m_Floats:
-    - _AbsorptionRate: 1.4
-    - _BlurDepthSigma: 0.04
-    - _BlurRadius: 4
-    - _BlurSigma: 2.25
-    - _CompositeStrength: 0.96
-    - _DiffuseStrength: 0.3
-    - _DiffuseWrap: 0.22
     - _FluidSmoothness: 0.96
-    - _FresnelPower: 4
+    - _FresnelPower: 5
     - _FresnelR0: 0.02
+    - _NRF_DepthThreshold: 1
+    - _NRF_MaxFilterSize: 50
+    - _NRF_Mu: 0.3
+    - _NRF_ProjectedParticleK: 65
+    - _NormalStepPixels: 1
     - _ParticleRadius: 0.1
-    - _NormalStepPixels: 2
-    - _ReflectionStrength: 0.7
-    - _RefractionBlur: 1.75
-    - _RefractionStrength: 2.4
-    - _RefractionThicknessScale: 0.35
-    - _ThicknessAbsorption: 2.4
-    - _ThicknessCutoff: 0.002
-    - _ThicknessSplatSigma: 0.45
+    - _ReflectionStrength: 1
+    - _RefractionStrength: 3
+    - _ThicknessAbsorption: 1.75
     m_Colors:
-    - _DeepColor: {r: 0.02, g: 0.08, b: 0.18, a: 1}
-    - _FluidColor: {r: 0.11999995, g: 0.45, b: 0.85, a: 1}
-    - _FluidSpecularColor: {r: 0.9, g: 0.95, b: 1, a: 1}
-    - _ShallowColor: {r: 0.25, g: 0.65, b: 0.85, a: 1}
+    - _FluidColor: {r: 0.549, g: 0.863, b: 0.941, a: 1}
   m_BuildTextureStacks: []
   m_AllowLocking: 1

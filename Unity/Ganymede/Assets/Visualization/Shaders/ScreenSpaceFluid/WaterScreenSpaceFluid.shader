@@ -24,18 +24,16 @@ Shader "Custom/WaterScreenSpaceFluid"
         _NRF_Mu                   ("NRF Mu (snap offset, m)",      Float) = 0.3
         _NRF_DepthThreshold       ("NRF Depth Threshold (m)",      Float) = 1.0
         _NormalStepPixels         ("Normal Step Pixels",           Range(1,4)) = 1
-        _ThicknessSplatSigma      ("Thickness Splat Sigma",        Range(0.15,1.0)) = 0.45
 
         // -- Water look --
-        [HDR] _FluidColor         ("Fluid Color",                  Color) = (0.12,0.45,0.85,1)
-        [HDR] _FluidSpecularColor ("Specular Color",               Color) = (0.9,0.95,1,1)
+        [HDR] _FluidColor         ("Fluid Color",                  Color) = (0.549,0.863,0.941,1)
 
         _FluidSmoothness          ("Smoothness",                   Range(0,1)) = 0.96
-        _FresnelPower             ("Fresnel Power",                Float) = 4
+        _FresnelPower             ("Fresnel Power",                Float) = 5
         _FresnelR0                ("Fresnel R0",                   Range(0,0.16)) = 0.02
-        _ThicknessAbsorption      ("Thickness Absorption",         Float) = 2.4
-        _ReflectionStrength       ("Reflection Strength",          Range(0,1)) = 0.7
-        _RefractionStrength       ("Refraction Strength",          Range(0,8)) = 2.4
+        _ThicknessAbsorption      ("Thickness Absorption",         Float) = 1.75
+        _ReflectionStrength       ("Reflection Strength",          Range(0,1)) = 1.0
+        _RefractionStrength       ("Refraction Strength",          Range(0,8)) = 3.0
 
     }
 

@@ -2613,15 +2613,11 @@ MonoBehaviour:
       adaptiveDensityBulk: 260
       adaptiveDensityCurve: 0.4
     rendering:
-      mode: 0
+      mode: 2
       rayMarchingMaterial: {fileID: 2100000, guid: 03c4cd8b0ea45e14190b02d13513c0d9, type: 2}
       marchingCubesMaterial: {fileID: 2100000, guid: a5f165da16e6e4a4e8b93a9c48ecc59b, type: 2}
       vapourRaymarchMaterial: {fileID: 2100000, guid: ecfb9a36afdd6404e9a46793705c4a27, type: 2}
       screenSpaceFluidMaterial: {fileID: 2100000, guid: 92e2acaed84fb194a89f2cf5cc30a97c, type: 2}
-      screenSpaceParticleRadiusWS: -1
-      screenSpaceBlurRadius: 4
-      screenSpaceBlurSigma: 2.25
-      screenSpaceBlurDepthSigma: 0.04
       marchingCubesIsoLevel: 0
   visualProxyTransform: {fileID: 0}
 --- !u!23 &1188592649
