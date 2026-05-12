@@ -10,6 +10,7 @@ GameObject:
   m_Component:
   - component: {fileID: 2808379889608592249}
   - component: {fileID: 4310394751756518443}
+  - component: {fileID: 1976519658083989883}
   m_Layer: 0
   m_Name: Pliers
   m_TagString: Untagged
@@ -54,6 +55,29 @@ BoxCollider:
   serializedVersion: 3
   m_Size: {x: 0.3, y: 0.45, z: 0.15}
   m_Center: {x: -0.12, y: 0.2, z: 0}
+--- !u!114 &1976519658083989883
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 7016159323307550333}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 936650645ccee63498a91baf801762fa, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::VoxelDynamic
+  enableFluidForces: 1
+  buoyancyMode: 0
+  objectDensity: 15
+  dragCoefficient: 1
+  angularDragCoefficient: 0.5
+  sinkFactor: 0.3
+  stayUpright: 0
+  autoSetMass: 1
+  submergedFraction: 0
+  lastBuoyancyForce: {x: 0, y: 0, z: 0}
+  lastDragForce: {x: 0, y: 0, z: 0}
 --- !u!1001 &4711771736549286263
 PrefabInstance:
   m_ObjectHideFlags: 0
