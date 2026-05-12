@@ -16,10 +16,12 @@ Shader "Custom/WaterScreenSpaceFluid"
         // -- Surface reconstruction --
         _ParticleRadius           ("Particle Radius (WS)",         Float) = 0.10
         // Narrow-Range Filter (Truong et al. 2018)
-        _NRF_MaxFilterSize        ("NRF Max Filter Radius (px)",   Float) = 20
-        _NRF_ProjectedParticleK   ("NRF Projected Particle K",     Float) = 80
-        _NRF_Mu                   ("NRF Mu (snap offset, m)",      Float) = 0.5
-        _NRF_DepthThreshold       ("NRF Depth Threshold (m)",      Float) = 0.3
+        // _NRF_ProjectedParticleK is auto-computed in C# (0 = auto); set non-zero to override.
+        // Calibrated to: maxFilter=50, mu=3*radius, depthThresh=10*radius (matches reference).
+        _NRF_MaxFilterSize        ("NRF Max Filter Radius (px)",   Float) = 50
+        _NRF_ProjectedParticleK   ("NRF Projected Particle K (0=auto)", Float) = 0
+        _NRF_Mu                   ("NRF Mu (snap offset, m)",      Float) = 0.3
+        _NRF_DepthThreshold       ("NRF Depth Threshold (m)",      Float) = 1.0
         _NormalStepPixels         ("Normal Step Pixels",           Range(1,4)) = 1
         _ThicknessCutoff          ("Thickness Cutoff",             Float) = 0.0005
         _ThicknessSplatSigma      ("Thickness Splat Sigma",        Range(0.15,1.0)) = 0.45
@@ -163,6 +165,19 @@ Shader "Custom/WaterScreenSpaceFluid"
             #pragma vertex   Vert
             #pragma fragment fragSSFCaustics
             #include "SSF/SSF_Caustics.hlsl"
+            ENDHLSL
+        }
+
+        // 7 — separable Gaussian blur on the thickness map (X or Y direction)
+        Pass
+        {
+            Name "ScreenSpaceFluidThicknessBlur"
+            Cull Off  ZWrite Off  ZTest Always  Blend One Zero
+            HLSLPROGRAM
+            #pragma target 4.5
+            #pragma vertex   Vert
+            #pragma fragment fragSSFThicknessBlur
+            #include "SSF/SSF_ThicknessBlur.hlsl"
             ENDHLSL
         }
     }
