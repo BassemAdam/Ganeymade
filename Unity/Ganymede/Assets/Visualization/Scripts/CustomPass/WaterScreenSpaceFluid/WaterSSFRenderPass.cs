@@ -337,13 +337,15 @@ public sealed class WaterSSFRenderPass : ScriptableRenderPass
 
             builder.SetRenderFunc((BlurData d, RasterGraphContext ctx) =>
             {
-                ctx.cmd.SetGlobalTexture(ID_WaterSSFDepthSource,    d.source);
-                ctx.cmd.SetGlobalVector (ID_WaterSSFDepthTexelSize,  d.texelSize);
-                ctx.cmd.SetGlobalVector (ID_WaterSSFBlurDirection,   d.blurDirection);
-                d.material.SetFloat(ID_NRF_MaxFilterSize,      d.nrfMaxFilterSize);
-                d.material.SetFloat(ID_NRF_ProjectedParticleK, d.nrfProjK);
-                d.material.SetFloat(ID_NRF_Mu,                 d.nrfMu);
-                d.material.SetFloat(ID_NRF_DepthThreshold,     d.nrfDepthThreshold);
+                ctx.cmd.SetGlobalTexture(ID_WaterSSFDepthSource,       d.source);
+                ctx.cmd.SetGlobalVector (ID_WaterSSFDepthTexelSize,    d.texelSize);
+                ctx.cmd.SetGlobalVector (ID_WaterSSFBlurDirection,     d.blurDirection);
+                // Use SetGlobalFloat — material.SetFloat inside a render func does NOT
+                // propagate to GPU shader constants in URP RenderGraph.
+                ctx.cmd.SetGlobalFloat  (ID_NRF_MaxFilterSize,      d.nrfMaxFilterSize);
+                ctx.cmd.SetGlobalFloat  (ID_NRF_ProjectedParticleK, d.nrfProjK);
+                ctx.cmd.SetGlobalFloat  (ID_NRF_Mu,                 d.nrfMu);
+                ctx.cmd.SetGlobalFloat  (ID_NRF_DepthThreshold,     d.nrfDepthThreshold);
                 Blitter.BlitTexture(ctx.cmd, d.source, new Vector4(1, 1, 0, 0), d.material, PASS_BLUR);
             });
         }

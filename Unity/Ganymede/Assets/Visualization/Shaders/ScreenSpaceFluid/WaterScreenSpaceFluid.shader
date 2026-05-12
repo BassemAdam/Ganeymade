@@ -142,7 +142,7 @@ Shader "Custom/WaterScreenSpaceFluid"
         Pass
         {
             Name "ScreenSpaceFluidComposite"
-            Cull Off  ZWrite On  ZTest Always  Blend One Zero
+            Cull Off  ZWrite On  ZTest LEqual  Blend One Zero
             HLSLPROGRAM
             #pragma target 4.5
             #pragma vertex   Vert
