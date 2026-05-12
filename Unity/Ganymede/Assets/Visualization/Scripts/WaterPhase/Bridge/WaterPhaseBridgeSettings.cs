@@ -5,7 +5,8 @@ using UnityEngine.Serialization;
 public enum WaterSurfaceRenderMode
 {
     RaymarchVolume,
-    MarchingCubesLiquidWithVapour
+    MarchingCubesLiquidWithVapour,
+    ScreenSpaceFluid
 }
 
 [Serializable]
@@ -13,9 +14,10 @@ public class WaterPhaseBridgeSettings
 {
     [SerializeField] private WaterPhaseComputeAssetReferences references = new WaterPhaseComputeAssetReferences();
     [SerializeField] private WaterPhaseDensityGridSettings densityGrid = new WaterPhaseDensityGridSettings();
-    [Header("Default density blur")]
+    [Header("Raymarch density blur")]
+    [FormerlySerializedAs("blur")]
     [FormerlySerializedAs("vapour")]
-    [SerializeField] private WaterPhaseDensityBlurSettings blur = new WaterPhaseDensityBlurSettings();
+    [SerializeField] private WaterPhaseDensityBlurSettings raymarchBlur = new WaterPhaseDensityBlurSettings();
     [Header("Marching cubes density blur")]
     [FormerlySerializedAs("marchingCubesLiquidBlur")]
     [SerializeField] private WaterPhaseDensityBlurSettings marchingCubesBlur = new WaterPhaseDensityBlurSettings();
@@ -27,7 +29,8 @@ public class WaterPhaseBridgeSettings
 
     public WaterPhaseComputeAssetReferences References => references ?? (references = new WaterPhaseComputeAssetReferences());
     public WaterPhaseDensityGridSettings DensityGrid => densityGrid ?? (densityGrid = new WaterPhaseDensityGridSettings());
-    public WaterPhaseDensityBlurSettings Blur => blur ?? (blur = new WaterPhaseDensityBlurSettings());
+    public WaterPhaseDensityBlurSettings RaymarchBlur => raymarchBlur ?? (raymarchBlur = new WaterPhaseDensityBlurSettings());
+    public WaterPhaseDensityBlurSettings Blur => RaymarchBlur;
     public WaterPhaseDensityBlurSettings MarchingCubesBlur => marchingCubesBlur ?? (marchingCubesBlur = new WaterPhaseDensityBlurSettings());
     public WaterPhaseAdaptiveSmoothingSettings RaymarchSmoothing => raymarchSmoothing ?? (raymarchSmoothing = new WaterPhaseAdaptiveSmoothingSettings());
     public WaterPhaseAdaptiveSmoothingSettings MarchingCubesSmoothing => marchingCubesSmoothing ?? (marchingCubesSmoothing = new WaterPhaseAdaptiveSmoothingSettings());
@@ -35,7 +38,7 @@ public class WaterPhaseBridgeSettings
 
     public WaterPhaseDensityBlurSettings ActiveBlur => Rendering.mode == WaterSurfaceRenderMode.MarchingCubesLiquidWithVapour
         ? MarchingCubesBlur
-        : Blur;
+        : RaymarchBlur;
 
     public WaterPhaseAdaptiveSmoothingSettings ActiveSmoothing => Rendering.mode == WaterSurfaceRenderMode.MarchingCubesLiquidWithVapour
         ? MarchingCubesSmoothing
@@ -119,24 +122,77 @@ public class WaterPhaseAdaptiveSmoothingSettings
 [Serializable]
 public class WaterPhaseDensityBlurSettings
 {
-    [Tooltip("Gaussian-blur BOTH liquid and vapour slabs after normalization and before normal baking. " +
-             "This shared setting keeps raymarch and marching-cubes density fields consistent.")]
-    public bool enabled = true;
+    [Header("Liquid density blur")]
+    [Tooltip("Gaussian-blur the LIQUID (R) density channel for this render mode after normalization and before normal baking.")]
+    [FormerlySerializedAs("blurLiquidDensity")]
+    public bool liquidBlurEnabled = false;
 
-    [Tooltip("Kernel half-size in voxels (1=3^3 taps, 2=5^3 taps, 3=7^3 taps). Larger = smoother but heavier.")]
+    [Tooltip("Kernel half-size in voxels for the LIQUID channel in this render mode (1=3^3 taps, 2=5^3 taps, 3=7^3 taps). Larger = smoother but heavier.")]
+    [Range(1, 4)]
+    public int liquidBlurRadius = 1;
+
+    [Tooltip("Gaussian sigma in voxels for the LIQUID channel in this render mode. Small values give tight, localized blur; large values spread widely.")]
+    [Range(0.1f, 4.0f)]
+    public float liquidBlurSigma = 1.0f;
+
+    [Tooltip("0 = pure smooth liquid, 1 = original liquid high-frequency detail fully added back on top of the blur for this render mode.")]
+    [Range(0f, 1f)]
+    public float liquidBlurDetailPreserve = 0.0f;
+
+    [Header("Vapour density blur")]
+    [Tooltip("Gaussian-blur the VAPOUR (G) density channel for this render mode after normalization and before normal baking.")]
+    [FormerlySerializedAs("blurVapourDensity")]
+    [FormerlySerializedAs("enabled")]
+    public bool vapourBlurEnabled = true;
+
+    [Tooltip("Kernel half-size in voxels for the VAPOUR channel in this render mode (1=3^3 taps, 2=5^3 taps, 3=7^3 taps). Larger = smoother but heavier.")]
     [Range(1, 4)]
     [FormerlySerializedAs("blurRadius")]
-    public int radius = 1;
+    [FormerlySerializedAs("radius")]
+    public int vapourBlurRadius = 1;
 
-    [Tooltip("Gaussian sigma in voxels. Small values give tight, localized blur; large values spread widely.")]
+    [Tooltip("Gaussian sigma in voxels for the VAPOUR channel in this render mode. Small values give tight, localized blur; large values spread widely.")]
     [Range(0.1f, 4.0f)]
     [FormerlySerializedAs("blurSigma")]
-    public float sigma = 1.0f;
+    [FormerlySerializedAs("sigma")]
+    public float vapourBlurSigma = 1.0f;
 
-    [Tooltip("0 = pure smooth, 1 = original high-frequency detail fully added back on top of the blur.")]
+    [Tooltip("0 = pure smooth vapour, 1 = original vapour high-frequency detail fully added back on top of the blur for this render mode.")]
     [Range(0f, 1f)]
     [FormerlySerializedAs("blurDetailPreserve")]
-    public float detailPreserve = 0.25f;
+    [FormerlySerializedAs("detailPreserve")]
+    public float vapourBlurDetailPreserve = 0.25f;
+
+    public bool IsChannelEnabled(int channel)
+    {
+        return channel == 0 ? liquidBlurEnabled : vapourBlurEnabled;
+    }
+
+    public int GetRadius(int channel)
+    {
+        return channel == 0 ? liquidBlurRadius : vapourBlurRadius;
+    }
+
+    public float GetSigma(int channel)
+    {
+        return channel == 0 ? liquidBlurSigma : vapourBlurSigma;
+    }
+
+    public float GetDetailPreserve(int channel)
+    {
+        return channel == 0 ? liquidBlurDetailPreserve : vapourBlurDetailPreserve;
+    }
+
+    public void Clamp()
+    {
+        liquidBlurRadius = Mathf.Clamp(liquidBlurRadius, 1, 4);
+        liquidBlurSigma = Mathf.Clamp(liquidBlurSigma, 0.1f, 4.0f);
+        liquidBlurDetailPreserve = Mathf.Clamp01(liquidBlurDetailPreserve);
+
+        vapourBlurRadius = Mathf.Clamp(vapourBlurRadius, 1, 4);
+        vapourBlurSigma = Mathf.Clamp(vapourBlurSigma, 0.1f, 4.0f);
+        vapourBlurDetailPreserve = Mathf.Clamp01(vapourBlurDetailPreserve);
+    }
 }
 
 [Serializable]
@@ -153,6 +209,9 @@ public class WaterPhaseRenderingSettings
 
     [Tooltip("Material used for the vapour volumetric box when marching cubes mode is active.")]
     public Material vapourRaymarchMaterial;
+
+    [Tooltip("Material used for screen-space fluid rendering. Particle radius, blur, smoothness, refraction, and reflection are configured on this material/shader.")]
+    public Material screenSpaceFluidMaterial;
 
     [Tooltip("Iso threshold applied to normalized density (0..1-ish). Higher values make the surface shrink.")]
     [Range(0f, 1f)]

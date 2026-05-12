@@ -1,0 +1,265 @@
+#pragma kernel ClearGrid
+#pragma kernel SplatParticles
+#pragma kernel NormalizeToTexture
+#pragma kernel BlurDensity
+#pragma kernel BakeNormals
+
+struct Particle
+{
+    float3 position;
+    float  density;
+
+    float3 velocity;
+    float  pressure;
+
+    float3 acceleration;
+    float  mass;
+
+    float  temperature;
+    int    phase;
+
+    float  latentHeatAccum;
+    float  fixedId;
+    float  neighborCount;
+    float  _pad0;
+    float  _pad1;
+    float  _pad2;
+};
+
+StructuredBuffer<Particle>  _ParticleBuffer;
+RWStructuredBuffer<uint>    _DensityGrid;
+RWTexture3D<float2>         _DensityTexture3D_RG;
+Texture3D<float2>           _DensityTexture3D_Read;
+RWTexture3D<float4>         _NormalTexture3D;
+
+int3   _VolumeDims;
+uint   _ParticleCount;
+float4 _BoundsMinWS;
+float4 _BoundsMaxWS;
+float  _ParticleContribution;
+float  _FixedPointScale;
+float  _SmoothingRadiusWS_LiquidSmall;
+float  _SmoothingRadiusWS_LiquidBulk;
+float  _SmoothingRadiusWS_Vapour;
+float  _AdaptiveDensitySurface;
+float  _AdaptiveDensityBulk;
+float  _AdaptiveDensityCurve;
+int    _KernelRadiusVoxels;
+float2 _InvDensityScaleRG;
+
+int    _BlurRadius;
+float  _BlurSigma;
+float  _BlurDetailPreserve;
+int    _BlurChannel;
+
+uint GridIndex(int3 v)
+{
+    return (uint)(v.x + _VolumeDims.x * (v.y + _VolumeDims.y * v.z));
+}
+
+bool IsOutOfBounds(int3 v)
+{
+    return any(v < 0) || v.x >= _VolumeDims.x || v.y >= _VolumeDims.y || v.z >= _VolumeDims.z;
+}
+
+float SampleLiquidOrAir(int3 p)
+{
+    if (IsOutOfBounds(p))
+        return 0.0;
+
+    return _DensityTexture3D_Read[p].r;
+}
+
+[numthreads(8, 8, 8)]
+void ClearGrid(uint3 id : SV_DispatchThreadID)
+{
+    if (id.x >= (uint)_VolumeDims.x || id.y >= (uint)_VolumeDims.y || id.z >= (uint)_VolumeDims.z)
+        return;
+
+    uint N   = (uint)(_VolumeDims.x * _VolumeDims.y * _VolumeDims.z);
+    uint idx = (uint)(id.x + (uint)_VolumeDims.x * (id.y + (uint)_VolumeDims.y * id.z));
+    _DensityGrid[idx] = 0;
+    _DensityGrid[N + idx] = 0;
+}
+
+void AtomicAddDensity(int3 v, uint slabOffset, uint amount)
+{
+    if (IsOutOfBounds(v))
+        return;
+
+    uint idx = slabOffset + GridIndex(v);
+    uint original;
+    InterlockedAdd(_DensityGrid[idx], amount, original);
+}
+
+[numthreads(256, 1, 1)]
+void SplatParticles(uint id : SV_DispatchThreadID)
+{
+    if (id >= _ParticleCount)
+        return;
+
+    Particle p = _ParticleBuffer[id];
+
+    if (p.phase < 0 || p.phase > 1)
+        return;
+
+    uint N          = (uint)(_VolumeDims.x * _VolumeDims.y * _VolumeDims.z);
+    uint slabOffset = (p.phase == 1) ? N : 0u;
+
+    float3 minWS  = _BoundsMinWS.xyz;
+    float3 maxWS  = _BoundsMaxWS.xyz;
+    float3 sizeWS = maxWS - minWS;
+
+    float3 uvw = (p.position - minWS) / max(sizeWS, 1e-5);
+    if (uvw.x < 0.0 || uvw.y < 0.0 || uvw.z < 0.0 || uvw.x > 1.0 || uvw.y > 1.0 || uvw.z > 1.0)
+        return;
+
+    float3 gridPos = uvw * (float3)(_VolumeDims - 1);
+    int3   base    = (int3)floor(gridPos);
+
+    float baseAmount = max(0.0, p.density * _ParticleContribution) * max(_FixedPointScale, 1.0);
+
+    if (_KernelRadiusVoxels <= 0)
+    {
+        uint amt = (uint)round(baseAmount);
+        AtomicAddDensity(base, slabOffset, amt);
+        return;
+    }
+
+    float h;
+    if (p.phase == 1)
+    {
+        h = _SmoothingRadiusWS_Vapour;
+    }
+    else
+    {
+        float densitySpan = max(_AdaptiveDensityBulk - _AdaptiveDensitySurface, 1e-5);
+        float tLin = saturate((p.density - _AdaptiveDensitySurface) / densitySpan);
+        float tCurv = pow(tLin, max(_AdaptiveDensityCurve, 1e-3));
+
+        h = lerp(_SmoothingRadiusWS_LiquidSmall, _SmoothingRadiusWS_LiquidBulk, tCurv);
+    }
+
+    if (h < 0)
+    {
+        uint amt = (uint)round(baseAmount);
+        AtomicAddDensity(base, slabOffset, amt);
+        return;
+    }
+
+    float invH2 = 1.0 / max(h * h, 1e-6);
+    int r = _KernelRadiusVoxels;
+
+    [loop]
+    for (int dz = -r; dz <= r; dz++)
+    {
+        [loop]
+        for (int dy = -r; dy <= r; dy++)
+        {
+            [loop]
+            for (int dx = -r; dx <= r; dx++)
+            {
+                int3 v = base + int3(dx, dy, dz);
+                if (IsOutOfBounds(v))
+                    continue;
+
+                float3 voxelCenterUVW = ((float3)v + 0.5) / (float3)_VolumeDims;
+                float3 voxelCenterWS  = minWS + voxelCenterUVW * sizeWS;
+
+                float3 d     = voxelCenterWS - p.position;
+                float  dist2 = dot(d, d);
+
+                float t = saturate(1.0 - dist2 * invH2);
+                float w = t * t * t;
+
+                uint amt = (uint)round(baseAmount * w);
+                if (amt == 0)
+                    continue;
+
+                AtomicAddDensity(v, slabOffset, amt);
+            }
+        }
+    }
+}
+
+[numthreads(8, 8, 8)]
+void NormalizeToTexture(uint3 id : SV_DispatchThreadID)
+{
+    if (id.x >= (uint)_VolumeDims.x || id.y >= (uint)_VolumeDims.y || id.z >= (uint)_VolumeDims.z)
+        return;
+
+    uint N   = (uint)(_VolumeDims.x * _VolumeDims.y * _VolumeDims.z);
+    uint idx = GridIndex((int3)id);
+
+    float invScale      = max(_FixedPointScale, 1.0);
+    float liquidNorm    = ((float)_DensityGrid[idx]     / invScale) * _InvDensityScaleRG.x;
+    float vapourNorm    = ((float)_DensityGrid[N + idx] / invScale) * _InvDensityScaleRG.y;
+
+    _DensityTexture3D_RG[id] = float2(saturate(liquidNorm), saturate(vapourNorm));
+}
+
+[numthreads(8, 8, 8)]
+void BlurDensity(uint3 id : SV_DispatchThreadID)
+{
+    if (id.x >= (uint)_VolumeDims.x || id.y >= (uint)_VolumeDims.y || id.z >= (uint)_VolumeDims.z)
+        return;
+
+    int3 sampleId = (int3)id;
+    int3 dims = _VolumeDims;
+    float2 originalSample = _DensityTexture3D_Read[(int3)id];
+
+    float original = (_BlurChannel == 0) ? originalSample.r : originalSample.g;
+    float valueSum = 0.0;
+    float weightSum = 0.0;
+    float invTwoSig2 = 1.0 / max(2.0 * _BlurSigma * _BlurSigma, 1e-6);
+    int r = clamp(_BlurRadius, 1, 4);
+
+    [loop]
+    for (int dz = -r; dz <= r; dz++)
+    {
+        [loop]
+        for (int dy = -r; dy <= r; dy++)
+        {
+            [loop]
+            for (int dx = -r; dx <= r; dx++)
+            {
+                float dist2 = (float)(dx * dx + dy * dy + dz * dz);
+                float w = exp(-dist2 * invTwoSig2);
+                int3 coord = clamp(sampleId + int3(dx, dy, dz), int3(0, 0, 0), dims - 1);
+                float2 sampleValue = _DensityTexture3D_Read[coord];
+                valueSum += w * ((_BlurChannel == 0) ? sampleValue.r : sampleValue.g);
+                weightSum += w;
+            }
+        }
+    }
+
+    float blurred = valueSum / max(weightSum, 1e-6);
+    float finalValue = blurred + _BlurDetailPreserve * original;
+
+    float2 outputSample = originalSample;
+    if (_BlurChannel == 0)
+        outputSample.r = saturate(finalValue);
+    else
+        outputSample.g = saturate(finalValue);
+
+    _DensityTexture3D_RG[id] = outputSample;
+}
+
+[numthreads(8, 8, 8)]
+void BakeNormals(uint3 id : SV_DispatchThreadID)
+{
+    if (id.x >= (uint)_VolumeDims.x || id.y >= (uint)_VolumeDims.y || id.z >= (uint)_VolumeDims.z)
+        return;
+
+    int3 c = (int3)id;
+    const int normalHalfSpan = 2;
+    float dx = SampleLiquidOrAir(c + int3(normalHalfSpan, 0, 0)) - SampleLiquidOrAir(c - int3(normalHalfSpan, 0, 0));
+    float dy = SampleLiquidOrAir(c + int3(0, normalHalfSpan, 0)) - SampleLiquidOrAir(c - int3(0, normalHalfSpan, 0));
+    float dz = SampleLiquidOrAir(c + int3(0, 0, normalHalfSpan)) - SampleLiquidOrAir(c - int3(0, 0, normalHalfSpan));
+
+    float3 grad = float3(dx, dy, dz);
+    float  len = length(grad);
+    float3 n = (len >= 1e-4) ? -(grad / len) : float3(0.0, 0.0, 0.0);
+
+    _NormalTexture3D[id] = float4(n, 0.0);
+}

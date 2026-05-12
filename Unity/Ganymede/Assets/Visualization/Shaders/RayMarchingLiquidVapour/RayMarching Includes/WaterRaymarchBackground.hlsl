@@ -382,23 +382,40 @@ WaterBackgroundContributions ComputeWaterBackgroundContributions(
     if (!backgroundData.surfaceHit.hit)
         return contributions;
 
-    contributions.reflectedEnvironmentColor = SampleReflectionEnvironment(
+    float3 rawEnvColor = SampleReflectionEnvironment(
         backgroundData.surfaceHit.reflectDir,
         backgroundData.surfaceHit.posWS,
         originalScreenUV
-    ) * reflectionStrength;
+    );
+    // Keep reflectedEnvironmentColor as env * strength so debug views and the
+    // "yellow = black env" guard work the same as before.
+    contributions.reflectedEnvironmentColor = rawEnvColor * reflectionStrength;
 
     float physicalReflectWeight = backgroundData.surfaceHit.reflectWeight;
-    float reflectWeight = saturate(
-        max(physicalReflectWeight, saturate(reflectionVisibilityFloor))
+
+    // _ReflectionStrength controls the energy split, not just the color brightness.
+    // At strength=0 all energy goes to refraction (transparent water, no reflection).
+    // At strength=1 full physical Fresnel is applied.
+    // This prevents the black-at-grazing bug: previously, low strength dimmed the
+    // reflected color but left refractWeight = 1-physicalReflect ≈ 0 at grazing
+    // angles, so both contributions collapsed to zero → black.
+    float energyToReflect = physicalReflectWeight * saturate(reflectionStrength);
+    float energyToRefract = 1.0 - energyToReflect;
+
+    // Visibility boost/floor scales how brightly the reflected env is displayed
+    // without changing the refraction weight, so boosting never darkens refraction.
+    float visibleReflectWeight = saturate(
+        max(energyToReflect, saturate(reflectionVisibilityFloor))
       * max(reflectionVisibilityBoost, 0.0)
     );
-    float refractWeight = backgroundData.surfaceHit.refractWeight;
 
     if (backgroundData.surfaceHit.totalInternalReflection)
     {
-        contributions.reflectionContribution = contributions.reflectedEnvironmentColor;
-        contributions.refractionContribution = 0.0;
+        // TIR: physically no refraction, but when strength < 1 allow the
+        // "missing" reflected energy to bleed through as scene colour so
+        // TIR zones never go pure black just because strength is turned down.
+        contributions.reflectionContribution = rawEnvColor * visibleReflectWeight;
+        contributions.refractionContribution *= energyToRefract;
         return contributions;
     }
 
@@ -414,8 +431,8 @@ WaterBackgroundContributions ComputeWaterBackgroundContributions(
         densityProbeStepSize
     );
 
-    float refractScore = densityAlongRefractRay * refractWeight;
-    float reflectScore = densityAlongReflectRay * physicalReflectWeight;
+    float refractScore = densityAlongRefractRay * energyToRefract;
+    float reflectScore = densityAlongReflectRay * energyToReflect;
     bool traceRefractedRay = refractScore >= reflectScore;
 
     float3 refractTransmittance = LiquidTransmittance(densityAlongRefractRay, extinctionCoefficients);
@@ -427,13 +444,13 @@ WaterBackgroundContributions ComputeWaterBackgroundContributions(
         // the water column along the refracted ray from surface to floor.
         // This is especially important when the main march stops at the surface
         // (outside cameras) and remainingViewTransmittance stays at 1.0.
-        contributions.reflectionContribution = contributions.reflectedEnvironmentColor * reflectWeight * reflectTransmittance;
-        contributions.refractionContribution *= refractWeight * refractTransmittance;
+        contributions.reflectionContribution = rawEnvColor * visibleReflectWeight * reflectTransmittance;
+        contributions.refractionContribution *= energyToRefract * refractTransmittance;
         return contributions;
     }
 
-    contributions.reflectionContribution = contributions.reflectedEnvironmentColor * reflectWeight;
-    contributions.refractionContribution *= refractWeight * refractTransmittance;
+    contributions.reflectionContribution = rawEnvColor * visibleReflectWeight;
+    contributions.refractionContribution *= energyToRefract * refractTransmittance;
     return contributions;
 }
 

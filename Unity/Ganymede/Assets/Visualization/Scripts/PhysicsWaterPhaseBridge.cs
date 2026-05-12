@@ -15,28 +15,6 @@ public class PhysicsWaterPhaseBridge : MonoBehaviour
 
     [HideInInspector] public Transform visualProxyTransform;
 
-    // Legacy serialized fields kept temporarily so existing scene/prefab values can migrate into
-    // the grouped settings object without manual re-assignment.
-    [SerializeField, HideInInspector] private ComputeShader particlesToDensityCompute;
-    [SerializeField, HideInInspector] private ComputeShader marchingCubesCompute;
-    [SerializeField, HideInInspector] private TextAsset marchingCubesLUT;
-    [SerializeField, HideInInspector] private Vector3Int volumeDims = new Vector3Int(64, 64, 64);
-    [SerializeField, HideInInspector] private float smoothingRadiusWS = 1f;
-    [SerializeField, HideInInspector] private Material rayMarchingMaterial;
-    [SerializeField, HideInInspector] private Material marchingCubesMaterial;
-    [SerializeField, HideInInspector] private Material vapourRaymarchMaterial;
-    [SerializeField, HideInInspector] private bool useMarchingCubes;
-    [SerializeField, HideInInspector] private float marchingCubesIsoLevel = 0.2f;
-    [SerializeField, HideInInspector] private bool blurVapourDensity = true;
-    [SerializeField, HideInInspector] private bool blurLiquidDensity;
-    [SerializeField, HideInInspector] private int liquidBlurRadius = 1;
-    [SerializeField, HideInInspector] private float liquidBlurSigma = 1.0f;
-    [SerializeField, HideInInspector] private float liquidBlurDetailPreserve;
-    [SerializeField, HideInInspector] private int blurRadius = 1;
-    [SerializeField, HideInInspector] private float blurSigma = 1.0f;
-    [SerializeField, HideInInspector] private float blurDetailPreserve = 0.25f;
-    [SerializeField, HideInInspector] private bool _settingsMigrated;
-
     private UseComputePlugin _computePlugin;
     private MeshFilter _sourceMeshFilter;
     private MeshRenderer _sourceMeshRenderer;
@@ -46,13 +24,13 @@ public class PhysicsWaterPhaseBridge : MonoBehaviour
     private WaterPhaseDensityPipeline _densityPipeline;
     private WaterPhaseRaymarchRenderer _raymarchRenderer;
     private WaterPhaseMarchingCubesRenderer _marchingRenderer;
+    private WaterPhaseScreenSpaceFluidRenderer _screenSpaceFluidRenderer;
     private UnityParticleOutputBridge _particleOutputBridge;
     private WaterSurfaceRenderMode _lastRenderMode;
     private bool _initialized;
 
     private void Awake()
     {
-        EnsureSettingsMigrated();
         CacheComponents();
         CreateHelpers();
         _particleStride = Marshal.SizeOf<Particle>();
@@ -63,7 +41,6 @@ public class PhysicsWaterPhaseBridge : MonoBehaviour
 
     private void OnEnable()
     {
-        EnsureSettingsMigrated();
         CacheComponents();
         CreateHelpers();
 
@@ -97,7 +74,9 @@ public class PhysicsWaterPhaseBridge : MonoBehaviour
         _particleOutputBridge.RegisterIfNeeded(_resources.ParticleOutputBuffer);
 
         _computePlugin.GetBoundsWS(out Vector3 boundsMin, out Vector3 boundsMax);
-        _densityPipeline.Execute(_computePlugin, settings, _resources, boundsMin, boundsMax);
+        if (UsesDensityPipeline())
+            _densityPipeline.Execute(_computePlugin, settings, _resources, boundsMin, boundsMax);
+
         RenderActivePresentation(boundsMin, boundsMax);
     }
 
@@ -109,13 +88,15 @@ public class PhysicsWaterPhaseBridge : MonoBehaviour
         if (_resources != null)
             _resources.Release();
 
+        if (_screenSpaceFluidRenderer != null)
+            _screenSpaceFluidRenderer.Release();
+
         if (_marchingRenderer != null)
             _marchingRenderer.Release();
     }
 
     private bool TryInitializeBridge()
     {
-        EnsureSettingsMigrated();
         CacheComponents();
         CreateHelpers();
 
@@ -128,8 +109,18 @@ public class PhysicsWaterPhaseBridge : MonoBehaviour
         if (!ValidateConfiguration())
             return false;
 
-        EnsureDensityPipeline();
-        if (_densityPipeline == null)
+        if (UsesDensityPipeline())
+        {
+            EnsureDensityPipeline();
+            if (_densityPipeline == null)
+                return false;
+        }
+        else
+        {
+            _densityPipeline = null;
+        }
+
+        if (_screenSpaceFluidRenderer == null && settings.Rendering.mode == WaterSurfaceRenderMode.ScreenSpaceFluid)
             return false;
 
         if (!_initialized)
@@ -170,6 +161,9 @@ public class PhysicsWaterPhaseBridge : MonoBehaviour
 
         if (_marchingRenderer == null && _sourceMeshFilter != null)
             _marchingRenderer = new WaterPhaseMarchingCubesRenderer(transform, _sourceMeshFilter);
+
+        if (_screenSpaceFluidRenderer == null)
+            _screenSpaceFluidRenderer = new WaterPhaseScreenSpaceFluidRenderer(_sourceMeshRenderer);
     }
 
     private bool ValidateConfiguration()
@@ -178,6 +172,17 @@ public class PhysicsWaterPhaseBridge : MonoBehaviour
         {
             Debug.LogError("[PhysicsWaterPhaseBridge] Missing bridge settings instance.");
             return false;
+        }
+
+        if (settings.Rendering.mode == WaterSurfaceRenderMode.ScreenSpaceFluid)
+        {
+            if (settings.Rendering.screenSpaceFluidMaterial == null)
+            {
+                Debug.LogError("[PhysicsWaterPhaseBridge] Screen-space fluid mode requires a screenSpaceFluidMaterial.");
+                return false;
+            }
+
+            return true;
         }
 
         if (settings.References.particlesToDensityCompute == null)
@@ -229,6 +234,8 @@ public class PhysicsWaterPhaseBridge : MonoBehaviour
                 _raymarchRenderer.SetInactive();
             if (_marchingRenderer != null)
                 _marchingRenderer.SetInactive();
+            if (_screenSpaceFluidRenderer != null)
+                _screenSpaceFluidRenderer.SetInactive();
 
             _lastRenderMode = settings.Rendering.mode;
         }
@@ -237,6 +244,8 @@ public class PhysicsWaterPhaseBridge : MonoBehaviour
         {
             if (_marchingRenderer != null)
                 _marchingRenderer.SetInactive();
+            if (_screenSpaceFluidRenderer != null)
+                _screenSpaceFluidRenderer.SetInactive();
 
             if (_raymarchRenderer != null)
             {
@@ -256,69 +265,44 @@ public class PhysicsWaterPhaseBridge : MonoBehaviour
         if (_raymarchRenderer != null)
             _raymarchRenderer.SetInactive();
 
+        if (settings.Rendering.mode == WaterSurfaceRenderMode.ScreenSpaceFluid)
+        {
+            if (_marchingRenderer != null)
+                _marchingRenderer.SetInactive();
+
+            if (_screenSpaceFluidRenderer != null)
+                _screenSpaceFluidRenderer.Render(settings, _computePlugin, _resources, boundsMin, boundsMax, gameObject.layer);
+
+            return;
+        }
+
+        if (_screenSpaceFluidRenderer != null)
+            _screenSpaceFluidRenderer.SetInactive();
+
         if (_marchingRenderer != null)
             _marchingRenderer.Render(settings, _resources, boundsMin, boundsMax, gameObject.layer);
     }
 
-    private void EnsureSettingsMigrated()
-    {
-        if (settings == null)
-            settings = new WaterPhaseBridgeSettings();
-
-        if (_settingsMigrated)
-            return;
-
-        settings.References.particlesToDensityCompute = particlesToDensityCompute;
-        settings.References.marchingCubesCompute = marchingCubesCompute;
-        settings.References.marchingCubesLUT = marchingCubesLUT;
-
-        settings.DensityGrid.volumeDims = volumeDims;
-        settings.RaymarchSmoothing.liquidSmoothingRadiusWS = smoothingRadiusWS;
-        settings.MarchingCubesSmoothing.liquidSmoothingRadiusWS = smoothingRadiusWS;
-
-        settings.Blur.enabled = blurLiquidDensity || blurVapourDensity;
-        settings.Blur.radius = blurVapourDensity ? blurRadius : liquidBlurRadius;
-        settings.Blur.sigma = blurVapourDensity ? blurSigma : liquidBlurSigma;
-        settings.Blur.detailPreserve = blurVapourDensity ? blurDetailPreserve : liquidBlurDetailPreserve;
-
-        settings.MarchingCubesBlur.enabled = settings.Blur.enabled;
-        settings.MarchingCubesBlur.radius = settings.Blur.radius;
-        settings.MarchingCubesBlur.sigma = settings.Blur.sigma;
-        settings.MarchingCubesBlur.detailPreserve = settings.Blur.detailPreserve;
-
-        settings.Rendering.mode = useMarchingCubes
-            ? WaterSurfaceRenderMode.MarchingCubesLiquidWithVapour
-            : WaterSurfaceRenderMode.RaymarchVolume;
-        settings.Rendering.rayMarchingMaterial = rayMarchingMaterial;
-        settings.Rendering.marchingCubesMaterial = marchingCubesMaterial;
-        settings.Rendering.vapourRaymarchMaterial = vapourRaymarchMaterial;
-        settings.Rendering.marchingCubesIsoLevel = marchingCubesIsoLevel;
-
-        _settingsMigrated = true;
-    }
-
     private void OnValidate()
     {
-        EnsureSettingsMigrated();
-
         settings.DensityGrid.volumeDims.x = Mathf.Max(1, settings.DensityGrid.volumeDims.x);
         settings.DensityGrid.volumeDims.y = Mathf.Max(1, settings.DensityGrid.volumeDims.y);
         settings.DensityGrid.volumeDims.z = Mathf.Max(1, settings.DensityGrid.volumeDims.z);
         settings.DensityGrid.vapourSmoothingRadiusWS = Mathf.Max(0f, settings.DensityGrid.vapourSmoothingRadiusWS);
         settings.DensityGrid.maxKernelRadiusVoxels = Mathf.Clamp(settings.DensityGrid.maxKernelRadiusVoxels, 1, 8);
 
-        settings.Blur.radius = Mathf.Clamp(settings.Blur.radius, 1, 4);
-        settings.Blur.sigma = Mathf.Clamp(settings.Blur.sigma, 0.1f, 4.0f);
-        settings.Blur.detailPreserve = Mathf.Clamp01(settings.Blur.detailPreserve);
-
-        settings.MarchingCubesBlur.radius = Mathf.Clamp(settings.MarchingCubesBlur.radius, 1, 4);
-        settings.MarchingCubesBlur.sigma = Mathf.Clamp(settings.MarchingCubesBlur.sigma, 0.1f, 4.0f);
-        settings.MarchingCubesBlur.detailPreserve = Mathf.Clamp01(settings.MarchingCubesBlur.detailPreserve);
+        settings.RaymarchBlur.Clamp();
+        settings.MarchingCubesBlur.Clamp();
 
         ValidateAdaptiveSmoothing(settings.RaymarchSmoothing);
         ValidateAdaptiveSmoothing(settings.MarchingCubesSmoothing);
 
         settings.Rendering.marchingCubesIsoLevel = Mathf.Clamp01(settings.Rendering.marchingCubesIsoLevel);
+    }
+
+    private bool UsesDensityPipeline()
+    {
+        return settings != null && settings.Rendering.mode != WaterSurfaceRenderMode.ScreenSpaceFluid;
     }
 
     private static void ValidateAdaptiveSmoothing(WaterPhaseAdaptiveSmoothingSettings smoothing)
