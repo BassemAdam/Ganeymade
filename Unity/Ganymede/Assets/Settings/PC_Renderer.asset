@@ -44,6 +44,12 @@ MonoBehaviour:
   m_Name: WaterScreenSpaceFluidFeature
   m_EditorClassIdentifier: Assembly-CSharp::WaterScreenSpaceFluidFeature
   m_Active: 1
+  injectionPoint: 450
+  enableLightShadow: 0
+  lightShadowResolution: 1024
+  lightShadowStrength: 0.85
+  lightShadowBias: 0.05
+  lightShadowExtraExtent: 1
 --- !u!114 &11400000
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -73,8 +79,8 @@ MonoBehaviour:
   - {fileID: -3054354437649072508}
   - {fileID: 3354853973594575606}
   - {fileID: 9138924694721728022}
-  - {fileID: -2861653665051011768}
-  m_RendererFeatureMap: ad6b866f10d7b46c84fec955d2c09cd5f6926909ead58e2e160eeff996fbd37e48957040275d49d8
+  - {fileID: 5051316918740254979}
+  m_RendererFeatureMap: ad6b866f10d7b46c84fec955d2c09cd5f6926909ead58e2e160eeff996fbd37e03016f7df9e11946
   m_UseNativeRenderPass: 1
   xrSystemData: {fileID: 0}
   postProcessData: {fileID: 11400000, guid: 41439944d30ece34e96484bdb6645b55, type: 2}
@@ -116,6 +122,25 @@ MonoBehaviour:
   m_Name: VoxelCompositeFeature
   m_EditorClassIdentifier: Assembly-CSharp::VoxelCompositeFeature
   m_Active: 1
+--- !u!114 &5051316918740254979
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: a1f876f2d3274d2f8ac6b08f8664f0c5, type: 3}
+  m_Name: WaterScreenSpaceFluidFeature
+  m_EditorClassIdentifier: Assembly-CSharp::WaterScreenSpaceFluidFeature
+  m_Active: 1
+  injectionPoint: 450
+  enableLightShadow: 0
+  lightShadowResolution: 1024
+  lightShadowStrength: 0.85
+  lightShadowBias: 0.05
+  lightShadowExtraExtent: 1
 --- !u!114 &7833122117494664109
 MonoBehaviour:
   m_ObjectHideFlags: 0

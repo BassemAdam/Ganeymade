@@ -119,6 +119,222 @@ NavMeshSettings:
     debug:
       m_Flags: 0
   m_NavMeshData: {fileID: 0}
+--- !u!1 &119357927
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 119357929}
+  - component: {fileID: 119357928}
+  m_Layer: 0
+  m_Name: water source (5)
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!114 &119357928
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 119357927}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: ccc445b9f904c1446bcac3f66c2b47db, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::WaterSource
+  spawnMode: 2
+  tapExhausted: 0
+  emissionRate: 100
+  emissionDirection: {x: 0, y: -1, z: 0}
+  emissionSpeed: 10
+  emissionRadius: 0.4
+  initialTemperature: 25
+  isActive: 1
+  latticeSpacing: 0.2
+  latticeSize: {x: 5, y: 3, z: 1.8}
+--- !u!4 &119357929
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 119357927}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 2.75, y: 1.5, z: 13.25}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!1 &185476966
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 185476968}
+  - component: {fileID: 185476967}
+  m_Layer: 0
+  m_Name: water source (4)
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!114 &185476967
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 185476966}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: ccc445b9f904c1446bcac3f66c2b47db, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::WaterSource
+  spawnMode: 2
+  tapExhausted: 0
+  emissionRate: 100
+  emissionDirection: {x: 0, y: -1, z: 0}
+  emissionSpeed: 10
+  emissionRadius: 0.4
+  initialTemperature: 25
+  isActive: 1
+  latticeSpacing: 0.2
+  latticeSize: {x: 5, y: 3, z: 1.8}
+--- !u!4 &185476968
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 185476966}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 4.25, y: 2, z: 13}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!1 &267353990
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 267353992}
+  - component: {fileID: 267353991}
+  m_Layer: 0
+  m_Name: water source
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!114 &267353991
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 267353990}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: ccc445b9f904c1446bcac3f66c2b47db, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::WaterSource
+  spawnMode: 2
+  tapExhausted: 0
+  emissionRate: 100
+  emissionDirection: {x: 0, y: -1, z: 0}
+  emissionSpeed: 10
+  emissionRadius: 0.4
+  initialTemperature: 25
+  isActive: 1
+  latticeSpacing: 0.2
+  latticeSize: {x: 5, y: 3, z: 1.8}
+--- !u!4 &267353992
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 267353990}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 2.5, y: 1.75, z: 13}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!1 &489089413
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 489089415}
+  - component: {fileID: 489089414}
+  m_Layer: 0
+  m_Name: water source (8)
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!114 &489089414
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 489089413}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: ccc445b9f904c1446bcac3f66c2b47db, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::WaterSource
+  spawnMode: 2
+  tapExhausted: 0
+  emissionRate: 100
+  emissionDirection: {x: 0, y: -1, z: 0}
+  emissionSpeed: 10
+  emissionRadius: 0.4
+  initialTemperature: 25
+  isActive: 1
+  latticeSpacing: 0.2
+  latticeSize: {x: 5, y: 3, z: 1.8}
+--- !u!4 &489089415
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 489089413}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 2.75, y: 2.25, z: 13}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &622847223 stripped
 GameObject:
   m_CorrespondingSourceObject: {fileID: 1340585115186609873, guid: 18cf1fa5220a198409fde72db8b3e2a5, type: 3}
@@ -219,7 +435,7 @@ MonoBehaviour:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 622847223}
-  m_Enabled: 0
+  m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: e9eb36d79300fe7428f1000517630b74, type: 3}
   m_Name: 
@@ -233,23 +449,31 @@ MonoBehaviour:
       volumeDims: {x: 128, y: 128, z: 128}
       vapourSmoothingRadiusWS: 0.1
       maxKernelRadiusVoxels: 2
-    blur:
-      enabled: 1
-      radius: 4
-      sigma: 4
-      detailPreserve: 0
+    raymarchBlur:
+      liquidBlurEnabled: 0
+      liquidBlurRadius: 2
+      liquidBlurSigma: 4
+      liquidBlurDetailPreserve: 0.057
+      vapourBlurEnabled: 1
+      vapourBlurRadius: 4
+      vapourBlurSigma: 4
+      vapourBlurDetailPreserve: 0
     marchingCubesBlur:
-      enabled: 0
-      radius: 1
-      sigma: 0.1
-      detailPreserve: 0
+      liquidBlurEnabled: 0
+      liquidBlurRadius: 1
+      liquidBlurSigma: 1
+      liquidBlurDetailPreserve: 0
+      vapourBlurEnabled: 0
+      vapourBlurRadius: 1
+      vapourBlurSigma: 0.1
+      vapourBlurDetailPreserve: 0
     raymarchSmoothing:
-      liquidSmoothingRadiusWS: 1
+      liquidSmoothingRadiusWS: 0
       adaptiveRadiusEnabled: 1
-      liquidBulkSmoothingRadiusWS: 2.5
-      adaptiveDensitySurface: 175
-      adaptiveDensityBulk: 300
-      adaptiveDensityCurve: 0.4
+      liquidBulkSmoothingRadiusWS: 0.4
+      adaptiveDensitySurface: 181
+      adaptiveDensityBulk: 215
+      adaptiveDensityCurve: 1
     marchingCubesSmoothing:
       liquidSmoothingRadiusWS: 0
       adaptiveRadiusEnabled: 1
@@ -262,30 +486,9 @@ MonoBehaviour:
       rayMarchingMaterial: {fileID: 2100000, guid: 03c4cd8b0ea45e14190b02d13513c0d9, type: 2}
       marchingCubesMaterial: {fileID: 2100000, guid: a5f165da16e6e4a4e8b93a9c48ecc59b, type: 2}
       vapourRaymarchMaterial: {fileID: 2100000, guid: ecfb9a36afdd6404e9a46793705c4a27, type: 2}
+      screenSpaceFluidMaterial: {fileID: 2100000, guid: 92e2acaed84fb194a89f2cf5cc30a97c, type: 2}
       marchingCubesIsoLevel: 0
-      screenSpaceParticleRadius: 0.15
-      screenSpaceFilterSize: 32
-      screenSpaceSprayThreshold: 6
   visualProxyTransform: {fileID: 0}
-  particlesToDensityCompute: {fileID: 7200000, guid: 3c585bfcf792db443b823ea9e4d73d39, type: 3}
-  marchingCubesCompute: {fileID: 7200000, guid: a22c7c4891409a047968bd3b28af9da8, type: 3}
-  marchingCubesLUT: {fileID: 4900000, guid: 711f0eebef002a84e95e6dc230c006be, type: 3}
-  volumeDims: {x: 128, y: 128, z: 128}
-  smoothingRadiusWS: -1
-  rayMarchingMaterial: {fileID: 2100000, guid: 981a72c002f021c43bcf6a3e18c751a5, type: 2}
-  marchingCubesMaterial: {fileID: 2100000, guid: a5f165da16e6e4a4e8b93a9c48ecc59b, type: 2}
-  vapourRaymarchMaterial: {fileID: 2100000, guid: ecfb9a36afdd6404e9a46793705c4a27, type: 2}
-  useMarchingCubes: 0
-  marchingCubesIsoLevel: 0
-  blurVapourDensity: 1
-  blurLiquidDensity: 0
-  liquidBlurRadius: 1
-  liquidBlurSigma: 1
-  liquidBlurDetailPreserve: 0
-  blurRadius: 1
-  blurSigma: 1
-  blurDetailPreserve: 0.25
-  _settingsMigrated: 1
 --- !u!114 &622847229 stripped
 MonoBehaviour:
   m_CorrespondingSourceObject: {fileID: 4161998456328252244, guid: 18cf1fa5220a198409fde72db8b3e2a5, type: 3}
@@ -297,6 +500,114 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: e89844ade832dcc4cbcf919f266ea97b, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::UseComputePlugin
+--- !u!1 &657627903
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 657627905}
+  - component: {fileID: 657627904}
+  m_Layer: 0
+  m_Name: water source (7)
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!114 &657627904
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 657627903}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: ccc445b9f904c1446bcac3f66c2b47db, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::WaterSource
+  spawnMode: 2
+  tapExhausted: 0
+  emissionRate: 100
+  emissionDirection: {x: 0, y: -1, z: 0}
+  emissionSpeed: 10
+  emissionRadius: 0.4
+  initialTemperature: 25
+  isActive: 1
+  latticeSpacing: 0.2
+  latticeSize: {x: 5, y: 3, z: 1.8}
+--- !u!4 &657627905
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 657627903}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 2.75, y: 1.75, z: 13.25}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!1 &877751267
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 877751269}
+  - component: {fileID: 877751268}
+  m_Layer: 0
+  m_Name: water source (2)
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!114 &877751268
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 877751267}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: ccc445b9f904c1446bcac3f66c2b47db, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::WaterSource
+  spawnMode: 2
+  tapExhausted: 0
+  emissionRate: 100
+  emissionDirection: {x: 0, y: -1, z: 0}
+  emissionSpeed: 10
+  emissionRadius: 0.4
+  initialTemperature: 25
+  isActive: 1
+  latticeSpacing: 0.2
+  latticeSize: {x: 5, y: 3, z: 1.8}
+--- !u!4 &877751269
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 877751267}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 2.75, y: 1.5, z: 13}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &969391483
 GameObject:
   m_ObjectHideFlags: 0
@@ -375,7 +686,7 @@ MonoBehaviour:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 969391483}
-  m_Enabled: 0
+  m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 4ca2acbb03c1a08439fd35842cc07253, type: 3}
   m_Name: 
@@ -559,17 +870,17 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   coreCS: {fileID: 7200000, guid: 111909096b133de4c8f344603decff44, type: 3}
-  boundsMode: 1
-  gridMin: {x: -10, y: -10, z: -10}
-  gridMax: {x: 10, y: 10, z: 10}
-  voxelSize: 0.15
+  boundsMode: 0
+  gridMin: {x: 0.4, y: 0, z: 6.84}
+  gridMax: {x: 25.1, y: 3.14, z: 17.2}
+  voxelSize: 0.3
   autoFitPadding: 1
   fillVolume: 1
   fillSweepRounds: 2
   computeNormals: 1
   computeSDF: 1
   includeMeshRenderers: 1
-  includeSkinnedMeshRenderers: 1
+  includeSkinnedMeshRenderers: 0
   includeTerrains: 1
   terrainSampleStep: 1
   voxelizeLayers:
@@ -588,7 +899,61 @@ Transform:
   m_GameObject: {fileID: 1009178467}
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalPosition: {x: 22.25, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!1 &1157219846
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 1157219848}
+  - component: {fileID: 1157219847}
+  m_Layer: 0
+  m_Name: water source (6)
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!114 &1157219847
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1157219846}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: ccc445b9f904c1446bcac3f66c2b47db, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::WaterSource
+  spawnMode: 2
+  tapExhausted: 0
+  emissionRate: 100
+  emissionDirection: {x: 0, y: -1, z: 0}
+  emissionSpeed: 10
+  emissionRadius: 0.4
+  initialTemperature: 25
+  isActive: 1
+  latticeSpacing: 0.2
+  latticeSize: {x: 5, y: 3, z: 1.8}
+--- !u!4 &1157219848
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1157219846}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 2.75, y: 1.5, z: 13.5}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
@@ -766,7 +1131,7 @@ MonoBehaviour:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 1663423924}
-  m_Enabled: 1
+  m_Enabled: 0
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 667f1985ae19fdd44b21f9bb54b29c64, type: 3}
   m_Name: 
@@ -824,7 +1189,7 @@ Transform:
   m_Children: []
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
---- !u!1 &1991285808
+--- !u!1 &1683180385
 GameObject:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
@@ -832,9 +1197,63 @@ GameObject:
   m_PrefabAsset: {fileID: 0}
   serializedVersion: 6
   m_Component:
-  - component: {fileID: 1991285811}
-  - component: {fileID: 1991285810}
-  - component: {fileID: 1991285809}
+  - component: {fileID: 1683180387}
+  - component: {fileID: 1683180386}
+  m_Layer: 0
+  m_Name: water source (1)
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!114 &1683180386
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1683180385}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: ccc445b9f904c1446bcac3f66c2b47db, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::WaterSource
+  spawnMode: 2
+  tapExhausted: 0
+  emissionRate: 100
+  emissionDirection: {x: 0, y: -1, z: 0}
+  emissionSpeed: 10
+  emissionRadius: 0.4
+  initialTemperature: 25
+  isActive: 1
+  latticeSpacing: 0.2
+  latticeSize: {x: 5, y: 3, z: 1.8}
+--- !u!4 &1683180387
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1683180385}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 2.5, y: 1.75, z: 13}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!1 &1890829023
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 1890829026}
+  - component: {fileID: 1890829025}
+  - component: {fileID: 1890829024}
   m_Layer: 3
   m_Name: Terrain
   m_TagString: Untagged
@@ -842,13 +1261,13 @@ GameObject:
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 2147483647
   m_IsActive: 1
---- !u!154 &1991285809
+--- !u!154 &1890829024
 TerrainCollider:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1991285808}
+  m_GameObject: {fileID: 1890829023}
   m_Material: {fileID: 0}
   m_IncludeLayers:
     serializedVersion: 2
@@ -860,18 +1279,18 @@ TerrainCollider:
   m_ProvidesContacts: 0
   m_Enabled: 1
   serializedVersion: 2
-  m_TerrainData: {fileID: 15600000, guid: 9718f39d109b47c47821321b13f6a23c, type: 2}
+  m_TerrainData: {fileID: 15600000, guid: c8926326421358b40a90084d897aebdf, type: 2}
   m_EnableTreeColliders: 1
---- !u!218 &1991285810
+--- !u!218 &1890829025
 Terrain:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1991285808}
+  m_GameObject: {fileID: 1890829023}
   m_Enabled: 1
   serializedVersion: 6
-  m_TerrainData: {fileID: 15600000, guid: 9718f39d109b47c47821321b13f6a23c, type: 2}
+  m_TerrainData: {fileID: 15600000, guid: c8926326421358b40a90084d897aebdf, type: 2}
   m_TreeDistance: 5000
   m_TreeBillboardDistance: 50
   m_TreeCrossFadeLength: 5
@@ -902,16 +1321,70 @@ Terrain:
   m_EnableHeightmapRayTracing: 1
   m_EnableTreesAndDetailsRayTracing: 0
   m_TreeMotionVectorModeOverride: 3
---- !u!4 &1991285811
+--- !u!4 &1890829026
 Transform:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1991285808}
+  m_GameObject: {fileID: 1890829023}
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
   m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!1 &1905700036
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 1905700038}
+  - component: {fileID: 1905700037}
+  m_Layer: 0
+  m_Name: water source (3)
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!114 &1905700037
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1905700036}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: ccc445b9f904c1446bcac3f66c2b47db, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::WaterSource
+  spawnMode: 2
+  tapExhausted: 0
+  emissionRate: 100
+  emissionDirection: {x: 0, y: -1, z: 0}
+  emissionSpeed: 10
+  emissionRadius: 0.4
+  initialTemperature: 25
+  isActive: 1
+  latticeSpacing: 0.2
+  latticeSize: {x: 5, y: 3, z: 1.8}
+--- !u!4 &1905700038
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1905700036}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 2.5, y: 1.75, z: 13.25}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
@@ -1050,6 +1523,10 @@ PrefabInstance:
       value: Physics
       objectReference: {fileID: 0}
     - target: {fileID: 4161998456328252244, guid: 18cf1fa5220a198409fde72db8b3e2a5, type: 3}
+      propertyPath: damping
+      value: 0.999
+      objectReference: {fileID: 0}
+    - target: {fileID: 4161998456328252244, guid: 18cf1fa5220a198409fde72db8b3e2a5, type: 3}
       propertyPath: verbose
       value: 0
       objectReference: {fileID: 0}
@@ -1071,19 +1548,19 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 4161998456328252244, guid: 18cf1fa5220a198409fde72db8b3e2a5, type: 3}
       propertyPath: boundsMax.x
-      value: 5
+      value: 2.5
       objectReference: {fileID: 0}
     - target: {fileID: 4161998456328252244, guid: 18cf1fa5220a198409fde72db8b3e2a5, type: 3}
       propertyPath: boundsMax.y
-      value: 3
+      value: 2.74
       objectReference: {fileID: 0}
     - target: {fileID: 4161998456328252244, guid: 18cf1fa5220a198409fde72db8b3e2a5, type: 3}
       propertyPath: boundsMax.z
-      value: 10
+      value: 24.7
       objectReference: {fileID: 0}
     - target: {fileID: 4161998456328252244, guid: 18cf1fa5220a198409fde72db8b3e2a5, type: 3}
       propertyPath: boundsMin.x
-      value: 0
+      value: -22.54
       objectReference: {fileID: 0}
     - target: {fileID: 4161998456328252244, guid: 18cf1fa5220a198409fde72db8b3e2a5, type: 3}
       propertyPath: boundsMin.y
@@ -1100,6 +1577,10 @@ PrefabInstance:
     - target: {fileID: 4161998456328252244, guid: 18cf1fa5220a198409fde72db8b3e2a5, type: 3}
       propertyPath: restDensity
       value: 100
+      objectReference: {fileID: 0}
+    - target: {fileID: 4161998456328252244, guid: 18cf1fa5220a198409fde72db8b3e2a5, type: 3}
+      propertyPath: sdfFriction
+      value: 0
       objectReference: {fileID: 0}
     - target: {fileID: 4161998456328252244, guid: 18cf1fa5220a198409fde72db8b3e2a5, type: 3}
       propertyPath: gasStiffness
@@ -1131,11 +1612,11 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 4161998456328252244, guid: 18cf1fa5220a198409fde72db8b3e2a5, type: 3}
       propertyPath: particleCount
-      value: 32768
+      value: 65536
       objectReference: {fileID: 0}
     - target: {fileID: 4161998456328252244, guid: 18cf1fa5220a198409fde72db8b3e2a5, type: 3}
       propertyPath: sdfSkinOffset
-      value: 0.25
+      value: 0.2
       objectReference: {fileID: 0}
     - target: {fileID: 4161998456328252244, guid: 18cf1fa5220a198409fde72db8b3e2a5, type: 3}
       propertyPath: voxelTracerRef
@@ -1151,7 +1632,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 4161998456328252244, guid: 18cf1fa5220a198409fde72db8b3e2a5, type: 3}
       propertyPath: spawnPoolReserve
-      value: 0
+      value: 65536
       objectReference: {fileID: 0}
     - target: {fileID: 4161998456328252244, guid: 18cf1fa5220a198409fde72db8b3e2a5, type: 3}
       propertyPath: thermalDiffusivity
@@ -1171,7 +1652,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 4161998456328252244, guid: 18cf1fa5220a198409fde72db8b3e2a5, type: 3}
       propertyPath: sdfDynamicUpdateInterval
-      value: 1
+      value: 60
       objectReference: {fileID: 0}
     - target: {fileID: 4161998456328252244, guid: 18cf1fa5220a198409fde72db8b3e2a5, type: 3}
       propertyPath: boundsAreLocalToTransform
@@ -1179,7 +1660,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 5891988049623486879, guid: 18cf1fa5220a198409fde72db8b3e2a5, type: 3}
       propertyPath: m_LocalPosition.x
-      value: 7
+      value: 22.25
       objectReference: {fileID: 0}
     - target: {fileID: 5891988049623486879, guid: 18cf1fa5220a198409fde72db8b3e2a5, type: 3}
       propertyPath: m_LocalPosition.y
@@ -1187,7 +1668,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 5891988049623486879, guid: 18cf1fa5220a198409fde72db8b3e2a5, type: 3}
       propertyPath: m_LocalPosition.z
-      value: 2
+      value: 0
       objectReference: {fileID: 0}
     - target: {fileID: 5891988049623486879, guid: 18cf1fa5220a198409fde72db8b3e2a5, type: 3}
       propertyPath: m_LocalRotation.w
@@ -1247,4 +1728,13 @@ SceneRoots:
   - {fileID: 1663423927}
   - {fileID: 1009178469}
   - {fileID: 2132019466}
-  - {fileID: 1991285811}
+  - {fileID: 1890829026}
+  - {fileID: 267353992}
+  - {fileID: 1683180387}
+  - {fileID: 877751269}
+  - {fileID: 1905700038}
+  - {fileID: 119357929}
+  - {fileID: 185476968}
+  - {fileID: 1157219848}
+  - {fileID: 657627905}
+  - {fileID: 489089415}

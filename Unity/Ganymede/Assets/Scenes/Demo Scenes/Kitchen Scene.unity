@@ -545,7 +545,7 @@ MonoBehaviour:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 681215785}
-  m_Enabled: 1
+  m_Enabled: 0
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: e9eb36d79300fe7428f1000517630b74, type: 3}
   m_Name: 
@@ -559,16 +559,24 @@ MonoBehaviour:
       volumeDims: {x: 128, y: 128, z: 128}
       vapourSmoothingRadiusWS: 0.1
       maxKernelRadiusVoxels: 2
-    blur:
-      enabled: 1
-      radius: 4
-      sigma: 4
-      detailPreserve: 0
+    raymarchBlur:
+      liquidBlurEnabled: 0
+      liquidBlurRadius: 1
+      liquidBlurSigma: 1
+      liquidBlurDetailPreserve: 0
+      vapourBlurEnabled: 1
+      vapourBlurRadius: 4
+      vapourBlurSigma: 4
+      vapourBlurDetailPreserve: 0
     marchingCubesBlur:
-      enabled: 0
-      radius: 1
-      sigma: 0.1
-      detailPreserve: 0
+      liquidBlurEnabled: 0
+      liquidBlurRadius: 1
+      liquidBlurSigma: 1
+      liquidBlurDetailPreserve: 0
+      vapourBlurEnabled: 0
+      vapourBlurRadius: 1
+      vapourBlurSigma: 0.1
+      vapourBlurDetailPreserve: 0
     raymarchSmoothing:
       liquidSmoothingRadiusWS: 1
       adaptiveRadiusEnabled: 1
@@ -584,34 +592,13 @@ MonoBehaviour:
       adaptiveDensityBulk: 260
       adaptiveDensityCurve: 0.4
     rendering:
-      mode: 0
+      mode: 2
       rayMarchingMaterial: {fileID: 2100000, guid: 03c4cd8b0ea45e14190b02d13513c0d9, type: 2}
       marchingCubesMaterial: {fileID: 2100000, guid: a5f165da16e6e4a4e8b93a9c48ecc59b, type: 2}
       vapourRaymarchMaterial: {fileID: 2100000, guid: ecfb9a36afdd6404e9a46793705c4a27, type: 2}
+      screenSpaceFluidMaterial: {fileID: 2100000, guid: 92e2acaed84fb194a89f2cf5cc30a97c, type: 2}
       marchingCubesIsoLevel: 0
-      screenSpaceParticleRadius: 0.15
-      screenSpaceFilterSize: 32
-      screenSpaceSprayThreshold: 6
   visualProxyTransform: {fileID: 0}
-  particlesToDensityCompute: {fileID: 7200000, guid: 3c585bfcf792db443b823ea9e4d73d39, type: 3}
-  marchingCubesCompute: {fileID: 7200000, guid: a22c7c4891409a047968bd3b28af9da8, type: 3}
-  marchingCubesLUT: {fileID: 4900000, guid: 711f0eebef002a84e95e6dc230c006be, type: 3}
-  volumeDims: {x: 128, y: 128, z: 128}
-  smoothingRadiusWS: -1
-  rayMarchingMaterial: {fileID: 2100000, guid: 981a72c002f021c43bcf6a3e18c751a5, type: 2}
-  marchingCubesMaterial: {fileID: 2100000, guid: a5f165da16e6e4a4e8b93a9c48ecc59b, type: 2}
-  vapourRaymarchMaterial: {fileID: 2100000, guid: ecfb9a36afdd6404e9a46793705c4a27, type: 2}
-  useMarchingCubes: 0
-  marchingCubesIsoLevel: 0
-  blurVapourDensity: 1
-  blurLiquidDensity: 0
-  liquidBlurRadius: 1
-  liquidBlurSigma: 1
-  liquidBlurDetailPreserve: 0
-  blurRadius: 1
-  blurSigma: 1
-  blurDetailPreserve: 0.25
-  _settingsMigrated: 1
 --- !u!114 &681215791 stripped
 MonoBehaviour:
   m_CorrespondingSourceObject: {fileID: 4161998456328252244, guid: 18cf1fa5220a198409fde72db8b3e2a5, type: 3}
@@ -648,7 +635,7 @@ Transform:
   m_GameObject: {fileID: 771879728}
   serializedVersion: 2
   m_LocalRotation: {x: 0.1391733, y: -0.0008642229, z: 0.00012145882, w: 0.9902677}
-  m_LocalPosition: {x: 12.542516, y: 17.825407, z: -1.8934796}
+  m_LocalPosition: {x: 13.9, y: 15.5, z: 2.2}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
@@ -1168,13 +1155,13 @@ Transform:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 1201694626}
   serializedVersion: 2
-  m_LocalRotation: {x: 0.1391733, y: -0.0008642229, z: 0.00012145882, w: 0.9902677}
-  m_LocalPosition: {x: 23.329641, y: 17.756496, z: -1.6343367}
+  m_LocalRotation: {x: 0.13916084, y: -0.013135003, z: 0.0018460042, w: 0.99018097}
+  m_LocalPosition: {x: 25.04, y: 15.1, z: 1.9}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
   m_Father: {fileID: 0}
-  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+  m_LocalEulerAnglesHint: {x: 16, y: -1.52, z: 0}
 --- !u!1 &1284594122
 GameObject:
   m_ObjectHideFlags: 0
@@ -1681,7 +1668,7 @@ MonoBehaviour:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 1885709156}
-  m_Enabled: 0
+  m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 667f1985ae19fdd44b21f9bb54b29c64, type: 3}
   m_Name: 
