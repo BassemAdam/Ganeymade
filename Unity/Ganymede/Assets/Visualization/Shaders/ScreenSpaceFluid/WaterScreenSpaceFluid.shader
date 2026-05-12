@@ -8,8 +8,9 @@ Shader "Custom/WaterScreenSpaceFluid"
     //   2 ScreenSpaceFluidLightDepth   sphere impostor from light POV
     //   3 ScreenSpaceFluidBlur         separable bilateral on eye-depth
     //   4 ScreenSpaceFluidNormals      edge-aware finite differences
-    //   5 ScreenSpaceFluidComposite    Fresnel + Beer + refr + refl + noise + shadow
-    //   6 ScreenSpaceFluidCaustics     screen-space caustics projection
+    //   5 ScreenSpaceFluidComposite    Fresnel + Beer + refr + refl + shadow
+    //   6 ScreenSpaceFluidThicknessBlur separable Gaussian blur on thickness (X or Y)
+    //   7 ScreenSpaceFluidNormalsBlur  separable Gaussian blur on normals (X or Y)
     // ============================================================
     Properties
     {
@@ -23,7 +24,6 @@ Shader "Custom/WaterScreenSpaceFluid"
         _NRF_Mu                   ("NRF Mu (snap offset, m)",      Float) = 0.3
         _NRF_DepthThreshold       ("NRF Depth Threshold (m)",      Float) = 1.0
         _NormalStepPixels         ("Normal Step Pixels",           Range(1,4)) = 1
-        _ThicknessCutoff          ("Thickness Cutoff",             Float) = 0.0005
         _ThicknessSplatSigma      ("Thickness Splat Sigma",        Range(0.15,1.0)) = 0.45
 
         // -- Water look --
@@ -37,21 +37,6 @@ Shader "Custom/WaterScreenSpaceFluid"
         _ReflectionStrength       ("Reflection Strength",          Range(0,1)) = 0.7
         _RefractionStrength       ("Refraction Strength",          Range(0,8)) = 2.4
 
-        // -- Surface noise (Step 7) --
-        _SurfaceNoiseStrength     ("Surface Noise Strength",       Range(0,1)) = 0.0
-        _SurfaceNoiseScale        ("Surface Noise Scale (1/m)",    Float) = 8.0
-        _SurfaceNoiseSpeed        ("Surface Noise Speed",          Float) = 0.4
-        [NoScaleOffset]
-        _SurfaceNoiseTex3D        ("Surface Noise 3D Tex (Repeat)", 3D) = "" {}
-
-        // -- Caustics (Step 7) --
-        _CausticsTex              ("Caustics Texture",             2D) = "black" {}
-        _CausticsStrength         ("Caustics Strength",            Range(0,4)) = 0.0
-        _CausticsTiling           ("Caustics Tiling (1/m)",        Float) = 0.5
-        _CausticsPlaneY           ("Caustics Plane Y (WS)",        Float) = 0.0
-        _CausticsScrollSpeed      ("Caustics Scroll Speed",        Float) = 0.05
-        _CausticsThicknessAttenuation ("Caustics Thickness Atten", Float) = 1.5
-        _CausticsDepthAttenuation     ("Caustics Depth Atten",     Float) = 0.5
     }
 
     SubShader
@@ -149,20 +134,7 @@ Shader "Custom/WaterScreenSpaceFluid"
             ENDHLSL
         }
 
-        // 6 — screen-space caustics projection (post-composite, additive)
-        Pass
-        {
-            Name "ScreenSpaceFluidCaustics"
-            Cull Off  ZWrite Off  ZTest Always  Blend One One
-            HLSLPROGRAM
-            #pragma target 4.5
-            #pragma vertex   Vert
-            #pragma fragment fragSSFCaustics
-            #include "SSF/SSF_Caustics.hlsl"
-            ENDHLSL
-        }
-
-        // 7 — separable Gaussian blur on the thickness map (X or Y direction)
+        // 6 — separable Gaussian blur on the thickness map (X or Y direction)
         Pass
         {
             Name "ScreenSpaceFluidThicknessBlur"
@@ -172,6 +144,19 @@ Shader "Custom/WaterScreenSpaceFluid"
             #pragma vertex   Vert
             #pragma fragment fragSSFThicknessBlur
             #include "SSF/SSF_ThicknessBlur.hlsl"
+            ENDHLSL
+        }
+
+        // 7 — separable Gaussian blur on encoded normals (X or Y direction)
+        Pass
+        {
+            Name "ScreenSpaceFluidNormalsBlur"
+            Cull Off  ZWrite Off  ZTest Always  Blend One Zero
+            HLSLPROGRAM
+            #pragma target 4.5
+            #pragma vertex   Vert
+            #pragma fragment fragSSFNormalsBlur
+            #include "SSF/SSF_NormalsBlur.hlsl"
             ENDHLSL
         }
     }

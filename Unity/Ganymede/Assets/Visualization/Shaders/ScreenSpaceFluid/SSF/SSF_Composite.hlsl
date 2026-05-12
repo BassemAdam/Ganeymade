@@ -8,8 +8,7 @@
 //   - Beer-Lambert volume absorption from thickness   (Step 5)
 //   - Background refraction with N.xy offset          (Step 6)
 //   - Wrapped diffuse + Blinn-Phong specular
-//   - Optional 3D world-space noise normal detail     (Step 7)
-//   - Optional light-view shadow attenuation          (Step 7)
+//   - Optional light-view shadow attenuation
 //
 // Inputs:
 //   _WaterSSFDepthSmooth = smoothed eye-depth        (RFloat, metres)
@@ -29,27 +28,13 @@ TEXTURE2D(_WaterSSFNormals);     SAMPLER(sampler_WaterSSFNormals);
 
 // Water look
 half4  _FluidColor;
-half4  _ShallowColor;
-half4  _DeepColor;
 half4  _FluidSpecularColor;
 float  _FluidSmoothness;
 float  _FresnelPower;
 float  _FresnelR0;
-float  _DiffuseWrap;
-float  _DiffuseStrength;
 float  _ThicknessAbsorption;
-float  _AbsorptionRate;
 float  _ReflectionStrength;
 float  _RefractionStrength;
-float  _RefractionBlur;
-float  _RefractionThicknessScale;
-float  _ThicknessCutoff;
-float  _CompositeStrength;
-
-// Surface noise (Step 7)
-float  _SurfaceNoiseStrength;     // 0 = off
-float  _SurfaceNoiseScale;        // world-space frequency
-float  _SurfaceNoiseSpeed;        // animation speed (sec⁻¹)
 
 // Light-view shadow
 TEXTURE2D(_WaterSSFLightDepth);   SAMPLER(sampler_WaterSSFLightDepth);
@@ -81,46 +66,6 @@ float3 SampleEnvironment(float3 R_WS, float3 posWS, float2 uv, float perceptualR
                                        1.0h, uv);
 }
 
-half3 SampleBackground(float2 uv, float3 N_VS, float thickness)
-{
-    float2 texel    = 1.0 / _ScaledScreenParams.xy;
-    float  distort  = _RefractionStrength * saturate(thickness * _RefractionThicknessScale);
-    float  blurPx   = _RefractionBlur     * saturate(thickness * _RefractionThicknessScale);
-    float2 offset   = N_VS.xy * distort * texel;
-    float2 c        = clamp(uv + offset, 0.001, 0.999);
-    float2 step     = texel * blurPx;
-
-    half3 col = 0;
-    col += SAMPLE_TEXTURE2D(_WaterSSFSceneCopy, sampler_WaterSSFSceneCopy, c).rgb;
-    col += SAMPLE_TEXTURE2D(_WaterSSFSceneCopy, sampler_WaterSSFSceneCopy, clamp(c + float2( step.x, 0), 0.001, 0.999)).rgb;
-    col += SAMPLE_TEXTURE2D(_WaterSSFSceneCopy, sampler_WaterSSFSceneCopy, clamp(c + float2(-step.x, 0), 0.001, 0.999)).rgb;
-    col += SAMPLE_TEXTURE2D(_WaterSSFSceneCopy, sampler_WaterSSFSceneCopy, clamp(c + float2(0,  step.y), 0.001, 0.999)).rgb;
-    col += SAMPLE_TEXTURE2D(_WaterSSFSceneCopy, sampler_WaterSSFSceneCopy, clamp(c + float2(0, -step.y), 0.001, 0.999)).rgb;
-    return col / 5.0;
-}
-
-// 3D noise texture for surface normal perturbation.
-// Assign a Repeat-wrapped 3D texture in the material (_SurfaceNoiseTex3D).
-// When not assigned, Unity provides a 1×1×1 black fallback → gradient = 0 → no perturbation.
-TEXTURE3D(_SurfaceNoiseTex3D);  SAMPLER(sampler_SurfaceNoiseTex3D);
-
-float3 SSFPerturbNormalWS(float3 N, float3 posWS)
-{
-    if (_SurfaceNoiseStrength <= 1e-4) return N;
-    float  t = _Time.y * _SurfaceNoiseSpeed;
-    float  s = max(_SurfaceNoiseScale, 1e-3);
-    // Animate with per-axis offsets so the pattern doesn't look planar.
-    float3 P = posWS * s + float3(t, t * 0.7, t * 1.3);
-    // Central-difference gradient — 3 extra taps in X, Y, Z.
-    float e  = 0.04;
-    float n0 = SAMPLE_TEXTURE3D(_SurfaceNoiseTex3D, sampler_SurfaceNoiseTex3D, P            ).r * 2.0 - 1.0;
-    float nx = SAMPLE_TEXTURE3D(_SurfaceNoiseTex3D, sampler_SurfaceNoiseTex3D, P+float3(e,0,0)).r * 2.0 - 1.0;
-    float ny = SAMPLE_TEXTURE3D(_SurfaceNoiseTex3D, sampler_SurfaceNoiseTex3D, P+float3(0,e,0)).r * 2.0 - 1.0;
-    float nz = SAMPLE_TEXTURE3D(_SurfaceNoiseTex3D, sampler_SurfaceNoiseTex3D, P+float3(0,0,e)).r * 2.0 - 1.0;
-    float3 grad = float3(nx - n0, ny - n0, nz - n0);
-    return normalize(N + grad * _SurfaceNoiseStrength);
-}
-
 // Light-view shadow lookup: project world position into the light's
 // VP, do a single PCF tap.
 float SSFLightShadowAtten(float3 posWS)
@@ -143,13 +88,6 @@ float SSFLightShadowAtten(float3 posWS)
     return lerp(1.0, lit, saturate(_WaterSSFLightShadowStrength));
 }
 
-half3 ApplyDepthTint(half3 sceneColor, float thickness)
-{
-    float a   = exp(-thickness * _AbsorptionRate);
-    half3 tint = lerp(_DeepColor.rgb, _ShallowColor.rgb, a);
-    return lerp(tint, sceneColor * tint, a);
-}
-
 CompositeOut fragSSFComposite(Varyings IN)
 {
     float2 uv = IN.texcoord;
@@ -169,9 +107,6 @@ CompositeOut fragSSFComposite(Varyings IN)
     float3 pVS = SSFViewPosFromEyeDepth(uv, eyeDepth);      // view-space position
     float3 pWS = SSFWorldFromView(pVS);                      // world-space position
     float3 nWS = SSFNormalWorldFromView(nVS);                // world-space normal
-
-    // Optional surface noise perturbation
-    nWS = SSFPerturbNormalWS(nWS, pWS);
 
     float3 V = normalize(_WorldSpaceCameraPos.xyz - pWS);    // surface → camera
 
@@ -254,6 +189,11 @@ CompositeOut fragSSFComposite(Varyings IN)
     float3 R_WS     = reflect(-V, nWS);
     float  roughness = 1.0 - _FluidSmoothness;
     half3  reflColor = (half3)SampleEnvironment(R_WS, pWS, uv, roughness);
+
+    // Dampen reflection Fresnel when the mirror direction goes below the horizon.
+    // Matches fluid.wgsl: fresnel = select(fresnel, 0.1 * fresnel, reflectionDirWorld.y < 0)
+    // Below-horizon reflections pick up the floor/subsurface which is much dimmer.
+    if (R_WS.y < 0.0) fresnel *= 0.1;
 
     // ============================================================
     // STEP 5 — Blinn-Phong specular highlight (sun / directional light)

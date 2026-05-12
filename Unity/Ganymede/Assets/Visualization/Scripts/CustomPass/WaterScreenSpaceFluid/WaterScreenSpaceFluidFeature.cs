@@ -7,8 +7,9 @@
 //   2  LightDepth    (sphere impostor from light POV — optional)
 //   3  Blur X/Y      (separable bilateral on eye-depth)
 //   4  Normals       (edge-aware finite differences)
-//   5  Composite     (Fresnel + Beer + refr + refl + noise + shadow)
-//   6  Caustics      (screen-space projection of caustics texture)
+//   5  Composite     (Fresnel + Beer + refr + refl + shadow)
+//   6  ThicknessBlur (separable Gaussian on thickness, X then Y)
+//   7  NormalsBlur   (separable Gaussian on normals,   X then Y)
 //
 // State + draw events are static so a single MonoBehaviour bridge
 // (WaterPhaseScreenSpaceFluidRenderer) can drive every active camera.
@@ -43,9 +44,6 @@ public sealed class WaterScreenSpaceFluidFeature : ScriptableRendererFeature
     [SerializeField] private float      lightShadowBias        = 0.05f;
     [SerializeField] private float      lightShadowExtraExtent = 1.0f;
 
-    [Header("Caustics")]
-    [SerializeField] private bool enableCaustics = false;
-
     private WaterSSFRenderPass _pass;
 
     public override void Create()
@@ -73,7 +71,6 @@ public sealed class WaterScreenSpaceFluidFeature : ScriptableRendererFeature
         _pass.LightShadowStrength  = Mathf.Clamp01(lightShadowStrength);
         _pass.LightShadowBias      = Mathf.Max(0f, lightShadowBias);
         _pass.LightShadowExtra     = Mathf.Max(0f, lightShadowExtraExtent);
-        _pass.EnableCaustics       = enableCaustics;
         _pass.HasBounds            = HasBounds;
         _pass.BoundsMin            = BoundsMin;
         _pass.BoundsMax            = BoundsMax;

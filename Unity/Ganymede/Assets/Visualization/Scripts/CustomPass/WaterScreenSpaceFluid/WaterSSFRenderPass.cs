@@ -9,9 +9,9 @@
 //   4) Particle light-depth (optional)
 //   5) Bilateral blur 2D   → blurred-eye-depth (single pass, no artefacts)
 //   6) Normals from blurred depth
+//   6.5) Normals blur (Gaussian, X then Y)
 //   7) Scene-color copy
 //   8) Composite over active colour (writes water HW Z)
-//   9) Caustics projection (optional)
 // ============================================================
 using System;
 using UnityEngine;
@@ -28,8 +28,8 @@ public sealed class WaterSSFRenderPass : ScriptableRenderPass
     private const int PASS_BLUR            = 3;
     private const int PASS_NORMALS         = 4;
     private const int PASS_COMPOSITE       = 5;
-    private const int PASS_CAUSTICS        = 6;
-    private const int PASS_THICKNESS_BLUR  = 7;
+    private const int PASS_THICKNESS_BLUR  = 6;
+    private const int PASS_NORMALS_BLUR    = 7;
 
     // ---- Shader property IDs ----
     private static readonly int ID_NRF_MaxFilterSize       = Shader.PropertyToID("_NRF_MaxFilterSize");
@@ -45,6 +45,7 @@ public sealed class WaterSSFRenderPass : ScriptableRenderPass
     private static readonly int ID_WaterSSFBlurDirection   = Shader.PropertyToID("_WaterSSFBlurDirection");
     private static readonly int ID_WaterSSFThickness       = Shader.PropertyToID("_WaterSSFThickness");
     private static readonly int ID_WaterSSFNormals        = Shader.PropertyToID("_WaterSSFNormals");
+    private static readonly int ID_WaterSSFNormalsSource  = Shader.PropertyToID("_WaterSSFNormalsSource");
     private static readonly int ID_WaterSSFSceneCopy      = Shader.PropertyToID("_WaterSSFSceneCopy");
     private static readonly int ID_WaterSSFLightDepth     = Shader.PropertyToID("_WaterSSFLightDepth");
     private static readonly int ID_WaterSSFLightVP        = Shader.PropertyToID("_WaterSSFLightVP");
@@ -54,7 +55,6 @@ public sealed class WaterSSFRenderPass : ScriptableRenderPass
     private static readonly int ID_SSFViewMatrix          = Shader.PropertyToID("_SSFViewMatrix");
     private static readonly int ID_SSFProjMatrix          = Shader.PropertyToID("_SSFProjMatrix");
     private static readonly int ID_SSFUseOverrideMatrices = Shader.PropertyToID("_SSFUseOverrideMatrices");
-    private static readonly int ID_CameraDepthTexture     = Shader.PropertyToID("_CameraDepthTexture");
 
     // ---- Configuration set by the feature each frame ----
     public Material Material;
@@ -66,7 +66,6 @@ public sealed class WaterSSFRenderPass : ScriptableRenderPass
     public float   LightShadowStrength;
     public float   LightShadowBias;
     public float   LightShadowExtra;
-    public bool    EnableCaustics;
     public bool    HasBounds;
     public Vector3 BoundsMin;
     public Vector3 BoundsMax;
@@ -130,8 +129,12 @@ public sealed class WaterSSFRenderPass : ScriptableRenderPass
         TextureHandle depthBlur1X     = UniversalRenderer.CreateRenderGraphTexture(rg, depthDesc, "_WaterSSFDepthBlur1X", false); // iter1 X out
         TextureHandle depthBlur1Y     = UniversalRenderer.CreateRenderGraphTexture(rg, depthDesc, "_WaterSSFDepthBlur1Y", false); // iter1 Y out
         TextureHandle depthBlur2X     = UniversalRenderer.CreateRenderGraphTexture(rg, depthDesc, "_WaterSSFDepthBlur2X", false); // iter2 X out
-        TextureHandle depthBlur2Y     = UniversalRenderer.CreateRenderGraphTexture(rg, depthDesc, "_WaterSSFDepthBlur2Y", false); // iter2 Y out (final)
+        TextureHandle depthBlur2Y     = UniversalRenderer.CreateRenderGraphTexture(rg, depthDesc, "_WaterSSFDepthBlur2Y", false); // iter2 Y out
+        TextureHandle depthBlur3X     = UniversalRenderer.CreateRenderGraphTexture(rg, depthDesc, "_WaterSSFDepthBlur3X", false); // iter3 X out
+        TextureHandle depthBlur3Y     = UniversalRenderer.CreateRenderGraphTexture(rg, depthDesc, "_WaterSSFDepthBlur3Y", false); // iter3 Y out (final)
         TextureHandle normalsTex      = UniversalRenderer.CreateRenderGraphTexture(rg, normalsDesc,   "_WaterSSFNormals",         false);
+        TextureHandle normalsBlurA    = UniversalRenderer.CreateRenderGraphTexture(rg, normalsDesc,   "_WaterSSFNormalsBlurA",    false);
+        TextureHandle normalsSmooth   = UniversalRenderer.CreateRenderGraphTexture(rg, normalsDesc,   "_WaterSSFNormalsSmooth",   false);
         TextureHandle sceneCopy       = UniversalRenderer.CreateRenderGraphTexture(rg, colorDesc,     "_WaterSSFSceneCopy",       false);
 
         TextureHandle lightDepth    = TextureHandle.nullHandle;
@@ -200,21 +203,30 @@ public sealed class WaterSSFRenderPass : ScriptableRenderPass
         // 5) Narrow-Range Filter — 3 iterations (matches reference pipeline)
         //    Reference: 2× 1D(X+Y) + 1× 2D(X+Y) = 6 blur passes total.
         //    We run 3× 1D(X+Y) which achieves equivalent smoothing.
-        //    Ping-pong: depthSmoothA (temp) ↔ depthSmooth (accumulated result).
+        //    Ping-pong: unique handle per pass (URP RenderGraph requirement).
         // ============================================================
         // Each src→dst pair uses a UNIQUE destination handle — required by URP RenderGraph
         // (a transient texture may only be the render attachment of exactly one pass).
         // Iteration 1
         RecordBlur(rg, "Water SSF Blur X1", depthRaw,    depthBlur1X, nrfMaxSize, nrfProjK, nrfMu, nrfThresh, baseDesc.width, baseDesc.height, new Vector2(1f / baseDesc.width,  0f), false);
         RecordBlur(rg, "Water SSF Blur Y1", depthBlur1X, depthBlur1Y, nrfMaxSize, nrfProjK, nrfMu, nrfThresh, baseDesc.width, baseDesc.height, new Vector2(0f, 1f / baseDesc.height), false);
-        // Iteration 2 (final — expose result as global _WaterSSFDepthSmooth)
+        // Iteration 2
         RecordBlur(rg, "Water SSF Blur X2", depthBlur1Y, depthBlur2X, nrfMaxSize, nrfProjK, nrfMu, nrfThresh, baseDesc.width, baseDesc.height, new Vector2(1f / baseDesc.width,  0f), false);
-        RecordBlur(rg, "Water SSF Blur Y2", depthBlur2X, depthBlur2Y, nrfMaxSize, nrfProjK, nrfMu, nrfThresh, baseDesc.width, baseDesc.height, new Vector2(0f, 1f / baseDesc.height), true);
+        RecordBlur(rg, "Water SSF Blur Y2", depthBlur2X, depthBlur2Y, nrfMaxSize, nrfProjK, nrfMu, nrfThresh, baseDesc.width, baseDesc.height, new Vector2(0f, 1f / baseDesc.height), false);
+        // Iteration 3 (final — expose result as global _WaterSSFDepthSmooth, matches Splash-main 3rd filter pass)
+        RecordBlur(rg, "Water SSF Blur X3", depthBlur2Y, depthBlur3X, nrfMaxSize, nrfProjK, nrfMu, nrfThresh, baseDesc.width, baseDesc.height, new Vector2(1f / baseDesc.width,  0f), false);
+        RecordBlur(rg, "Water SSF Blur Y3", depthBlur3X, depthBlur3Y, nrfMaxSize, nrfProjK, nrfMu, nrfThresh, baseDesc.width, baseDesc.height, new Vector2(0f, 1f / baseDesc.height), true);
 
         // ============================================================
         // 6) Normals from smoothed depth
         // ============================================================
-        RecordNormals(rg, depthBlur2Y, thicknessSmooth, normalsTex, baseDesc.width, baseDesc.height);
+        RecordNormals(rg, depthBlur3Y, thicknessSmooth, normalsTex, baseDesc.width, baseDesc.height);
+
+        // ============================================================
+        // 6.5) Normals blur X+Y — smooths encoded normals for softer shading
+        // ============================================================
+        RecordNormalsBlur(rg, "Water SSF Normals Blur X", normalsTex,   normalsBlurA, depthBlur3Y, baseDesc.width, baseDesc.height, new Vector2(1f / baseDesc.width,  0f), false);
+        RecordNormalsBlur(rg, "Water SSF Normals Blur Y", normalsBlurA, normalsSmooth, depthBlur3Y, baseDesc.width, baseDesc.height, new Vector2(0f, 1f / baseDesc.height), true);
 
         // ============================================================
         // 7) Scene copy (needed by composite)
@@ -224,22 +236,9 @@ public sealed class WaterSSFRenderPass : ScriptableRenderPass
         // ============================================================
         // 8) Composite
         // ============================================================
-        RecordComposite(rg, depthBlur2Y, normalsTex, thicknessSmooth, sceneCopy,
+        RecordComposite(rg, depthBlur3Y, normalsSmooth, thicknessSmooth, sceneCopy,
             lightDepth, lightVP, useLightShadow,
             resourceData.activeColorTexture, resourceData.activeDepthTexture);
-
-        // ============================================================
-        // 9) Caustics — additive brightening of underwater geometry
-        //    Runs after composite so it brightens the fully-lit scene.
-        //    Uses URP's _CameraDepthTexture (opaque-scene depth copy)
-        //    to detect geometry that sits behind the water surface.
-        // ============================================================
-        if (EnableCaustics)
-        {
-            RecordCaustics(rg, depthBlur2Y, thicknessSmooth,
-                lightDepth, useLightShadow,
-                resourceData.activeColorTexture);
-        }
     }
 
     // ----------------------------------------------------------------
@@ -531,46 +530,46 @@ public sealed class WaterSSFRenderPass : ScriptableRenderPass
     }
 
     // ----------------------------------------------------------------
-    // Caustics.
+    // Normals blur (one direction — run X then Y).
+    // Separable Gaussian on the encoded-normals texture.
+    // Skips background pixels (eyeDepth == 0).
     // ----------------------------------------------------------------
-    private sealed class CausticsData
+    private sealed class NormalsBlurData
     {
+        public TextureHandle source;
         public TextureHandle smoothDepth;
-        public TextureHandle thickness;
-        public TextureHandle lightDepth;
         public Material      material;
-        public bool          shadowEnabled;
+        public Vector4       texelSize;
+        public Vector2       blurDirection;
     }
 
-    private void RecordCaustics(RenderGraph rg,
-        TextureHandle smoothDepth, TextureHandle thickness,
-        TextureHandle lightDepth, bool shadowEnabled,
-        TextureHandle activeColor)
+    private void RecordNormalsBlur(RenderGraph rg, string passName,
+        TextureHandle src, TextureHandle dst, TextureHandle smoothDepth,
+        int w, int h, Vector2 blurDirection, bool exposeAsNormals)
     {
-        using (var builder = rg.AddRasterRenderPass<CausticsData>("Water SSF Caustics", out var data))
+        using (var builder = rg.AddRasterRenderPass<NormalsBlurData>(passName, out var data))
         {
+            data.source        = src;
             data.smoothDepth   = smoothDepth;
-            data.thickness     = thickness;
-            data.lightDepth    = lightDepth;
             data.material      = Material;
-            data.shadowEnabled = shadowEnabled;
+            data.texelSize     = new Vector4(1f / w, 1f / h, w, h);
+            data.blurDirection = blurDirection;
 
+            builder.UseTexture(src,         AccessFlags.Read);
             builder.UseTexture(smoothDepth, AccessFlags.Read);
-            builder.UseTexture(thickness,   AccessFlags.Read);
-            if (shadowEnabled && lightDepth.IsValid())
-                builder.UseTexture(lightDepth, AccessFlags.Read);
-
-            builder.SetRenderAttachment(activeColor, 0, AccessFlags.Write);
+            builder.SetRenderAttachment(dst, 0, AccessFlags.Write);
+            if (exposeAsNormals)
+                builder.SetGlobalTextureAfterPass(dst, ID_WaterSSFNormals);
             builder.AllowPassCulling(false);
             builder.AllowGlobalStateModification(true);
 
-            // _CameraDepthTexture is set globally by URP (opaque-scene depth copy).
-            // Do NOT override it — caustics uses it to detect geometry behind the water surface.
-            builder.SetRenderFunc((CausticsData d, RasterGraphContext ctx) =>
+            builder.SetRenderFunc((NormalsBlurData d, RasterGraphContext ctx) =>
             {
-                if (d.shadowEnabled && d.lightDepth.IsValid())
-                    ctx.cmd.SetGlobalTexture(ID_WaterSSFLightDepth, d.lightDepth);
-                Blitter.BlitTexture(ctx.cmd, d.smoothDepth, new Vector4(1, 1, 0, 0), d.material, PASS_CAUSTICS);
+                ctx.cmd.SetGlobalTexture(ID_WaterSSFNormalsSource, d.source);
+                ctx.cmd.SetGlobalTexture(ID_WaterSSFDepthSmooth,   d.smoothDepth);
+                ctx.cmd.SetGlobalVector (ID_WaterSSFDepthTexelSize, d.texelSize);
+                ctx.cmd.SetGlobalVector (ID_WaterSSFBlurDirection,  d.blurDirection);
+                Blitter.BlitTexture(ctx.cmd, d.source, new Vector4(1, 1, 0, 0), d.material, PASS_NORMALS_BLUR);
             });
         }
     }
