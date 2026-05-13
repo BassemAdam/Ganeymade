@@ -64,14 +64,14 @@ public class PhysicsWaterPhaseBridge : MonoBehaviour
 
     private void LateUpdate()
     {
-        if (!isActiveAndEnabled)
-            return;
-
-        if (!TryInitializeBridge())
-            return;
-
-        _resources.Ensure(settings.DensityGrid.volumeDims, _computePlugin.particleCount, _particleStride);
-        _particleOutputBridge.RegisterIfNeeded(_resources.ParticleOutputBuffer);
+        // if (!isActiveAndEnabled)
+        //     return;
+        //
+        // if (!TryInitializeBridge())
+        //     return;
+        //
+        // _resources.Ensure(settings.DensityGrid.volumeDims, _computePlugin.particleCount, _particleStride);
+        // _particleOutputBridge.RegisterIfNeeded(_resources.ParticleOutputBuffer);
 
         _computePlugin.GetBoundsWS(out Vector3 boundsMin, out Vector3 boundsMax);
         if (UsesDensityPipeline())
