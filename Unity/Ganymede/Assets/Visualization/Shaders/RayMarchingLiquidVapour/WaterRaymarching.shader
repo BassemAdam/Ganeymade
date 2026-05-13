@@ -105,13 +105,12 @@ Shader "Custom/WaterRaymarching"
             };
 
             CBUFFER_START(UnityPerMaterial)
-                // Liquid volumetric
-                float3 _ScatteringCoefficients;      // sigma_t for liquid (extinction = scatter + absorb)
-                float3 _LiquidScatterColor;          // scatter albedo tint
-                float  _DensityMultiplier;           // liquid density scale for volume, surface detection, and normals
-                float  _DensityOffset;               // liquid density bias for volume, surface detection, and normals
+                float3 _ScatteringCoefficients;
+                float3 _LiquidScatterColor;
+                float  _DensityMultiplier;
+                float  _DensityOffset;
                 float  _LightStepSize;
-                // Surface optics
+
                 float  _StepSize;
                 float  _IsoLevel;
                 float  _DebugViewMode;
@@ -126,7 +125,7 @@ Shader "Custom/WaterRaymarching"
                 float  _BakedNormalBlend;
                 float  _BoundaryNormalBlendDistance;
                 float  _BoundaryNormalUpBiasPower;
-                // Vapour rendering — procedural shape with shadow modulation for god rays.
+
                 half4  _VapourBaseColor;
                 float  _VapourAbsorption;
                 float  _VapourGodRayStrength;
@@ -136,7 +135,7 @@ Shader "Custom/WaterRaymarching"
                 float  _VapourPresenceThreshold;
                 float  _VapourFullDensity;
                 float  _VapourDensityMultiplier;
-                // Vapour procedural structure — same defaults/formula family as Custom/VapourVolume.
+
                 float  _NoiseScale;
                 float4 _NoiseDriftDir;
                 float  _NoiseDriftSpeed;
@@ -208,10 +207,6 @@ Shader "Custom/WaterRaymarching"
                 float safeStepSize   = max(_StepSize, 1e-4);
                 float currentDistance = volumeData.distanceToVolume + safeStepSize * viewData.blueNoiseValue;
                 float exitDistance    = min(volumeData.volumeExitDistance, backgroundData.sceneDistanceAlongRay);
-                // Per-pixel blue noise base for shadow jitter (channel 1 = independent
-                // distribution from the view-ray channel 0).  Combined with a golden-ratio
-                // step sequence inside the loop so each shadow ray gets a unique offset,
-                // not the same one for every step on this pixel.
                 float shadowJitterBase = SampleWaterBlueNoiseChannel(viewData.screenUV, 1);
                 float surfaceDistanceAlongRay = backgroundData.surfaceHit.hit
                     ? distance(viewData.cameraPositionWS, backgroundData.surfaceHit.posWS)
@@ -230,31 +225,18 @@ Shader "Custom/WaterRaymarching"
                     float3 samplePositionWS = viewData.cameraPositionWS + viewData.viewRayDirectionWS * stepStartDistance;
                     currentDistance += stepLength;
 
-                    // One raw grid sample gives us both phases:
-                    //   R / phase 0 = liquid
-                    //   G / phase 1 = vapour
-                    // Vapour procedural shaping is skipped when the raw vapour
-                    // channel is empty, so liquid-only steps avoid FBM work.
                     float2 rawDensity = SampleDensityRG_WS(samplePositionWS);
                     float  dl = AdjustLiquidDensity(rawDensity.x);
                     float  dv = (rawDensity.y > 1e-6) ? BuildVapourDensityWS(samplePositionWS, rawDensity.y) : 0.0;
 
-                    // Skip empty steps without paying for a shadow march.
                     if (dl + dv < 1e-6)
                         continue;
 
                     float3 sigmaE = _ScatteringCoefficients * dl + EvaluateSimpleVapourExtinction(dv);
 
-                    // Only liquid samples need the expensive liquid self-shadow
-                    // march. Vapour-only samples skip this completely.
                     float3 sunTransmittance = 1.0;
                     if (dl > 1e-6)
                     {
-                        // Golden-ratio (0.618...) step sequence layered on the per-pixel
-                        // blue noise base.  Each view step gets a unique shadow jitter in
-                        // [0,1) that is well-distributed across all steps on this pixel,
-                        // breaking sun-direction banding that would persist if every step
-                        // used the same per-pixel value.
                         float shadowJitter = frac(shadowJitterBase + frac(stepStartDistance * 0.61803398875));
                         sunTransmittance = CalculateTransmittedSunLightLiquid(
                             samplePositionWS,
@@ -264,9 +246,6 @@ Shader "Custom/WaterRaymarching"
                         );
                     }
 
-                    // Main-light shadowing drives both liquid shadows and vapour
-                    // god rays. Vapour applies a visibility floor in
-                    // EvaluateVapourDirectScatter so shadowed cells do not go black.
                     half shadowAtten = 1.0;
                     if (dl + dv > 1e-6)
                     {
@@ -313,13 +292,6 @@ Shader "Custom/WaterRaymarching"
                                 }
                                 if (dl > 1e-6)
                                 {
-                                    // Beer-Lambert single scatter: L_s = sigma_s * rho * L_in * ds
-                                    // No self-shadow march for point lights: the march direction
-                                    // changes per sample position and per light, making a volumetric
-                                    // shadow walk prohibitively expensive per step.  Distance
-                                    // attenuation + shadow-map attenuation (shadowAttenuation) still
-                                    // produce correctly attenuated coloured light pooling inside the
-                                    // liquid volume.
                                     liquidScatterAdditional += _LiquidScatterColor * dl * safeStepSize
                                         * radiance * additionalLight.shadowAttenuation;
                                 }

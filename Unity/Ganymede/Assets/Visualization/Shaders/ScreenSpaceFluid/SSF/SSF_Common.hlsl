@@ -1,16 +1,6 @@
 #ifndef SSF_COMMON_INCLUDED
 #define SSF_COMMON_INCLUDED
 
-// ============================================================
-// Simon Green Screen-Space Fluid Rendering — common helpers.
-// Shared by every SSF pass (depth, thickness, blur, normals,
-// composite, caustics, light-depth).
-//
-// Reference: Simon Green, "Screen Space Fluid Rendering for
-// Games", GDC 2010.
-// ============================================================
-
-// ---- Particle struct (must match Particle.cs, 80-byte stride) ----
 struct Particle
 {
     float3 position;
@@ -32,9 +22,6 @@ float _ParticleRadius;
 int   _ParticleCount;
 int   _RenderPhase;
 
-// Optional override matrices for light-view rendering. When the
-// renderer-feature does not bind these, they default to the camera
-// view/projection via UNITY_MATRIX_V / UNITY_MATRIX_P below.
 float4x4 _SSFViewMatrix;
 float4x4 _SSFProjMatrix;
 int      _SSFUseOverrideMatrices;
@@ -47,17 +34,15 @@ float3 SSFTransformWorldToView(float3 posWS)
     return mul(SSFViewMatrix(), float4(posWS, 1.0)).xyz;
 }
 
-// ----- Per-particle billboard varyings -----------------------
 struct ParticleVaryings
 {
     float4 positionCS : SV_POSITION;
-    float3 centerVS   : TEXCOORD0;   // sphere centre in view-space
-    float2 quadCoord  : TEXCOORD1;   // [-1..1] in quad space
+    float3 centerVS   : TEXCOORD0;
+    float2 quadCoord  : TEXCOORD1;
     float  radius     : TEXCOORD2;
-    float  active     : TEXCOORD3;   // 0 = culled / inactive
+    float  active     : TEXCOORD3;
 };
 
-// Two-triangle quad corner coordinates (CCW)
 float2 SSFQuadCoord(uint vid)
 {
     const float2 COORDS[6] =
@@ -68,9 +53,6 @@ float2 SSFQuadCoord(uint vid)
     return COORDS[vid % 6];
 }
 
-// View-aligned billboard impostor. The quad is sized in WORLD units
-// (kept constant in world space, so it shrinks with distance — exactly
-// what we need for impostor spheres).
 ParticleVaryings SSFParticleVertex(uint vid, uint iid)
 {
     ParticleVaryings o;
@@ -78,7 +60,7 @@ ParticleVaryings SSFParticleVertex(uint vid, uint iid)
     o.radius     = max(_ParticleRadius, 1e-4);
     o.active     = 0.0;
     o.centerVS   = 0.0;
-    o.positionCS = float4(-2, -2, 1, 1); // off-screen sentinel
+    o.positionCS = float4(-2, -2, 1, 1);
 
     if (iid >= (uint)_ParticleCount) return o;
     Particle p = _ParticleBuffer[iid];
@@ -91,20 +73,11 @@ ParticleVaryings SSFParticleVertex(uint vid, uint iid)
     return o;
 }
 
-// ============================================================
-// Simon Green sphere impostor:
-//   N.xy = quadCoord                       (in unit disc)
-//   r²   = dot(N.xy, N.xy)                 (>1 → outside)
-//   N.z  = -sqrt(1 - r²)                   (toward camera in -Z space)
-// In Unity view-space the camera looks down -Z, so the front
-// surface is at centerZ + |N.z|*r (closer to the eye than the
-// centre). We therefore add +sqrt(...)*radius to centerVS.z.
-// ============================================================
 struct SSFImpostorHit
 {
-    float3 viewPos;     // surface point in view space
-    float3 viewNormal;  // outward normal in view space
-    float4 clipPos;     // clip-space position for SV_Depth
+    float3 viewPos;
+    float3 viewNormal;
+    float4 clipPos;
     bool   hit;
 };
 
@@ -122,7 +95,7 @@ SSFImpostorHit SSFEvaluateImpostor(ParticleVaryings i)
     }
 
     float  z   = sqrt(saturate(1.0 - r2));
-    float3 nVS = float3(i.quadCoord, z);                          // outward normal (camera toward = +Z in our convention)
+    float3 nVS = float3(i.quadCoord, z);
     h.viewPos    = float3(i.centerVS.xy + i.quadCoord * i.radius,
                           i.centerVS.z   + z * i.radius);
     h.viewNormal = nVS;
@@ -130,10 +103,6 @@ SSFImpostorHit SSFEvaluateImpostor(ParticleVaryings i)
     return h;
 }
 
-// ============================================================
-// Eye-depth helpers — the SSF pipeline carries POSITIVE linear
-// view-space depth (metres in front of the camera).
-// ============================================================
 float3 SSFViewPosFromEyeDepth(float2 uv, float eyeDepth)
 {
     float2 ndc = uv * 2.0 - 1.0;
@@ -149,10 +118,9 @@ float SSFEyeDepthToHWDepth(float eyeDepth)
     return cp.z / cp.w;
 }
 
-// HW depth → positive eye depth (uses URP linear-eye conversion).
 float SSFHWDepthToEye(float rawDepth)
 {
     return LinearEyeDepth(rawDepth, _ZBufferParams);
 }
 
-#endif // SSF_COMMON_INCLUDED
+#endif

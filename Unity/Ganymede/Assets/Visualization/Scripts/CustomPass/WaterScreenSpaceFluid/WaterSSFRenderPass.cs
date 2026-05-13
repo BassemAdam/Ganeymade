@@ -1,18 +1,3 @@
-// ============================================================
-// Water SSF — Single ScriptableRenderPass that records the whole
-// Simon Green pipeline into the URP RenderGraph.
-//
-// Stages (all in this file for clarity):
-//   1) Allocate textures
-//   2) Particle depth      → eye-depth + HW Z
-//   3) Particle thickness  → additive Gaussian splat
-//   4) Particle light-depth (optional)
-//   5) Bilateral blur 2D   → blurred-eye-depth (single pass, no artefacts)
-//   6) Normals from blurred depth
-//   6.5) Normals blur (Gaussian, X then Y)
-//   7) Scene-color copy
-//   8) Composite over active colour (writes water HW Z)
-// ============================================================
 using System;
 using UnityEngine;
 using UnityEngine.Rendering;
@@ -21,7 +6,6 @@ using UnityEngine.Rendering.Universal;
 
 public sealed class WaterSSFRenderPass : ScriptableRenderPass
 {
-    // ---- Pass indices in WaterScreenSpaceFluid.shader ----
     private const int PASS_DEPTH           = 0;
     private const int PASS_THICKNESS       = 1;
     private const int PASS_LIGHT_DEPTH     = 2;
@@ -31,7 +15,6 @@ public sealed class WaterSSFRenderPass : ScriptableRenderPass
     private const int PASS_THICKNESS_BLUR  = 6;
     private const int PASS_NORMALS_BLUR    = 7;
 
-    // ---- Shader property IDs ----
     private static readonly int ID_NRF_MaxFilterSize       = Shader.PropertyToID("_NRF_MaxFilterSize");
     private static readonly int ID_NRF_ProjectedParticleK  = Shader.PropertyToID("_NRF_ProjectedParticleK");
     private static readonly int ID_NRF_Mu                  = Shader.PropertyToID("_NRF_Mu");
@@ -56,7 +39,6 @@ public sealed class WaterSSFRenderPass : ScriptableRenderPass
     private static readonly int ID_SSFProjMatrix          = Shader.PropertyToID("_SSFProjMatrix");
     private static readonly int ID_SSFUseOverrideMatrices = Shader.PropertyToID("_SSFUseOverrideMatrices");
 
-    // ---- Configuration set by the feature each frame ----
     public Material Material;
     public Action<RasterCommandBuffer, Material> OnDrawDepth;
     public Action<RasterCommandBuffer, Material> OnDrawThickness;
@@ -72,7 +54,6 @@ public sealed class WaterSSFRenderPass : ScriptableRenderPass
 
     private Light _cachedLight;
 
-    // ---------------------------------------------------------------
     public override void RecordRenderGraph(RenderGraph rg, ContextContainer frameData)
     {
         if (Material == null) return;
@@ -80,16 +61,10 @@ public sealed class WaterSSFRenderPass : ScriptableRenderPass
         var cameraData   = frameData.Get<UniversalCameraData>();
         var resourceData = frameData.Get<UniversalResourceData>();
 
-        // -- Snapshot live parameters --
         float nrfMaxSize  = Material.GetFloat(ID_NRF_MaxFilterSize);
         float nrfMu       = Material.GetFloat(ID_NRF_Mu);
         float nrfThresh   = Material.GetFloat(ID_NRF_DepthThreshold);
 
-        // Auto-compute projected particle K from camera FOV + screen height + particle radius.
-        // Formula (matches reference fluidRender.ts):
-        //   K = 0.6 * diameter * (screenH/2) / tan(fov/2)
-        // At depth d: filterRadius = K/d = 0.6 * projectedDiameter(pixels)
-        // Override by setting _NRF_ProjectedParticleK > 0 in the material inspector.
         float kOverride = Material.GetFloat(ID_NRF_ProjectedParticleK);
         float nrfProjK;
         if (kOverride > 0f)
@@ -106,9 +81,6 @@ public sealed class WaterSSFRenderPass : ScriptableRenderPass
                                    / Mathf.Tan(fovRad * 0.5f);
         }
 
-        // ============================================================
-        // 1) Texture descriptors + handles
-        // ============================================================
         var baseDesc = cameraData.cameraTargetDescriptor;
         baseDesc.depthBufferBits = 0;
         baseDesc.msaaSamples     = 1;
@@ -124,14 +96,12 @@ public sealed class WaterSSFRenderPass : ScriptableRenderPass
         TextureHandle thickness       = UniversalRenderer.CreateRenderGraphTexture(rg, thicknessDesc, "_WaterSSFThickness",       false);
         TextureHandle thicknessBlurA  = UniversalRenderer.CreateRenderGraphTexture(rg, thicknessDesc, "_WaterSSFThicknessBlurA",  false);
         TextureHandle thicknessSmooth = UniversalRenderer.CreateRenderGraphTexture(rg, thicknessDesc, "_WaterSSFThicknessSmooth", false);
-        // NRF depth blur: one unique handle per intermediate step — URP RenderGraph requires
-        // each transient handle to be written by exactly one pass.
-        TextureHandle depthBlur1X     = UniversalRenderer.CreateRenderGraphTexture(rg, depthDesc, "_WaterSSFDepthBlur1X", false); // iter1 X out
-        TextureHandle depthBlur1Y     = UniversalRenderer.CreateRenderGraphTexture(rg, depthDesc, "_WaterSSFDepthBlur1Y", false); // iter1 Y out
-        TextureHandle depthBlur2X     = UniversalRenderer.CreateRenderGraphTexture(rg, depthDesc, "_WaterSSFDepthBlur2X", false); // iter2 X out
-        TextureHandle depthBlur2Y     = UniversalRenderer.CreateRenderGraphTexture(rg, depthDesc, "_WaterSSFDepthBlur2Y", false); // iter2 Y out
-        TextureHandle depthBlur3X     = UniversalRenderer.CreateRenderGraphTexture(rg, depthDesc, "_WaterSSFDepthBlur3X", false); // iter3 X out
-        TextureHandle depthBlur3Y     = UniversalRenderer.CreateRenderGraphTexture(rg, depthDesc, "_WaterSSFDepthBlur3Y", false); // iter3 Y out (final)
+        TextureHandle depthBlur1X     = UniversalRenderer.CreateRenderGraphTexture(rg, depthDesc, "_WaterSSFDepthBlur1X", false);
+        TextureHandle depthBlur1Y     = UniversalRenderer.CreateRenderGraphTexture(rg, depthDesc, "_WaterSSFDepthBlur1Y", false);
+        TextureHandle depthBlur2X     = UniversalRenderer.CreateRenderGraphTexture(rg, depthDesc, "_WaterSSFDepthBlur2X", false);
+        TextureHandle depthBlur2Y     = UniversalRenderer.CreateRenderGraphTexture(rg, depthDesc, "_WaterSSFDepthBlur2Y", false);
+        TextureHandle depthBlur3X     = UniversalRenderer.CreateRenderGraphTexture(rg, depthDesc, "_WaterSSFDepthBlur3X", false);
+        TextureHandle depthBlur3Y     = UniversalRenderer.CreateRenderGraphTexture(rg, depthDesc, "_WaterSSFDepthBlur3Y", false);
         TextureHandle normalsTex      = UniversalRenderer.CreateRenderGraphTexture(rg, normalsDesc,   "_WaterSSFNormals",         false);
         TextureHandle normalsBlurA    = UniversalRenderer.CreateRenderGraphTexture(rg, normalsDesc,   "_WaterSSFNormalsBlurA",    false);
         TextureHandle normalsSmooth   = UniversalRenderer.CreateRenderGraphTexture(rg, normalsDesc,   "_WaterSSFNormalsSmooth",   false);
@@ -158,9 +128,6 @@ public sealed class WaterSSFRenderPass : ScriptableRenderPass
             }
         }
 
-        // ============================================================
-        // 2) Particle depth pass — sphere impostor, HW Z, eye-depth
-        // ============================================================
         RecordParticleDraw(rg, "Water SSF Depth", PASS_DEPTH,
             colorTarget: depthRaw, depthTarget: depthHWBuf,
             clearColor: true, clearDepth: true, useLightMatrices: false,
@@ -168,9 +135,6 @@ public sealed class WaterSSFRenderPass : ScriptableRenderPass
             drawCallback: OnDrawDepth,
             exposeColorAsGlobalID: ID_WaterSSFDepthRaw);
 
-        // ============================================================
-        // 3) Particle thickness pass — additive splat
-        // ============================================================
         RecordParticleDraw(rg, "Water SSF Thickness", PASS_THICKNESS,
             colorTarget: thickness, depthTarget: TextureHandle.nullHandle,
             clearColor: true, clearDepth: false, useLightMatrices: false,
@@ -178,18 +142,9 @@ public sealed class WaterSSFRenderPass : ScriptableRenderPass
             drawCallback: OnDrawThickness,
             exposeColorAsGlobalID: ID_WaterSSFThickness);
 
-        // ============================================================
-        // 3.5) Gaussian thickness blur X+Y
-        //      Matches reference gaussian.wgsl (filterSize=15, sigma=filterSize/3).
-        //      Smooths out the per-particle additive splats so Beer-Lambert
-        //      absorption doesn't create dark halos at particle centres.
-        // ============================================================
         RecordThicknessBlur(rg, "Water SSF Thickness Blur X", thickness,      thicknessBlurA,  baseDesc.width, baseDesc.height, new Vector2(1f / baseDesc.width,  0f), false);
         RecordThicknessBlur(rg, "Water SSF Thickness Blur Y", thicknessBlurA, thicknessSmooth, baseDesc.width, baseDesc.height, new Vector2(0f, 1f / baseDesc.height), true);
 
-        // ============================================================
-        // 4) Particle light-depth pass — optional
-        // ============================================================
         if (useLightShadow)
         {
             RecordParticleDraw(rg, "Water SSF Light Depth", PASS_LIGHT_DEPTH,
@@ -199,51 +154,25 @@ public sealed class WaterSSFRenderPass : ScriptableRenderPass
                 drawCallback: OnDrawLightDepth);
         }
 
-        // ============================================================
-        // 5) Narrow-Range Filter — 3 iterations (matches reference pipeline)
-        //    Reference: 2× 1D(X+Y) + 1× 2D(X+Y) = 6 blur passes total.
-        //    We run 3× 1D(X+Y) which achieves equivalent smoothing.
-        //    Ping-pong: unique handle per pass (URP RenderGraph requirement).
-        // ============================================================
-        // Each src→dst pair uses a UNIQUE destination handle — required by URP RenderGraph
-        // (a transient texture may only be the render attachment of exactly one pass).
-        // Iteration 1
         RecordBlur(rg, "Water SSF Blur X1", depthRaw,    depthBlur1X, nrfMaxSize, nrfProjK, nrfMu, nrfThresh, baseDesc.width, baseDesc.height, new Vector2(1f / baseDesc.width,  0f), false);
         RecordBlur(rg, "Water SSF Blur Y1", depthBlur1X, depthBlur1Y, nrfMaxSize, nrfProjK, nrfMu, nrfThresh, baseDesc.width, baseDesc.height, new Vector2(0f, 1f / baseDesc.height), false);
-        // Iteration 2
         RecordBlur(rg, "Water SSF Blur X2", depthBlur1Y, depthBlur2X, nrfMaxSize, nrfProjK, nrfMu, nrfThresh, baseDesc.width, baseDesc.height, new Vector2(1f / baseDesc.width,  0f), false);
         RecordBlur(rg, "Water SSF Blur Y2", depthBlur2X, depthBlur2Y, nrfMaxSize, nrfProjK, nrfMu, nrfThresh, baseDesc.width, baseDesc.height, new Vector2(0f, 1f / baseDesc.height), false);
-        // Iteration 3 (final — expose result as global _WaterSSFDepthSmooth, matches Splash-main 3rd filter pass)
         RecordBlur(rg, "Water SSF Blur X3", depthBlur2Y, depthBlur3X, nrfMaxSize, nrfProjK, nrfMu, nrfThresh, baseDesc.width, baseDesc.height, new Vector2(1f / baseDesc.width,  0f), false);
         RecordBlur(rg, "Water SSF Blur Y3", depthBlur3X, depthBlur3Y, nrfMaxSize, nrfProjK, nrfMu, nrfThresh, baseDesc.width, baseDesc.height, new Vector2(0f, 1f / baseDesc.height), true);
 
-        // ============================================================
-        // 6) Normals from smoothed depth
-        // ============================================================
         RecordNormals(rg, depthBlur3Y, thicknessSmooth, normalsTex, baseDesc.width, baseDesc.height);
 
-        // ============================================================
-        // 6.5) Normals blur X+Y — smooths encoded normals for softer shading
-        // ============================================================
         RecordNormalsBlur(rg, "Water SSF Normals Blur X", normalsTex,   normalsBlurA, depthBlur3Y, baseDesc.width, baseDesc.height, new Vector2(1f / baseDesc.width,  0f), false);
         RecordNormalsBlur(rg, "Water SSF Normals Blur Y", normalsBlurA, normalsSmooth, depthBlur3Y, baseDesc.width, baseDesc.height, new Vector2(0f, 1f / baseDesc.height), true);
 
-        // ============================================================
-        // 7) Scene copy (needed by composite)
-        // ============================================================
         RecordSceneCopy(rg, resourceData.activeColorTexture, sceneCopy);
 
-        // ============================================================
-        // 8) Composite
-        // ============================================================
         RecordComposite(rg, depthBlur3Y, normalsSmooth, thicknessSmooth, sceneCopy,
             lightDepth, lightVP, useLightShadow,
             resourceData.activeColorTexture, resourceData.activeDepthTexture);
     }
 
-    // ----------------------------------------------------------------
-    // Particle draw helper — used by depth, thickness, light-depth.
-    // ----------------------------------------------------------------
     private sealed class ParticleDrawData
     {
         public Material material;
@@ -301,15 +230,11 @@ public sealed class WaterSSFRenderPass : ScriptableRenderPass
 
                 d.draw?.Invoke(ctx.cmd, d.material);
 
-                // Always reset override flag so subsequent passes use camera matrices.
                 ctx.cmd.SetGlobalInt(ID_SSFUseOverrideMatrices, 0);
             });
         }
     }
 
-    // ----------------------------------------------------------------
-    // Bilateral blur (one direction).
-    // ----------------------------------------------------------------
     private sealed class BlurData
     {
         public TextureHandle source;
@@ -349,8 +274,6 @@ public sealed class WaterSSFRenderPass : ScriptableRenderPass
                 ctx.cmd.SetGlobalTexture(ID_WaterSSFDepthSource,       d.source);
                 ctx.cmd.SetGlobalVector (ID_WaterSSFDepthTexelSize,    d.texelSize);
                 ctx.cmd.SetGlobalVector (ID_WaterSSFBlurDirection,     d.blurDirection);
-                // Use SetGlobalFloat — material.SetFloat inside a render func does NOT
-                // propagate to GPU shader constants in URP RenderGraph.
                 ctx.cmd.SetGlobalFloat  (ID_NRF_MaxFilterSize,      d.nrfMaxFilterSize);
                 ctx.cmd.SetGlobalFloat  (ID_NRF_ProjectedParticleK, d.nrfProjK);
                 ctx.cmd.SetGlobalFloat  (ID_NRF_Mu,                 d.nrfMu);
@@ -360,10 +283,6 @@ public sealed class WaterSSFRenderPass : ScriptableRenderPass
         }
     }
 
-    // ----------------------------------------------------------------
-    // Gaussian thickness blur (one direction — run X then Y).
-    // Matches reference gaussian.wgsl (filterSize=15, sigma=filterSize/3).
-    // ----------------------------------------------------------------
     private sealed class ThicknessBlurData
     {
         public TextureHandle source;
@@ -399,9 +318,6 @@ public sealed class WaterSSFRenderPass : ScriptableRenderPass
         }
     }
 
-    // ----------------------------------------------------------------
-    // Normals.
-    // ----------------------------------------------------------------
     private sealed class NormalsData
     {
         public TextureHandle smoothDepth;
@@ -432,9 +348,6 @@ public sealed class WaterSSFRenderPass : ScriptableRenderPass
         }
     }
 
-    // ----------------------------------------------------------------
-    // Scene-color copy.
-    // ----------------------------------------------------------------
     private sealed class SceneCopyData { public TextureHandle source; }
 
     private void RecordSceneCopy(RenderGraph rg, TextureHandle activeColor, TextureHandle sceneCopy)
@@ -453,9 +366,6 @@ public sealed class WaterSSFRenderPass : ScriptableRenderPass
         }
     }
 
-    // ----------------------------------------------------------------
-    // Debug display.
-    // ----------------------------------------------------------------
     private sealed class DebugDisplayData { public TextureHandle source; }
 
     private void RecordDebugDisplay(RenderGraph rg, TextureHandle source, TextureHandle activeColor)
@@ -473,9 +383,6 @@ public sealed class WaterSSFRenderPass : ScriptableRenderPass
         }
     }
 
-    // ----------------------------------------------------------------
-    // Composite.
-    // ----------------------------------------------------------------
     private sealed class CompositeData
     {
         public TextureHandle smoothDepth;
@@ -529,11 +436,6 @@ public sealed class WaterSSFRenderPass : ScriptableRenderPass
         }
     }
 
-    // ----------------------------------------------------------------
-    // Normals blur (one direction — run X then Y).
-    // Separable Gaussian on the encoded-normals texture.
-    // Skips background pixels (eyeDepth == 0).
-    // ----------------------------------------------------------------
     private sealed class NormalsBlurData
     {
         public TextureHandle source;
@@ -574,9 +476,6 @@ public sealed class WaterSSFRenderPass : ScriptableRenderPass
         }
     }
 
-    // ----------------------------------------------------------------
-    // Build orthographic light view / projection that fits the bounds.
-    // ----------------------------------------------------------------
     private bool TryBuildLightMatrices(out Matrix4x4 view, out Matrix4x4 proj)
     {
         view = Matrix4x4.identity;
@@ -585,7 +484,6 @@ public sealed class WaterSSFRenderPass : ScriptableRenderPass
         Light sun = RenderSettings.sun;
         if (sun == null)
         {
-            // Re-use cached reference; re-scan only when it becomes null/inactive.
             if (_cachedLight != null && _cachedLight.isActiveAndEnabled)
             {
                 sun = _cachedLight;
@@ -629,8 +527,6 @@ public sealed class WaterSSFRenderPass : ScriptableRenderPass
         view = Matrix4x4.LookAt(lightPos, boundsCenter, upVec).inverse;
 
         proj = Matrix4x4.Ortho(-diag, diag, -diag, diag, 0.01f, diag * 4f);
-        // Convert to GPU projection (handles flipped Y, reversed Z, etc.) so light VP
-        // matches what shaders expect when constructing clip-space coordinates.
         proj = GL.GetGPUProjectionMatrix(proj, true);
         return true;
     }

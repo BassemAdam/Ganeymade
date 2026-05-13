@@ -1,19 +1,3 @@
-// ============================================================
-// Water Screen-Space Fluid — URP Renderer Feature (orchestrator).
-//
-// Owns the full Simon Green pipeline:
-//   0  Depth         (sphere impostor, eye-depth + HW Z)
-//   1  Thickness     (Gaussian splats, additive)
-//   2  LightDepth    (sphere impostor from light POV — optional)
-//   3  Blur X/Y      (separable bilateral on eye-depth)
-//   4  Normals       (edge-aware finite differences)
-//   5  Composite     (Fresnel + Beer + refr + refl + shadow)
-//   6  ThicknessBlur (separable Gaussian on thickness, X then Y)
-//   7  NormalsBlur   (separable Gaussian on normals,   X then Y)
-//
-// State + draw events are static so a single MonoBehaviour bridge
-// (WaterPhaseScreenSpaceFluidRenderer) can drive every active camera.
-// ============================================================
 using System;
 using UnityEngine;
 using UnityEngine.Rendering;
@@ -21,7 +5,6 @@ using UnityEngine.Rendering.Universal;
 
 public sealed class WaterScreenSpaceFluidFeature : ScriptableRendererFeature
 {
-    // -------- Static API consumed by WaterPhaseScreenSpaceFluidRenderer --------
     public static event Action<RasterCommandBuffer, Material> OnDrawDepth;
     public static event Action<RasterCommandBuffer, Material> OnDrawThickness;
     public static event Action<RasterCommandBuffer, Material> OnDrawLightDepth;
@@ -29,12 +12,10 @@ public sealed class WaterScreenSpaceFluidFeature : ScriptableRendererFeature
     public static bool     IsActive;
     public static Material ActiveMaterial;
 
-    // Optional simulation bounds (world space) — used to fit the light view.
     public static Vector3 BoundsMin;
     public static Vector3 BoundsMax;
     public static bool    HasBounds;
 
-    // -------- Inspector knobs --------
     [SerializeField] private RenderPassEvent injectionPoint = RenderPassEvent.BeforeRenderingTransparents;
 
     [Header("Light-View Shadow")]

@@ -1,11 +1,6 @@
 #ifndef RAY_MARCH_VAPOUR_INCLUDED
 #define RAY_MARCH_VAPOUR_INCLUDED
 
-// Vapour-specific visualization code lives here on purpose:
-// - the physical G channel is the source-of-truth mask
-// - any non-empty physical vapour cell becomes a presence gate
-// - world-space domain-warped FBM provides the visual/procedural density
-// - this mirrors the procedural path used by Custom/VapourVolume
 
 bool HasPhysicalVapour(float rawVapourDensity)
 {
@@ -121,9 +116,6 @@ float SampleVapourDensityProceduralWS(float3 posWS, float rawVapourDensity)
     float3 p = driftedPos / max(_NoiseScale, 1e-5);
     p.y /= max(_VapourVerticalStretch, 0.05);
 
-    // Two nested vector-noise warps give the vapour a rolling, turbulent flow
-    // instead of a single drifting noise field. It is cheaper than true curl
-    // noise but produces a similar art-directable gas motion in the raymarch.
     float3 flowA = RaymarchVapourVectorNoise3D(p * 0.7);
     float3 flowB = RaymarchVapourVectorNoise3D(p * 1.37 + flowA * 0.55 + _Time.y * 0.07);
     float3 flow = flowA * 0.65 + flowB * 0.35;
@@ -170,9 +162,6 @@ float EvaluateVapourPhase(float3 viewRayDirectionWS, float3 lightDirectionWS)
     float g2 = g * g;
     float cosTheta = clamp(dot(lightDir, viewDir), -1.0, 1.0);
 
-    // Henyey-Greenstein without the 1 / 4pi term so g = 0 remains exactly 1.
-    // Blending by |g| keeps the control stable for look-dev while still giving
-    // forward-lit steam a bright silver edge when viewed toward the light.
     float hg = (1.0 - g2) / pow(max(1.0 + g2 - 2.0 * g * cosTheta, 1e-4), 1.5);
     float phase = lerp(1.0, hg, saturate(abs(g)));
 
@@ -191,8 +180,6 @@ float3 EvaluateVapourDirectScatter(
     if (vapourDensity <= 1e-6)
         return 0.0;
 
-    // God-ray mode: main-light shadows create the bright/dark shaft pattern,
-    // but a floor keeps shadowed vapour visible instead of crushing to black.
     float shadowWithFloor = lerp(saturate(_VapourShadowFloor), 1.0, saturate(shadowAtten));
     float godRayFactor = lerp(1.0, shadowWithFloor, saturate(_VapourGodRayStrength));
     float phaseFactor = EvaluateVapourPhase(viewRayDirectionWS, lightDirectionWS);

@@ -228,24 +228,24 @@ public class PhysicsWaterPhaseBridge : MonoBehaviour
 
     private void RenderActivePresentation(Vector3 boundsMin, Vector3 boundsMax)
     {
-        if (settings.Rendering.mode != _lastRenderMode)
-        {
-            if (_raymarchRenderer != null)
-                _raymarchRenderer.SetInactive();
-            if (_marchingRenderer != null)
-                _marchingRenderer.SetInactive();
-            if (_screenSpaceFluidRenderer != null)
-                _screenSpaceFluidRenderer.SetInactive();
-
-            _lastRenderMode = settings.Rendering.mode;
-        }
+        // if (settings.Rendering.mode != _lastRenderMode)
+        // {
+        //     if (_raymarchRenderer != null)
+        //         _raymarchRenderer.SetInactive();
+        //     if (_marchingRenderer != null)
+        //         _marchingRenderer.SetInactive();
+        //     if (_screenSpaceFluidRenderer != null)
+        //         _screenSpaceFluidRenderer.SetInactive();
+        //
+        //     _lastRenderMode = settings.Rendering.mode;
+        // }
 
         if (settings.Rendering.mode == WaterSurfaceRenderMode.RaymarchVolume)
         {
-            if (_marchingRenderer != null)
-                _marchingRenderer.SetInactive();
-            if (_screenSpaceFluidRenderer != null)
-                _screenSpaceFluidRenderer.SetInactive();
+            // if (_marchingRenderer != null)
+            //     _marchingRenderer.SetInactive();
+            // if (_screenSpaceFluidRenderer != null)
+            //     _screenSpaceFluidRenderer.SetInactive();
 
             if (_raymarchRenderer != null)
             {
@@ -262,13 +262,13 @@ public class PhysicsWaterPhaseBridge : MonoBehaviour
             return;
         }
 
-        if (_raymarchRenderer != null)
-            _raymarchRenderer.SetInactive();
+        // if (_raymarchRenderer != null)
+        //     _raymarchRenderer.SetInactive();
 
         if (settings.Rendering.mode == WaterSurfaceRenderMode.ScreenSpaceFluid)
         {
-            if (_marchingRenderer != null)
-                _marchingRenderer.SetInactive();
+            // if (_marchingRenderer != null)
+            //     _marchingRenderer.SetInactive();
 
             if (_screenSpaceFluidRenderer != null)
                 _screenSpaceFluidRenderer.Render(settings, _computePlugin, _resources, boundsMin, boundsMax, gameObject.layer);
@@ -276,8 +276,8 @@ public class PhysicsWaterPhaseBridge : MonoBehaviour
             return;
         }
 
-        if (_screenSpaceFluidRenderer != null)
-            _screenSpaceFluidRenderer.SetInactive();
+        // if (_screenSpaceFluidRenderer != null)
+        //     _screenSpaceFluidRenderer.SetInactive();
 
         if (_marchingRenderer != null)
             _marchingRenderer.Render(settings, _resources, boundsMin, boundsMax, gameObject.layer);

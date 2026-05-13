@@ -1,9 +1,6 @@
 #ifndef RAY_MARCH_LIGHTING_INCLUDED
 #define RAY_MARCH_LIGHTING_INCLUDED
 
-// Simple liquid-only self-shadowing. Vapour self-shadowing and phase functions
-// are intentionally left out while the vapour mask/texture visualization is
-// being tuned step by step.
 float3 CalculateTransmittedSunLightLiquid(
     float3 posWS,
     float3 liquidExtinction,
@@ -15,10 +12,6 @@ float3 CalculateTransmittedSunLightLiquid(
     float  dstToSunExit = lightBounds.x + lightBounds.y;
 
     float3 opticalDepth = 0.0;
-    // Jitter the first shadow step by a fraction of lightStepSize — exactly the
-    // same pattern as the view march: distanceToVolume + safeStepSize * blueNoiseValue.
-    // Without the multiply the offset is raw world-space (0-1 m) and has no
-    // relationship to the step size, so banding is unchanged.
     float  dist         = lightBounds.x + lightStepSize * shadowJitter;
 
     while (dist < dstToSunExit)

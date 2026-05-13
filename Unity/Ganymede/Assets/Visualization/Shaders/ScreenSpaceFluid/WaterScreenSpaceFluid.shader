@@ -1,31 +1,14 @@
 Shader "Custom/WaterScreenSpaceFluid"
 {
-    // ============================================================
-    // Simon Green Screen-Space Fluid Rendering — multi-pass shader.
-    // Pass order matches the order of rendering each frame:
-    //   0 ScreenSpaceFluidDepth        sphere impostor → eye-depth + HW Z
-    //   1 ScreenSpaceFluidThickness    Gaussian splat (additive, no Z)
-    //   2 ScreenSpaceFluidLightDepth   sphere impostor from light POV
-    //   3 ScreenSpaceFluidBlur         separable bilateral on eye-depth
-    //   4 ScreenSpaceFluidNormals      edge-aware finite differences
-    //   5 ScreenSpaceFluidComposite    Fresnel + Beer + refr + refl + shadow
-    //   6 ScreenSpaceFluidThicknessBlur separable Gaussian blur on thickness (X or Y)
-    //   7 ScreenSpaceFluidNormalsBlur  separable Gaussian blur on normals (X or Y)
-    // ============================================================
     Properties
     {
-        // -- Surface reconstruction --
         _ParticleRadius           ("Particle Radius (WS)",         Float) = 0.10
-        // Narrow-Range Filter (Truong et al. 2018)
-        // _NRF_ProjectedParticleK is auto-computed in C# (0 = auto); set non-zero to override.
-        // Calibrated to: maxFilter=50, mu=3*radius, depthThresh=10*radius (matches reference).
         _NRF_MaxFilterSize        ("NRF Max Filter Radius (px)",   Float) = 50
         _NRF_ProjectedParticleK   ("NRF Projected Particle K (0=auto)", Float) = 0
         _NRF_Mu                   ("NRF Mu (snap offset, m)",      Float) = 0.3
         _NRF_DepthThreshold       ("NRF Depth Threshold (m)",      Float) = 1.0
         _NormalStepPixels         ("Normal Step Pixels",           Range(1,4)) = 1
 
-        // -- Water look --
         [HDR] _FluidColor         ("Fluid Color",                  Color) = (0.549,0.863,0.941,1)
 
         _FluidSmoothness          ("Smoothness",                   Range(0,1)) = 0.96
@@ -50,7 +33,6 @@ Shader "Custom/WaterScreenSpaceFluid"
         #include "SSF/SSF_Common.hlsl"
         ENDHLSL
 
-        // 0 — sphere impostor depth
         Pass
         {
             Name "ScreenSpaceFluidDepth"
@@ -63,7 +45,6 @@ Shader "Custom/WaterScreenSpaceFluid"
             ENDHLSL
         }
 
-        // 1 — additive Gaussian thickness
         Pass
         {
             Name "ScreenSpaceFluidThickness"
@@ -76,7 +57,6 @@ Shader "Custom/WaterScreenSpaceFluid"
             ENDHLSL
         }
 
-        // 2 — sphere impostor depth from light POV
         Pass
         {
             Name "ScreenSpaceFluidLightDepth"
@@ -89,7 +69,6 @@ Shader "Custom/WaterScreenSpaceFluid"
             ENDHLSL
         }
 
-        // 3 — separable bilateral blur on eye-depth
         Pass
         {
             Name "ScreenSpaceFluidBlur"
@@ -102,7 +81,6 @@ Shader "Custom/WaterScreenSpaceFluid"
             ENDHLSL
         }
 
-        // 4 — view-space normals from smoothed depth
         Pass
         {
             Name "ScreenSpaceFluidNormals"
@@ -115,7 +93,6 @@ Shader "Custom/WaterScreenSpaceFluid"
             ENDHLSL
         }
 
-        // 5 — composite (lighting, refraction, reflection, shadow, noise)
         Pass
         {
             Name "ScreenSpaceFluidComposite"
@@ -132,7 +109,6 @@ Shader "Custom/WaterScreenSpaceFluid"
             ENDHLSL
         }
 
-        // 6 — separable Gaussian blur on the thickness map (X or Y direction)
         Pass
         {
             Name "ScreenSpaceFluidThicknessBlur"
@@ -145,7 +121,6 @@ Shader "Custom/WaterScreenSpaceFluid"
             ENDHLSL
         }
 
-        // 7 — separable Gaussian blur on encoded normals (X or Y direction)
         Pass
         {
             Name "ScreenSpaceFluidNormalsBlur"

@@ -4,8 +4,6 @@
 #define IOR_AIR   1.0003
 #define IOR_WATER 1.3330
 
-// Exact unpolarized Fresnel reflectance, matching the reference raymarcher:
-// average of perpendicular and parallel polarization reflectance.
 float CalculateReflectance(float3 inDir, float3 normal, float iorA, float iorB)
 {
     float refractRatio = iorA / iorB;
@@ -15,7 +13,6 @@ float CalculateReflectance(float3 inDir, float3 normal, float iorA, float iorB)
         return 1.0;
 
     float cosAngleOfRefraction = sqrt(max(0.0, 1.0 - sinSqrAngleOfRefraction));
-    // https://en.wikipedia.org/wiki/Fresnel_equations
     float rPerpendicular = (iorA * cosAngleIn - iorB * cosAngleOfRefraction)
                          / max(iorA * cosAngleIn + iorB * cosAngleOfRefraction, 1e-6);
     rPerpendicular *= rPerpendicular;
@@ -48,14 +45,14 @@ struct SurfaceHit
 {
     bool   hit;
     float3 posWS;
-    float3 normal;        // View-facing optical normal used by Fresnel/refraction.
-    float3 outwardNormal; // Raw density/bounds normal, stable for debugging surface shape.
+    float3 normal;
+    float3 outwardNormal;
     float3 reflectDir;
     float3 refractDir;
     float  reflectWeight;
     float  refractWeight;
     bool   totalInternalReflection;
-    float  enteringWater; // 1.0 = air->water (camera outside), 0.0 = water->air (camera inside)
+    float  enteringWater;
 };
 
 SurfaceHit NoSurfaceHit()
@@ -76,23 +73,17 @@ SurfaceHit NoSurfaceHit()
 
 SurfaceHit MakeSurfaceHit(float3 posWS, float3 rayDir, bool enteringWater)
 {
-    // Initialize all fields first so no code path leaves any field uninitialized.
     SurfaceHit s = NoSurfaceHit();
     s.hit   = true;
     s.posWS = posWS;
 
     float3 n = GetSurfaceNormalWS(posWS, rayDir);
-    // A zero normal means the local density gradient was below threshold — this
-    // crossing is not a real surface (e.g. noise, interior bulk, or thin wisp).
-    // Discard it so the ray loop can continue searching for a genuine surface.
     if (dot(n, n) < 1e-8)
         return NoSurfaceHit();
 
     s.outwardNormal = n;
     s.enteringWater = enteringWater ? 1.0 : 0.0;
 
-    // The outward normal may still point into the liquid from the viewer's side.
-    // Flip it if needed so Fresnel/reflection/refraction are correct.
     if (dot(n, rayDir) > 0.0)
         n = -n;
     s.normal = n;
@@ -115,11 +106,6 @@ SurfaceHit MakeSurfaceHit(float3 posWS, float3 rayDir, bool enteringWater)
     else
     {
         s.refractDir = normalize(rawRefracted);
-
-        // Soft transition approaching the TIR critical angle.
-        // sin²(refractAngle) approaches 1.0 at the critical angle; blend
-        // reflectWeight toward 1.0 over [1-softness, 1.0] so the Snell's
-        // window edge fades instead of appearing as a hard circle.
         float tirSoftness = max(_TIRSoftness, 0.0);
         if (tirSoftness > 1e-4)
         {
