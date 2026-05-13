@@ -15,7 +15,7 @@ float CalculateReflectance(float3 inDir, float3 normal, float iorA, float iorB)
         return 1.0;
 
     float cosAngleOfRefraction = sqrt(max(0.0, 1.0 - sinSqrAngleOfRefraction));
-
+    // https://en.wikipedia.org/wiki/Fresnel_equations
     float rPerpendicular = (iorA * cosAngleIn - iorB * cosAngleOfRefraction)
                          / max(iorA * cosAngleIn + iorB * cosAngleOfRefraction, 1e-6);
     rPerpendicular *= rPerpendicular;

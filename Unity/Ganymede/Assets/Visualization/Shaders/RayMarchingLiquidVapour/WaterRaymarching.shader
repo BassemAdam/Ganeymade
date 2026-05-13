@@ -293,23 +293,40 @@ Shader "Custom/WaterRaymarching"
 
                     #if defined(_ADDITIONAL_LIGHTS)
                         float3 vapourScatterAdditional = 0.0;
-                        if (dv > 1e-6)
+                        float3 liquidScatterAdditional = 0.0;
+                        if (dl > 1e-6 || dv > 1e-6)
                         {
                             inputData.positionWS = samplePositionWS;
                             LIGHT_LOOP_BEGIN(additionalLightsCount)
                                 Light additionalLight = GetAdditionalLight(lightIndex, samplePositionWS);
                                 half3 radiance = additionalLight.color * additionalLight.distanceAttenuation;
-                                vapourScatterAdditional += EvaluateVapourDirectScatter(
-                                    dv,
-                                    safeStepSize,
-                                    1.0,
-                                    radiance,
-                                    viewData.viewRayDirectionWS,
-                                    additionalLight.direction
-                                );
+                                if (dv > 1e-6)
+                                {
+                                    vapourScatterAdditional += EvaluateVapourDirectScatter(
+                                        dv,
+                                        safeStepSize,
+                                        1.0,
+                                        radiance,
+                                        viewData.viewRayDirectionWS,
+                                        additionalLight.direction
+                                    );
+                                }
+                                if (dl > 1e-6)
+                                {
+                                    // Beer-Lambert single scatter: L_s = sigma_s * rho * L_in * ds
+                                    // No self-shadow march for point lights: the march direction
+                                    // changes per sample position and per light, making a volumetric
+                                    // shadow walk prohibitively expensive per step.  Distance
+                                    // attenuation + shadow-map attenuation (shadowAttenuation) still
+                                    // produce correctly attenuated coloured light pooling inside the
+                                    // liquid volume.
+                                    liquidScatterAdditional += _LiquidScatterColor * dl * safeStepSize
+                                        * radiance * additionalLight.shadowAttenuation;
+                                }
                             LIGHT_LOOP_END
                         }
                         vapourScatter += vapourScatterAdditional;
+                        liquidScatter += liquidScatterAdditional;
                     #endif
 
                     float3 inScatter = liquidScatter + vapourScatter;

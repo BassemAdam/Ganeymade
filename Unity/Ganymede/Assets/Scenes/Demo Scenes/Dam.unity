@@ -639,12 +639,12 @@ MonoBehaviour:
     densityGrid:
       volumeDims: {x: 128, y: 128, z: 128}
       vapourSmoothingRadiusWS: 0.1
-      maxKernelRadiusVoxels: 2
+      maxKernelRadiusVoxels: 4
     raymarchBlur:
-      liquidBlurEnabled: 0
-      liquidBlurRadius: 2
+      liquidBlurEnabled: 1
+      liquidBlurRadius: 3
       liquidBlurSigma: 4
-      liquidBlurDetailPreserve: 0.057
+      liquidBlurDetailPreserve: 0
       vapourBlurEnabled: 1
       vapourBlurRadius: 4
       vapourBlurSigma: 4
@@ -673,7 +673,7 @@ MonoBehaviour:
       adaptiveDensityBulk: 260
       adaptiveDensityCurve: 0.4
     rendering:
-      mode: 2
+      mode: 0
       rayMarchingMaterial: {fileID: 2100000, guid: 03c4cd8b0ea45e14190b02d13513c0d9, type: 2}
       marchingCubesMaterial: {fileID: 2100000, guid: a5f165da16e6e4a4e8b93a9c48ecc59b, type: 2}
       vapourRaymarchMaterial: {fileID: 2100000, guid: ecfb9a36afdd6404e9a46793705c4a27, type: 2}
@@ -2179,7 +2179,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 4161998456328252244, guid: 18cf1fa5220a198409fde72db8b3e2a5, type: 3}
       propertyPath: boundsMin.x
-      value: -22.54
+      value: -20.7
       objectReference: {fileID: 0}
     - target: {fileID: 4161998456328252244, guid: 18cf1fa5220a198409fde72db8b3e2a5, type: 3}
       propertyPath: boundsMin.y

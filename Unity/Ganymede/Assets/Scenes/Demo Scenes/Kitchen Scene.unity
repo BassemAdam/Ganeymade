@@ -545,7 +545,7 @@ MonoBehaviour:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 681215785}
-  m_Enabled: 0
+  m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: e9eb36d79300fe7428f1000517630b74, type: 3}
   m_Name: 
@@ -560,9 +560,9 @@ MonoBehaviour:
       vapourSmoothingRadiusWS: 0.1
       maxKernelRadiusVoxels: 2
     raymarchBlur:
-      liquidBlurEnabled: 0
-      liquidBlurRadius: 1
-      liquidBlurSigma: 1
+      liquidBlurEnabled: 1
+      liquidBlurRadius: 3
+      liquidBlurSigma: 3.19
       liquidBlurDetailPreserve: 0
       vapourBlurEnabled: 1
       vapourBlurRadius: 4
@@ -578,12 +578,12 @@ MonoBehaviour:
       vapourBlurSigma: 0.1
       vapourBlurDetailPreserve: 0
     raymarchSmoothing:
-      liquidSmoothingRadiusWS: 1
+      liquidSmoothingRadiusWS: 0
       adaptiveRadiusEnabled: 1
-      liquidBulkSmoothingRadiusWS: 2.5
+      liquidBulkSmoothingRadiusWS: 0.32
       adaptiveDensitySurface: 175
-      adaptiveDensityBulk: 300
-      adaptiveDensityCurve: 0.4
+      adaptiveDensityBulk: 239
+      adaptiveDensityCurve: 1
     marchingCubesSmoothing:
       liquidSmoothingRadiusWS: 0
       adaptiveRadiusEnabled: 1
@@ -592,7 +592,7 @@ MonoBehaviour:
       adaptiveDensityBulk: 260
       adaptiveDensityCurve: 0.4
     rendering:
-      mode: 2
+      mode: 0
       rayMarchingMaterial: {fileID: 2100000, guid: 03c4cd8b0ea45e14190b02d13513c0d9, type: 2}
       marchingCubesMaterial: {fileID: 2100000, guid: a5f165da16e6e4a4e8b93a9c48ecc59b, type: 2}
       vapourRaymarchMaterial: {fileID: 2100000, guid: ecfb9a36afdd6404e9a46793705c4a27, type: 2}
@@ -855,27 +855,27 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 4161998456328252244, guid: 18cf1fa5220a198409fde72db8b3e2a5, type: 3}
       propertyPath: boundsMax.x
-      value: 30.7
+      value: 30
       objectReference: {fileID: 0}
     - target: {fileID: 4161998456328252244, guid: 18cf1fa5220a198409fde72db8b3e2a5, type: 3}
       propertyPath: boundsMax.y
-      value: 23.9
+      value: 20
       objectReference: {fileID: 0}
     - target: {fileID: 4161998456328252244, guid: 18cf1fa5220a198409fde72db8b3e2a5, type: 3}
       propertyPath: boundsMax.z
-      value: 16.41
+      value: 17
       objectReference: {fileID: 0}
     - target: {fileID: 4161998456328252244, guid: 18cf1fa5220a198409fde72db8b3e2a5, type: 3}
       propertyPath: boundsMin.x
-      value: 9.47
+      value: 9
       objectReference: {fileID: 0}
     - target: {fileID: 4161998456328252244, guid: 18cf1fa5220a198409fde72db8b3e2a5, type: 3}
       propertyPath: boundsMin.y
-      value: -0.88
+      value: 7
       objectReference: {fileID: 0}
     - target: {fileID: 4161998456328252244, guid: 18cf1fa5220a198409fde72db8b3e2a5, type: 3}
       propertyPath: boundsMin.z
-      value: 9.6
+      value: 10
       objectReference: {fileID: 0}
     - target: {fileID: 4161998456328252244, guid: 18cf1fa5220a198409fde72db8b3e2a5, type: 3}
       propertyPath: coolingRate
@@ -1488,13 +1488,13 @@ Transform:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 1532676203}
   serializedVersion: 2
-  m_LocalRotation: {x: 0.33747613, y: -0.15266709, z: 0.055566266, w: 0.92720824}
+  m_LocalRotation: {x: 0.20058328, y: -0.15907262, z: 0.033026513, w: 0.96611154}
   m_LocalPosition: {x: 0.000000044703484, y: 3, z: -0.00000013411045}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
   m_Father: {fileID: 0}
-  m_LocalEulerAnglesHint: {x: 40, y: -18.7, z: 0}
+  m_LocalEulerAnglesHint: {x: 23.458, y: -18.7, z: 0}
 --- !u!1 &1562258977
 GameObject:
   m_ObjectHideFlags: 0
@@ -1668,7 +1668,7 @@ MonoBehaviour:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 1885709156}
-  m_Enabled: 1
+  m_Enabled: 0
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 667f1985ae19fdd44b21f9bb54b29c64, type: 3}
   m_Name: 
@@ -2041,7 +2041,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 5414983573032476027, guid: df50b00d653da4daeb7be587a0685c4d, type: 3}
       propertyPath: m_Intensity
-      value: 10
+      value: 86.77
       objectReference: {fileID: 0}
     - target: {fileID: 5562041302328012048, guid: df50b00d653da4daeb7be587a0685c4d, type: 3}
       propertyPath: m_Range
@@ -2065,11 +2065,11 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 6168779239247945944, guid: df50b00d653da4daeb7be587a0685c4d, type: 3}
       propertyPath: m_Range
-      value: 80
+      value: 195
       objectReference: {fileID: 0}
     - target: {fileID: 6168779239247945944, guid: df50b00d653da4daeb7be587a0685c4d, type: 3}
       propertyPath: m_Intensity
-      value: 10
+      value: 100.77
       objectReference: {fileID: 0}
     - target: {fileID: 7050130862013136272, guid: df50b00d653da4daeb7be587a0685c4d, type: 3}
       propertyPath: m_Name
