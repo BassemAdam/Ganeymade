@@ -580,7 +580,7 @@ MonoBehaviour:
     raymarchSmoothing:
       liquidSmoothingRadiusWS: 0
       adaptiveRadiusEnabled: 1
-      liquidBulkSmoothingRadiusWS: 1
+      liquidBulkSmoothingRadiusWS: 0.32
       adaptiveDensitySurface: 175
       adaptiveDensityBulk: 239
       adaptiveDensityCurve: 1
@@ -2041,7 +2041,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 5414983573032476027, guid: df50b00d653da4daeb7be587a0685c4d, type: 3}
       propertyPath: m_Intensity
-      value: 10
+      value: 86.77
       objectReference: {fileID: 0}
     - target: {fileID: 5562041302328012048, guid: df50b00d653da4daeb7be587a0685c4d, type: 3}
       propertyPath: m_Range
@@ -2065,11 +2065,11 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 6168779239247945944, guid: df50b00d653da4daeb7be587a0685c4d, type: 3}
       propertyPath: m_Range
-      value: 80
+      value: 195
       objectReference: {fileID: 0}
     - target: {fileID: 6168779239247945944, guid: df50b00d653da4daeb7be587a0685c4d, type: 3}
       propertyPath: m_Intensity
-      value: 10
+      value: 100.77
       objectReference: {fileID: 0}
     - target: {fileID: 7050130862013136272, guid: df50b00d653da4daeb7be587a0685c4d, type: 3}
       propertyPath: m_Name
