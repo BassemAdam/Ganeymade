@@ -166,11 +166,11 @@ public sealed class VoxelTracerSystem : MonoBehaviour
     readonly List<Tri> _dynamicTriList = new List<Tri>(16 * 1024);
     Mesh _bakedMesh;
 
-    // Reusable mesh data lists (zero GC per frame)
+    // Reusable mesh data lists
     readonly List<Vector3> _tmpVerts = new List<Vector3>(4096);
     readonly List<int> _tmpIndices = new List<int>(12288);
 
-    // Registration-based object tracking (avoids FindObjectsByType per frame)
+    // Registration-based object tracking
     static readonly HashSet<VoxelDynamic> _registeredDynamics = new HashSet<VoxelDynamic>();
     static readonly HashSet<SkinnedMeshRenderer> _registeredSkins = new HashSet<SkinnedMeshRenderer>();
     static readonly HashSet<VoxelHeatSource> _registeredHeatSources = new HashSet<VoxelHeatSource>();
@@ -1571,7 +1571,7 @@ public sealed class VoxelTracerSystem : MonoBehaviour
         Vector3 halfVoxelPad = Vector3.one * (voxelSize * 0.5f);
 
         // ---- Priority order (lowest first, last wins): ----
-        // Terrain VoxelSolidMaterial is NOT added as a source — it sets the
+        // Terrain VoxelSolidMaterial is not added as a source — it sets the
         // grid-wide defaults in StampMaterialProperties() instead, so it
         // cannot cross-contaminate other objects.
         // 1. Non-terrain solid materials (per-object bounds)
