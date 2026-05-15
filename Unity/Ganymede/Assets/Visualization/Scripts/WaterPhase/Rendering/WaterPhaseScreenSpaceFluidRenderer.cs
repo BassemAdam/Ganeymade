@@ -23,6 +23,14 @@ public sealed class WaterPhaseScreenSpaceFluidRenderer
     private int           _particleCount;
     private float         _particleRadius;
     private bool          _active;
+    private Material      _boundMaterial;
+    private ComputeBuffer _boundParticleBuffer;
+    private int           _boundParticleCount = -1;
+    private float         _boundParticleRadius = float.NaN;
+    private Material      _passCacheMaterial;
+    private int           _depthPass = -1;
+    private int           _thicknessPass = -1;
+    private int           _lightDepthPass = -1;
 
     public WaterPhaseScreenSpaceFluidRenderer(MeshRenderer sourceMeshRenderer)
     {
@@ -58,6 +66,7 @@ public sealed class WaterPhaseScreenSpaceFluidRenderer
 
         float configuredParticleRadius = _material.GetFloat(ID_ParticleRadius);
         _particleRadius = configuredParticleRadius;
+        PrepareMaterialForDraw(_material);
 
         _active = true;
 
@@ -75,6 +84,14 @@ public sealed class WaterPhaseScreenSpaceFluidRenderer
         _particleBuffer = null;
         _particleCount  = 0;
         _material       = null;
+        _boundMaterial = null;
+        _boundParticleBuffer = null;
+        _boundParticleCount = -1;
+        _boundParticleRadius = float.NaN;
+        _passCacheMaterial = null;
+        _depthPass = -1;
+        _thicknessPass = -1;
+        _lightDepthPass = -1;
         WaterScreenSpaceFluidFeature.IsActive       = false;
         WaterScreenSpaceFluidFeature.ActiveMaterial = null;
         WaterScreenSpaceFluidFeature.HasBounds      = false;
@@ -94,40 +111,70 @@ public sealed class WaterPhaseScreenSpaceFluidRenderer
     {
         if (!_active || mat == null || _particleBuffer == null || _particleCount <= 0) return;
 
-        BindParticleState(mat);
-        int pass = mat.FindPass("ScreenSpaceFluidDepth");
-        if (pass < 0) pass = 0;
-        DrawQuads(cmd, mat, pass);
+        PrepareMaterialForDraw(mat);
+        DrawQuads(cmd, mat, _depthPass);
     }
 
     private void DrawParticlesThickness(RasterCommandBuffer cmd, Material mat)
     {
         if (!_active || mat == null || _particleBuffer == null || _particleCount <= 0) return;
 
-        BindParticleState(mat);
-        int pass = mat.FindPass("ScreenSpaceFluidThickness");
-        if (pass < 0) pass = 1;
-        DrawQuads(cmd, mat, pass);
+        PrepareMaterialForDraw(mat);
+        DrawQuads(cmd, mat, _thicknessPass);
     }
 
     private void DrawParticlesLightDepth(RasterCommandBuffer cmd, Material mat)
     {
         if (!_active || mat == null || _particleBuffer == null || _particleCount <= 0) return;
 
-        BindParticleState(mat);
-        int pass = mat.FindPass("ScreenSpaceFluidLightDepth");
-        if (pass < 0) pass = 2;
-        DrawQuads(cmd, mat, pass);
+        PrepareMaterialForDraw(mat);
+        DrawQuads(cmd, mat, _lightDepthPass);
     }
 
     // ---- Helpers ---------------------------------------------------------
 
-    private void BindParticleState(Material mat)
+    private void PrepareMaterialForDraw(Material mat)
     {
+        CachePassIndices(mat);
+
+        if (_boundMaterial == mat &&
+            _boundParticleBuffer == _particleBuffer &&
+            _boundParticleCount == _particleCount &&
+            Mathf.Approximately(_boundParticleRadius, _particleRadius))
+        {
+            return;
+        }
+
         mat.SetBuffer(ID_ParticleBuffer, _particleBuffer);
         mat.SetInt(ID_ParticleCount,  _particleCount);
         mat.SetFloat(ID_ParticleRadius, _particleRadius);
         mat.SetInt(ID_RenderPhase, 0); // 0 = liquid water
+
+        _boundMaterial = mat;
+        _boundParticleBuffer = _particleBuffer;
+        _boundParticleCount = _particleCount;
+        _boundParticleRadius = _particleRadius;
+    }
+
+    private void CachePassIndices(Material mat)
+    {
+        if (_passCacheMaterial == mat)
+            return;
+
+        _depthPass = mat.FindPass("ScreenSpaceFluidDepth");
+        if (_depthPass < 0)
+            _depthPass = 0;
+
+        _thicknessPass = mat.FindPass("ScreenSpaceFluidThickness");
+        if (_thicknessPass < 0)
+            _thicknessPass = 1;
+
+        _lightDepthPass = mat.FindPass("ScreenSpaceFluidLightDepth");
+        if (_lightDepthPass < 0)
+            _lightDepthPass = 2;
+
+        _passCacheMaterial = mat;
+        _boundMaterial = null;
     }
 
     private void DrawQuads(RasterCommandBuffer cmd, Material mat, int pass)

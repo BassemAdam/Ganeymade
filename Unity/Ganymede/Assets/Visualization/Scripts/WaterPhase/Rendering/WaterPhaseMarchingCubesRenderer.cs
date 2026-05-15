@@ -19,10 +19,13 @@ public sealed class WaterPhaseMarchingCubesRenderer : IDisposable
     private ComputeShader _activeComputeShader;
     private TextAsset _activeLookupTable;
     private Material _activeSurfaceMaterial;
+    private Material _activeVapourMaterial;
+    private int _activeVapourLayer = -1;
 
     private GameObject _vapourBoxObject;
     private MeshRenderer _vapourBoxRenderer;
     private MaterialPropertyBlock _vapourPropertyBlock;
+    private int _lastVapourResourceVersion = -1;
 
     public WaterPhaseMarchingCubesRenderer(Transform ownerTransform, MeshFilter sourceMeshFilter)
     {
@@ -66,15 +69,19 @@ public sealed class WaterPhaseMarchingCubesRenderer : IDisposable
         _vapourBoxObject.transform.localScale = size;
         _vapourBoxObject.transform.rotation = Quaternion.identity;
 
-        _vapourPropertyBlock.Clear();
-        _vapourPropertyBlock.SetTexture(ID_PhysicsDensityGrid, resources.PhaseDensityTexture);
-        _vapourPropertyBlock.SetTexture(ID_PhysicsNormalGrid, resources.SurfaceNormalTexture);
+        if (_lastVapourResourceVersion != resources.Version)
+        {
+            _vapourPropertyBlock.SetTexture(ID_PhysicsDensityGrid, resources.PhaseDensityTexture);
+            _vapourPropertyBlock.SetTexture(ID_PhysicsNormalGrid, resources.SurfaceNormalTexture);
+            _vapourPropertyBlock.SetVector(
+                ID_PhysicsVolumeDims,
+                new Vector4(resources.VolumeDims.x, resources.VolumeDims.y, resources.VolumeDims.z, 0f));
+            _vapourPropertyBlock.SetFloat(ID_PhysicsUseVapourChannel, 1.0f);
+            _lastVapourResourceVersion = resources.Version;
+        }
+
         _vapourPropertyBlock.SetVector(ID_PhysicsBoundsMinWS, new Vector4(boundsMin.x, boundsMin.y, boundsMin.z, 0f));
         _vapourPropertyBlock.SetVector(ID_PhysicsBoundsMaxWS, new Vector4(boundsMax.x, boundsMax.y, boundsMax.z, 0f));
-        _vapourPropertyBlock.SetVector(
-            ID_PhysicsVolumeDims,
-            new Vector4(resources.VolumeDims.x, resources.VolumeDims.y, resources.VolumeDims.z, 0f));
-        _vapourPropertyBlock.SetFloat(ID_PhysicsUseVapourChannel, 1.0f);
         _vapourBoxRenderer.SetPropertyBlock(_vapourPropertyBlock);
         _vapourBoxRenderer.enabled = true;
     }
@@ -96,6 +103,9 @@ public sealed class WaterPhaseMarchingCubesRenderer : IDisposable
         _activeComputeShader = null;
         _activeLookupTable = null;
         _activeSurfaceMaterial = null;
+        _activeVapourMaterial = null;
+        _activeVapourLayer = -1;
+        _lastVapourResourceVersion = -1;
 
         if (_vapourBoxObject != null)
         {
@@ -171,8 +181,17 @@ public sealed class WaterPhaseMarchingCubesRenderer : IDisposable
         if (_vapourBoxRenderer == null)
             _vapourBoxRenderer = _vapourBoxObject.AddComponent<MeshRenderer>();
 
-        _vapourBoxRenderer.sharedMaterial = vapourMaterial;
-        _vapourBoxRenderer.gameObject.layer = layer;
+        if (_activeVapourMaterial != vapourMaterial)
+        {
+            _vapourBoxRenderer.sharedMaterial = vapourMaterial;
+            _activeVapourMaterial = vapourMaterial;
+        }
+
+        if (_activeVapourLayer != layer)
+        {
+            _vapourBoxRenderer.gameObject.layer = layer;
+            _activeVapourLayer = layer;
+        }
 
         if (_vapourPropertyBlock == null)
             _vapourPropertyBlock = new MaterialPropertyBlock();
