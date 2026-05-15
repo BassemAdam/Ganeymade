@@ -1,0 +1,18 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 3093ca46dc671414c9c321e760cb54ea, type: 3}
+  m_Name: GameMenuConfig
+  m_EditorClassIdentifier: Assembly-CSharp::GameMenuConfig
+  gameTitle: GANYMEDE
+  scenes:
+  - {fileID: 11400000, guid: 68106d0d9b5224e45966ea652a8b4298, type: 2}
+  - {fileID: 11400000, guid: cdfcca337f1dbb8479747bf695f93a65, type: 2}
