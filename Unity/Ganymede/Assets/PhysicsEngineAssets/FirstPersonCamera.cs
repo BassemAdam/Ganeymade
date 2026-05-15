@@ -90,17 +90,19 @@ public class FirstPersonCamera : MonoBehaviour
         HandleMovement();
         HandleInteraction();
 
-        if (GetKeyDown(KeyCode.Escape))
+        // Toggle cursor lock with L
+        if (GetKeyDown(KeyCode.L))
         {
-            Cursor.lockState = CursorLockMode.None;
-            Cursor.visible = true;
-        }
-
-        // Right-click to re-lock cursor (left-click is reserved for attract)
-        if (Cursor.lockState == CursorLockMode.None && GetKeyDown(KeyCode.L))
-        {
-            Cursor.lockState = CursorLockMode.Locked;
-            Cursor.visible = false;
+            if (Cursor.lockState == CursorLockMode.Locked)
+            {
+                Cursor.lockState = CursorLockMode.None;
+                Cursor.visible = true;
+            }
+            else
+            {
+                Cursor.lockState = CursorLockMode.Locked;
+                Cursor.visible = false;
+            }
         }
     }
 
