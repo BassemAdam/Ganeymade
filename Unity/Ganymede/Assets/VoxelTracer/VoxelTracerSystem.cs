@@ -109,6 +109,10 @@ public sealed class VoxelTracerSystem : MonoBehaviour
     public float ActiveVoxelSize => voxelSize;
     public bool IsReady => _fillTex != null && _nx > 0;
 
+    /// <summary>Incremented every time VoxelizeFrame writes new data into the fill/material textures.
+    /// ThermalReceiver polls this to detect dynamic-object changes (e.g. ingot placed in forge)
+    /// that require a GPU mask/diffusivity/heat-source re-upload.</summary>
+    public int VoxelizeFrameCount { get; private set; }
     /// <summary>Read-only access to registered heat sources (for external sim module).</summary>
     public static IReadOnlyCollection<VoxelHeatSource> HeatSources => _registeredHeatSources;
     /// <summary>Read-only access to registered fluid sources (for external sim module).</summary>
@@ -792,6 +796,9 @@ public sealed class VoxelTracerSystem : MonoBehaviour
         // Stamp heat-source voxels into the dedicated HeatSourceTexture.
         // Must run after StampMaterialProperties so fill is guaranteed written.
         StampHeatSources(gx, gy, gz, regMin, regMax);
+
+        // Signal to external systems (e.g. ThermalReceiver) that texture data changed.
+        VoxelizeFrameCount++;
     }
 
     void SetGridUniforms(int gx, int gy, int gz)
@@ -900,8 +907,10 @@ public sealed class VoxelTracerSystem : MonoBehaviour
                 var mr = vd.GetComponent<MeshRenderer>();
                 if (mr == null || !mr.enabled) continue;
 
+                bool hasMoved = vd.HasMoved();
                 AppendMesh(mf.sharedMesh, mf.transform.localToWorldMatrix, _dynamicTriList);
-                AddDirtyRegionFromBounds(mr.bounds, inv, gridClampMax);
+                if (hasMoved)
+                    AddDirtyRegionFromBounds(mr.bounds, inv, gridClampMax);
             }
         }
 
@@ -1557,13 +1566,13 @@ public sealed class VoxelTracerSystem : MonoBehaviour
             _heatSourceMaterialBuffer.SetData(heatSourceEntries);
 
         Vector3Int regSize = regMax - regMin + Vector3Int.one;
-        SetRegionMin(regMin.x, regMin.y, regMin.z);
+        SetRegionMin(0, 0, 0);
 
         coreCS.SetInt("_MaterialSourceCount", count);
         coreCS.SetTexture(KWriteHeatSources, "_FillTex", _fillTex);
         coreCS.SetTexture(KWriteHeatSources, "_HeatSourceTex", _heatSourceTex);
         coreCS.SetBuffer(KWriteHeatSources, "_MaterialSources", _heatSourceMaterialBuffer);  
-        Dispatch3D(KWriteHeatSources, regSize.x, regSize.y, regSize.z);
+        Dispatch3D(KWriteHeatSources, gx, gy, gz);
     }
     void BuildMaterialSourceList()
     {

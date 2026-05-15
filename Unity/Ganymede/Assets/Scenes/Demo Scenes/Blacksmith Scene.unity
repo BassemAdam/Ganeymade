@@ -534,10 +534,10 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::ThermalGlow
   thermalReceiver: {fileID: 291748429}
   ingotRenderer: {fileID: 0}
-  ambientThreshold: 71
+  ambientThreshold: 70
   boundsOverride: {fileID: 0}
-  glowMinTemp: 100
-  glowMaxTemp: 1200
+  glowMinTemp: 70
+  glowMaxTemp: 200
   coldGlow: {r: 0, g: 0, b: 0, a: 1}
   redGlow: {r: 2, g: 0, b: 0, a: 1}
   orangeGlow: {r: 4, g: 1, b: 0, a: 1}
@@ -2331,10 +2331,10 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::ThermalGlow
   thermalReceiver: {fileID: 291748429}
   ingotRenderer: {fileID: 0}
-  ambientThreshold: 71
+  ambientThreshold: 70
   boundsOverride: {fileID: 0}
-  glowMinTemp: 100
-  glowMaxTemp: 1200
+  glowMinTemp: 70
+  glowMaxTemp: 200
   coldGlow: {r: 0, g: 0, b: 0, a: 1}
   redGlow: {r: 2, g: 0, b: 0, a: 1}
   orangeGlow: {r: 4, g: 1, b: 0, a: 1}
@@ -3286,10 +3286,10 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::ThermalGlow
   thermalReceiver: {fileID: 291748429}
   ingotRenderer: {fileID: 0}
-  ambientThreshold: 71
+  ambientThreshold: 70
   boundsOverride: {fileID: 0}
-  glowMinTemp: 100
-  glowMaxTemp: 1200
+  glowMinTemp: 70
+  glowMaxTemp: 200
   coldGlow: {r: 0, g: 0, b: 0, a: 1}
   redGlow: {r: 2, g: 0, b: 0, a: 1}
   orangeGlow: {r: 4, g: 1, b: 0, a: 1}
@@ -4835,10 +4835,10 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::ThermalGlow
   thermalReceiver: {fileID: 291748429}
   ingotRenderer: {fileID: 0}
-  ambientThreshold: 71
+  ambientThreshold: 80
   boundsOverride: {fileID: 0}
-  glowMinTemp: 100
-  glowMaxTemp: 1200
+  glowMinTemp: 80
+  glowMaxTemp: 300
   coldGlow: {r: 0, g: 0, b: 0, a: 1}
   redGlow: {r: 2, g: 0, b: 0, a: 1}
   orangeGlow: {r: 4, g: 1, b: 0, a: 1}
