@@ -408,26 +408,26 @@ public class ThermalReceiver : MonoBehaviour
         {
             if (sm == null || !sm.isActiveAndEnabled) 
                 continue;
-            if (verbose && !snapshotMap.TryGetValue(sm.GetInstanceID(), out var snap)) 
+            if (!snapshotMap.TryGetValue(sm.GetInstanceID(), out var snap)) 
                 {
-                    Debug.Log($"[ThermalReceiver] [CHANGED] New untracked source: {sm.name}");
+                    if (verbose) Debug.Log($"[ThermalReceiver] [CHANGED] New untracked source: {sm.name}");
                     return true;
                 }
-            if (verbose && snap.isContinuousHeatSource != sm.isContinuousHeatSource) 
+            if (snap.isContinuousHeatSource != sm.isContinuousHeatSource) 
                 {
-                    Debug.Log($"[ThermalReceiver] [CHANGED] isContinuousHeatSource toggled on {sm.name}");
+                    if (verbose) Debug.Log($"[ThermalReceiver] [CHANGED] isContinuousHeatSource toggled on {sm.name}");
                     return true;
                 }
-            if (verbose && !Mathf.Approximately(snap.temperature, sm.temperature)) 
+            if (!Mathf.Approximately(snap.temperature, sm.temperature)) 
                 {
-                    Debug.Log($"[ThermalReceiver] [CHANGED] Temperature changed on {sm.name}: {snap.temperature} to {sm.temperature}");
+                    if (verbose) Debug.Log($"[ThermalReceiver] [CHANGED] Temperature changed on {sm.name}: {snap.temperature} to {sm.temperature}");
                     return true;
                 }
 
             // Check movement via renderer bounds center 
             var r = sm.GetComponent<Renderer>();
             Vector3 currentCenter = r != null ? r.bounds.center : sm.transform.position;
-            if (verbose && (snap.boundsCenter - currentCenter).sqrMagnitude > 1e-6f) 
+            if ((snap.boundsCenter - currentCenter).sqrMagnitude > 1e-6f) 
                {
                     Debug.Log($"[ThermalReceiver] [CHANGED] Position changed on {sm.name}: {snap.boundsCenter} to {currentCenter}");
                     return true;
