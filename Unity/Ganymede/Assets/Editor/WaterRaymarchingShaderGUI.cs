@@ -9,6 +9,7 @@ public sealed class WaterRaymarchingShaderGUI : ShaderGUI
     static bool s_Liquid = true;
     static bool s_LiquidVolume = true;
     static bool s_SurfaceOptics = false;
+    static bool s_SSR = true;
     static bool s_SurfaceNormals = false;
     static bool s_Vapour = true;
     static bool s_VapourRendering = true;
@@ -47,7 +48,7 @@ public sealed class WaterRaymarchingShaderGUI : ShaderGUI
             {
                 DrawDebugViewMode();
                 EditorGUILayout.HelpBox(
-                    "Reflection Only shows the sampled reflected environment with fallback. Optical Normal Used visualizes the exact view-facing normal used by Fresnel/reflection/refraction. Outward Surface Normal visualizes the raw density/bounds normal before the optical flip. Reflection Direction visualizes the reflect vector. Reflection Weight shows Fresnel reflectance. Reflection Contribution and Refraction Contribution show the weighted terms after the water background composition logic. Background Mix shows their combined result. View Transmittance shows how much refracted background survives the volume raymarch. Glossy Environment Raw and SpecCube Raw split the actual water pass reflection sources. Magenta = no liquid surface hit. Yellow = surface hit exists but both reflection sources are black.",
+                    "Reflection Only shows the sampled reflected environment with fallback. Optical Normal Used visualizes the exact view-facing normal used by Fresnel/reflection/refraction. Outward Surface Normal visualizes the raw density/bounds normal before the optical flip. Reflection Direction visualizes the reflect vector. Reflection Weight shows Fresnel reflectance. Reflection Contribution and Refraction Contribution show the weighted terms after the water background composition logic. Background Mix shows their combined result. View Transmittance shows how much refracted background survives the volume raymarch. Glossy Environment Raw and SpecCube Raw split the actual water pass reflection sources. Scene Depth and Scene Normal expose SSR inputs. SSR Hit Mask (red), SSR Fetch Color, and SSR Fade Factor are the core SSR debugging steps. Magenta = no liquid surface hit. Yellow = surface hit exists but both reflection sources are black.",
                     MessageType.Info);
             });
 
@@ -84,6 +85,20 @@ public sealed class WaterRaymarchingShaderGUI : ShaderGUI
                 EditorGUILayout.HelpBox(
                     "Reflection and refraction use exact unpolarized Fresnel weights with greedy single-path selection. Refraction samples the URP scene texture at the refracted UV; reflection samples the URP environment probe in the reflected direction. Strength is the physical multiplier. Visibility Boost/Floor are art controls applied only to the final reflected contribution so the normal view can show reflections without changing the raw reflection debug modes.",
                     MessageType.Info);
+
+                DrawSubSection("Screen Space Reflections (SSR)", ref s_SSR, () =>
+                {
+                    Draw("_SSRStrength");
+                    Draw("_SSRStepSize");
+                    Draw("_SSRMaxDistance");
+                    Draw("_SSRMaxSteps");
+                    Draw("_SSRThickness");
+                    Draw("_SSREdgeFadeWidth");
+                    Draw("_SSRBackfaceThreshold");
+                    EditorGUILayout.HelpBox(
+                        "SSR traces reflection rays in screen space against camera depth. If a ray misses, runs off-screen, or fails backface/thickness checks, reflection falls back to the environment probe. Use Scene Depth/Scene Normal + SSR Hit/Fetch/Fade debug modes to tune quality.",
+                        MessageType.None);
+                });
             });
 
             DrawSubSection("Surface Detection / Normals", ref s_SurfaceNormals, () =>
@@ -188,9 +203,14 @@ public sealed class WaterRaymarchingShaderGUI : ShaderGUI
         new GUIContent("Outward Surface Normal"),
         new GUIContent("[Debug] IOR Direction (Green=Enter/Red=Leave)"),
         new GUIContent("[Debug] Total Internal Reflection"),
+        new GUIContent("Scene Depth (Near=White)"),
+        new GUIContent("Scene Normal"),
+        new GUIContent("SSR Hit Mask (Red=Hit)"),
+        new GUIContent("SSR Fetch Color"),
+        new GUIContent("SSR Fade Factor"),
     };
 
-    static readonly int[] s_DebugViewValues = { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13 };
+    static readonly int[] s_DebugViewValues = { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18 };
 
     void DrawDebugViewMode()
     {

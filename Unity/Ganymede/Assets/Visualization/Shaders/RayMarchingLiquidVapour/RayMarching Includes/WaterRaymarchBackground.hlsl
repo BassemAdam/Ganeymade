@@ -13,6 +13,8 @@ struct WaterBackgroundContributions
     float3 reflectionContribution;
     float3 refractionContribution;
     float3 reflectedEnvironmentColor;
+    float3 reflectedSSRColor;
+    WaterSSRTraceResult ssrTrace;
 };
 
 float CalculateLiquidOpticalDepthAlongRay(float3 rayPosWS, float3 rayDirWS, float stepSize)
@@ -328,16 +330,29 @@ WaterBackgroundContributions ComputeWaterBackgroundContributions(
         backgroundData.backgroundScreenUV
     ).rgb;
     contributions.reflectedEnvironmentColor = 0.0;
+    contributions.reflectedSSRColor = 0.0;
+    contributions.ssrTrace = MakeWaterSSRTraceResultDefault();
 
     if (!backgroundData.surfaceHit.hit)
         return contributions;
+
+    contributions.ssrTrace = TraceWaterScreenSpaceReflection(
+        backgroundData.surfaceHit,
+        originalScreenUV
+    );
+    contributions.reflectedSSRColor = contributions.ssrTrace.hitColor;
 
     float3 rawEnvColor = SampleReflectionEnvironment(
         backgroundData.surfaceHit.reflectDir,
         backgroundData.surfaceHit.posWS,
         originalScreenUV
     );
-    contributions.reflectedEnvironmentColor = rawEnvColor * reflectionStrength;
+    float3 combinedReflectSourceColor = lerp(
+        rawEnvColor,
+        contributions.ssrTrace.hitColor,
+        contributions.ssrTrace.blendWeight
+    );
+    contributions.reflectedEnvironmentColor = combinedReflectSourceColor * reflectionStrength;
 
     float physicalReflectWeight = backgroundData.surfaceHit.reflectWeight;
 
@@ -351,7 +366,7 @@ WaterBackgroundContributions ComputeWaterBackgroundContributions(
 
     if (backgroundData.surfaceHit.totalInternalReflection)
     {
-        contributions.reflectionContribution = rawEnvColor * visibleReflectWeight;
+        contributions.reflectionContribution = combinedReflectSourceColor * visibleReflectWeight;
         contributions.refractionContribution *= energyToRefract;
         return contributions;
     }
@@ -377,12 +392,12 @@ WaterBackgroundContributions ComputeWaterBackgroundContributions(
 
     if (traceRefractedRay)
     {
-        contributions.reflectionContribution = rawEnvColor * visibleReflectWeight * reflectTransmittance;
+        contributions.reflectionContribution = combinedReflectSourceColor * visibleReflectWeight * reflectTransmittance;
         contributions.refractionContribution *= energyToRefract * refractTransmittance;
         return contributions;
     }
 
-    contributions.reflectionContribution = rawEnvColor * visibleReflectWeight;
+    contributions.reflectionContribution = combinedReflectSourceColor * visibleReflectWeight;
     contributions.refractionContribution *= energyToRefract * refractTransmittance;
     return contributions;
 }
@@ -398,10 +413,20 @@ float3 ComposeWaterDebugColor(
     float3 surfaceViewTransmittance,
     float3 remainingViewTransmittance)
 {
-    if (!backgroundData.surfaceHit.hit)
-        return float3(1.0, 0.0, 1.0);
-
     int mode = (int)round(debugViewMode);
+    if (mode == 14)
+        return ComposeSceneDepthDebugColor(originalScreenUV);
+
+    if (mode == 15)
+        return ComposeSceneNormalDebugColor(originalScreenUV);
+
+    if (!backgroundData.surfaceHit.hit)
+    {
+        if (mode == 16 || mode == 17 || mode == 18)
+            return 0.0;
+        return float3(1.0, 0.0, 1.0);
+    }
+
     if (mode == 2)
     {
         float3 n = normalize(backgroundData.surfaceHit.normal);
@@ -418,6 +443,19 @@ float3 ComposeWaterDebugColor(
     {
         float3 n = normalize(backgroundData.surfaceHit.outwardNormal);
         return n * 0.5 + 0.5;
+    }
+
+    if (mode == 12)
+    {
+        float enter = saturate(backgroundData.surfaceHit.enteringWater);
+        return lerp(float3(1.0, 0.0, 0.0), float3(0.0, 1.0, 0.0), enter);
+    }
+
+    if (mode == 13)
+    {
+        return backgroundData.surfaceHit.totalInternalReflection
+            ? float3(1.0, 1.0, 1.0)
+            : float3(0.0, 0.0, 0.0);
     }
 
     if (mode == 4)
@@ -448,6 +486,15 @@ float3 ComposeWaterDebugColor(
         reflectionVisibilityFloor
     );
     float3 reflectedEnvironmentColor = contributions.reflectedEnvironmentColor;
+
+    if (mode == 16)
+        return float3(contributions.ssrTrace.hitMask, 0.0, 0.0);
+
+    if (mode == 17)
+        return contributions.reflectedSSRColor;
+
+    if (mode == 18)
+        return contributions.ssrTrace.fadeFactor.xxx;
 
     if (max(reflectedEnvironmentColor.r, max(reflectedEnvironmentColor.g, reflectedEnvironmentColor.b)) < 1e-4)
         return float3(1.0, 1.0, 0.0);

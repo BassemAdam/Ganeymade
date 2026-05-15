@@ -26,6 +26,14 @@ Shader "Custom/WaterRaymarching"
         _BakedNormalBlend ("Baked Normal Blend", Range(0.0, 1.0)) = 0.0
         _BoundaryNormalBlendDistance ("Boundary Normal Blend Distance", Range(0.0, 2.0)) = 0.3
         _BoundaryNormalUpBiasPower ("Boundary Up Bias Power", Range(1.0, 12.0)) = 5.0
+        [Header(Screen Space Reflections)]
+        _SSRStrength ("SSR Blend Strength", Range(0.0, 1.0)) = 0.85
+        _SSRStepSize ("SSR Step Size (WS)", Range(0.005, 1.0)) = 0.05
+        _SSRMaxDistance ("SSR Max Distance (WS)", Range(0.1, 40.0)) = 10.0
+        _SSRMaxSteps ("SSR Max Steps", Range(8, 256)) = 64
+        _SSRThickness ("SSR Thickness Tolerance", Range(0.001, 2.0)) = 0.08
+        _SSREdgeFadeWidth ("SSR Edge Fade Width", Range(0.001, 0.5)) = 0.08
+        _SSRBackfaceThreshold ("SSR Backface Dot Threshold", Range(-1.0, 1.0)) = 0.05
         [Header(Vapour Rendering)]
         _VapourBaseColor ("Vapour Base Color", Color) = (1.0, 1.0, 1.0, 1)
         _VapourAbsorption ("Vapour Absorption (density -> opacity)", Range(0.1, 20.0)) = 8.0
@@ -90,6 +98,7 @@ Shader "Custom/WaterRaymarching"
             #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Lighting.hlsl"
             #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/GlobalIllumination.hlsl"
             #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/DeclareDepthTexture.hlsl"
+            #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/DeclareNormalsTexture.hlsl"
             #include "RayMarching Includes/RayMarchGeometry.hlsl"
 
             struct WaterRaymarchMeshInput
@@ -125,6 +134,14 @@ Shader "Custom/WaterRaymarching"
                 float  _BakedNormalBlend;
                 float  _BoundaryNormalBlendDistance;
                 float  _BoundaryNormalUpBiasPower;
+
+                float  _SSRStrength;
+                float  _SSRStepSize;
+                float  _SSRMaxDistance;
+                float  _SSRMaxSteps;
+                float  _SSRThickness;
+                float  _SSREdgeFadeWidth;
+                float  _SSRBackfaceThreshold;
 
                 half4  _VapourBaseColor;
                 float  _VapourAbsorption;
@@ -166,6 +183,7 @@ Shader "Custom/WaterRaymarching"
             #include "RayMarching Includes/RayMarchSurface.hlsl"
             #include "RayMarching Includes/WaterRaymarchView.hlsl"
             #include "RayMarching Includes/WaterRaymarchVolume.hlsl"
+            #include "RayMarching Includes/WaterRaymarchSSR.hlsl"
             #include "RayMarching Includes/WaterRaymarchBackground.hlsl"
 
             WaterRaymarchVaryings vert(WaterRaymarchMeshInput IN)
