@@ -96,10 +96,9 @@ public class BlacksmithMinigame : MonoBehaviour
         // Re-evaluate the Next button whenever the ingot workflow advances
         if (ingotInteraction != null)
         {
+            ingotInteraction.OnPliersPickedUp += () => RefreshUI();
             ingotInteraction.OnIngotPickedUp += ()=> RefreshUI();
             ingotInteraction.OnIngotPlacedInForge += ()=> RefreshUI();
-            ingotInteraction.OnIngotPlacedOnAnvil += ()=> RefreshUI();
-            ingotInteraction.OnIngotPlacedInBarrel+= ()=> RefreshUI();
             ingotInteraction.OnIngotReturned += () =>
             {
                 currentStationIndex = 0;  
@@ -295,19 +294,18 @@ public class BlacksmithMinigame : MonoBehaviour
                     case IngotInteraction.WorkflowStage.WaitingForPliers:
                         return "Pick up the pliers to start";
                     case IngotInteraction.WorkflowStage.WaitingForIngotPick:
-                        return "Pick gold, copper or steel ingot";
+                        return "Pick silver, gold, copper, platinum, steel or bronze ingot";
                     case IngotInteraction.WorkflowStage.IngotHeld:
-                        return "Press Next to head to the forge";
+                        IngotData heldData = ingotInteraction.GetHeldIngotData();
+                        string matInfo = heldData != null
+                            ? $"{heldData.materialName} | Diffusivity: {heldData.DiffusivityFormatted()}. " : "";
+                        return $"{matInfo}Press Next to head to the forge";
                     default:
                         return stations[currentStationIndex].label;
                 }
             case 1:
                 return "The ingot is heating in the forge, press Next to continue";
             case 2:
-                return "The ingot is being hammered on the anvil, press Next to continue";
-            case 3:
-                return "The ingot is being quenched in the barrel, press Next to continue";
-            case 4:
                 return "The ingot has been returned. Press Next to start again";
             default:
                 return stations[currentStationIndex].label;
@@ -317,9 +315,7 @@ public class BlacksmithMinigame : MonoBehaviour
     // Returns true when the ingot workflow has completed whatever is needed at the current station and the user may press Next.
     // 0 = Table : locked until user picks an ingot 
     // 1 = Forge : always unlocked 
-    // 2 = Anvil : always unlocked
-    // 3 = Barrel : always unlocked
-    // 4 = Table : locked while ReturnIngotToTable animation plays (Returning stage)
+    // 2 = Table : locked while ReturnIngotToTable animation plays (Returning stage)
     private bool IsNextAllowedByIngotStage()
     {
         if (ingotInteraction == null) 
@@ -329,7 +325,7 @@ public class BlacksmithMinigame : MonoBehaviour
         {
             case 0:   // must have picked up an ingot before moving to forge
                 return ingotInteraction.Stage == IngotInteraction.WorkflowStage.IngotHeld;
-            case 4:   // locked while the return animation is playing
+            case 2:   // locked while the return animation is playing
                 return ingotInteraction.Stage == IngotInteraction.WorkflowStage.WaitingForPliers;
             default:  
                 return true;
@@ -393,13 +389,7 @@ public class BlacksmithMinigame : MonoBehaviour
             case 1:   //at Forge
                 ingotInteraction.PlaceInForge();
                 break;
-            case 2:   // at Anvil
-                ingotInteraction.PlaceOnAnvil();
-                break;
-            case 3:   //at Barrel
-                ingotInteraction.PlaceInBarrel();
-                break;
-            case 4:   //back at Table
+            case 2:   //back at Table
                 ingotInteraction.ReturnIngotToTable();
                 break;
         }

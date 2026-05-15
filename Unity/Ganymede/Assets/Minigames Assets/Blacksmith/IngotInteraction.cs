@@ -15,16 +15,16 @@ public class IngotInteraction : MonoBehaviour
     [Header("Pliers")]
     public GameObject pliers;
 
-    [Header("Placement Slots (empty GameObjects marking where ingot sits)")]
-    public Transform forgeSlot;                  
-    public Transform anvilSlot;                  
-    public Transform barrelSlot;                
+    [Header("Placement Slots (marking where ingot sits)")]
+    public Transform forgeSlot;                                 
 
     [Header("Hold Settings")]
     [Tooltip("Distance in front of camera when ingot+pliers are held.")]
     public float holdDistance = 0.55f;
     [Tooltip("How far below the camera centre the hold point sits.")]
     public float holdVerticalOffset = -0.18f;
+    [Tooltip("How far to the left or to the right of the camera the point sits.")]
+    public float holdHorizontalOffset = -0.2f;
     [Tooltip("How quickly the held object tracks the hold point.")]
     public float holdFollowSpeed = 18f;
 
@@ -40,7 +40,7 @@ public class IngotInteraction : MonoBehaviour
 
     public enum WorkflowStage
     {
-        WaitingForPliers, WaitingForIngotPick, IngotHeld, AtForge, AtAnvil, AtBarrel, Returning
+        WaitingForPliers, WaitingForIngotPick, IngotHeld, AtForge, Returning
     }
 
     public WorkflowStage Stage { get; private set; } = WorkflowStage.WaitingForPliers;
@@ -60,10 +60,9 @@ public class IngotInteraction : MonoBehaviour
 
     // ----Events (Blacksmith minigame listens to these to know when to unlock Next) --
 
+    public event System.Action OnPliersPickedUp;
     public event System.Action OnIngotPickedUp;
     public event System.Action OnIngotPlacedInForge;
-    public event System.Action OnIngotPlacedOnAnvil;
-    public event System.Action OnIngotPlacedInBarrel;
     public event System.Action OnIngotReturned;
 
     // ----- Unity Lifecycle ----------------------------------------------
@@ -109,6 +108,10 @@ public class IngotInteraction : MonoBehaviour
 
     private void Update()
     {
+        if (_holdPoint != null)
+        {
+            _holdPoint.localPosition = new Vector3(holdHorizontalOffset, holdVerticalOffset, holdDistance);
+        }
         // Sync grip offset every frame so you can tweak it live in the Inspector
         if (_ingotGripPoint != null)
             _ingotGripPoint.localPosition = ingotGripOffset;
@@ -217,6 +220,14 @@ public class IngotInteraction : MonoBehaviour
         }
     }
 
+    // --- get data about the currently held ingot ----------------
+    public IngotData GetHeldIngotData()
+    {
+        if (_heldIngot == null) 
+            return null;
+        return _heldIngot.GetComponentInParent<IngotData>();
+    }
+
     // ---- pick up pliers ---------------------------
 
     private void PickUpPliers()
@@ -235,6 +246,7 @@ public class IngotInteraction : MonoBehaviour
         // allow clicking an ingot
         SetIngotCollidersEnabled(true);
         Stage = WorkflowStage.WaitingForIngotPick;
+        OnPliersPickedUp?.Invoke();
     }
 
     // --- pick up ingot ----------------------------
@@ -284,41 +296,7 @@ public class IngotInteraction : MonoBehaviour
             OnIngotPlacedInForge?.Invoke();
         }));
     }
-
-    // --------- place ingot on anvil -----------------------
-
-    public void PlaceOnAnvil()
-    {
-        if (_heldIngot == null) return;
-        Stage = WorkflowStage.AtAnvil;
-
-        // Detach from grip point so it animates freely to the anvil slot
-        _heldIngot.transform.SetParent(null, true);
-
-        StartCoroutine(PlaceAtSlot(anvilSlot, () =>
-    {
-            StartCoroutine(SnapToGripAfterClick());
-            OnIngotPlacedOnAnvil?.Invoke();
-        }));
-    }
-
-    // --------- drop ingot into barrel -----------------------
-
-    public void PlaceInBarrel()
-    {
-        if (_heldIngot == null) return;
-        Stage = WorkflowStage.AtBarrel;
-
-        // Detach from grip point so it animates freely into the barrel
-        _heldIngot.transform.SetParent(null, true);
-
-        StartCoroutine(PlaceAtSlot(barrelSlot, () =>
-        {
-            StartCoroutine(SnapToGripAfterClick());
-            OnIngotPlacedInBarrel?.Invoke();
-        }));
-    }
-
+    
     // --------- return ingot to table -----------------------------
 
     public void ReturnIngotToTable()
@@ -376,7 +354,7 @@ public class IngotInteraction : MonoBehaviour
         yield return new WaitUntil(() => _nextPressed);
         _heldIngot.transform.SetParent(_ingotGripPoint, true);
         _heldIngot.transform.localPosition = Vector3.zero;
-        _heldIngot.transform.localRotation = Quaternion.identity;
+        //_heldIngot.transform.localRotation = Quaternion.identity;
         _nextPressed = false;
     }
 
