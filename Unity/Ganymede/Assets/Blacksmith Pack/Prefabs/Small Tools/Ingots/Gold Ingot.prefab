@@ -9,7 +9,6 @@ GameObject:
   serializedVersion: 6
   m_Component:
   - component: {fileID: 7891251254288818334}
-  - component: {fileID: -365099331969872413}
   - component: {fileID: 766397352634252183}
   m_Layer: 0
   m_Name: Gold Ingot
@@ -34,25 +33,6 @@ Transform:
   - {fileID: 2762740114929864675}
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
---- !u!114 &-365099331969872413
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 7670083043565362168}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 7193c26c385088b48869367ff217e876, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: Assembly-CSharp::VoxelSolidMaterial
-  temperature: 25
-  thermalDiffusivity: 23
-  coolingRate: 0.01
-  isContinuousHeatSource: 0
-  density: 2500
-  mass: 0
-  phase: 0
 --- !u!65 &766397352634252183
 BoxCollider:
   m_ObjectHideFlags: 0
