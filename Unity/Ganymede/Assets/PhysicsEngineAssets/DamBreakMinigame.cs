@@ -1,14 +1,19 @@
+using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.UI;
 using TMPro;
 
 /// <summary>
-/// Dam minigame: press a key or click a UI button to break (disable) the dam.
-/// Builds a runtime Canvas + TMP UI like KitchenMinigame.
+/// Dam minigame: press a key or click a UI button to break the dam.
+/// On break, the intact dam is hidden and a pre-fractured "broken dam"
+/// hierarchy is enabled, with each chunk getting a Rigidbody + MeshCollider
+/// so it physically falls apart.
 ///
 /// Setup:
 /// 1. Attach to any GameObject (e.g. an empty "DamMinigame").
-/// 2. Assign the intact dam reference and camera anchor.
+/// 2. Assign the intact dam reference and the broken dam reference
+///    (drag broken_dam.fbx into the scene, parent its chunks under one
+///    GameObject, and assign that root here).
 /// </summary>
 public class DamBreakMinigame : MonoBehaviour
 {
@@ -20,12 +25,45 @@ public class DamBreakMinigame : MonoBehaviour
     [Tooltip("The intact dam GameObject to disable on break.")]
     public GameObject intactDam;
 
+    [Tooltip("The pre-fractured broken dam hierarchy. Each child MeshRenderer is treated as a chunk.")]
+    public GameObject brokenDam;
+
+    [Header("Chunk Physics")]
+    [Tooltip("Total mass distributed across all chunks (kg).")]
+    [Min(0.1f)] public float totalMass = 500f;
+
+    [Tooltip("Use convex MeshColliders (required for Rigidbody dynamic chunks).")]
+    public bool convexColliders = true;
+
+    [Tooltip("Physics material applied to chunk colliders (optional).")]
+    public PhysicsMaterial chunkPhysicsMaterial;
+
+    [Tooltip("Outward impulse applied to each chunk from the dam center on break.")]
+    [Min(0f)] public float burstImpulse = 2f;
+
+    [Tooltip("Random angular impulse magnitude applied to each chunk on break.")]
+    [Min(0f)] public float burstTorque = 1f;
+
+    [Tooltip("If a chunk has no MeshRenderer of its own but its children do, recurse.")]
+    public bool recurseChildren = true;
+
     [Header("Hotkeys")]
     public KeyCode breakKey = KeyCode.E;
     public KeyCode resetKey = KeyCode.R;
 
     // State
     bool _isBroken;
+    bool _chunksInitialised;
+
+    struct ChunkState
+    {
+        public Transform tr;
+        public Vector3 localPos;
+        public Quaternion localRot;
+        public Vector3 localScale;
+        public Rigidbody rb;
+    }
+    readonly List<ChunkState> _chunks = new List<ChunkState>();
 
     // UI references
     TMP_Text _statusText;
@@ -36,6 +74,10 @@ public class DamBreakMinigame : MonoBehaviour
     {
         if (mainCamera == null)
             mainCamera = Camera.main;
+
+        // Hide broken dam at startup
+        if (brokenDam != null)
+            brokenDam.SetActive(false);
 
         BuildUI();
     }
@@ -54,16 +96,152 @@ public class DamBreakMinigame : MonoBehaviour
     {
         if (_isBroken) return;
         _isBroken = true;
+
         if (intactDam != null)
             intactDam.SetActive(false);
+
+        if (brokenDam == null) return;
+
+        if (!_chunksInitialised)
+            InitChunks();
+
+        brokenDam.SetActive(true);
+
+        // Restore initial pose (in case Reset was never called between bursts)
+        // and re-arm physics, then apply outward burst.
+        Vector3 center = ComputeChunkCenter();
+        for (int i = 0; i < _chunks.Count; i++)
+        {
+            var c = _chunks[i];
+            if (c.tr == null) continue;
+            c.tr.localPosition = c.localPos;
+            c.tr.localRotation = c.localRot;
+            c.tr.localScale = c.localScale;
+
+            if (c.rb != null)
+            {
+                c.rb.isKinematic = false;
+                c.rb.linearVelocity = Vector3.zero;
+                c.rb.angularVelocity = Vector3.zero;
+
+                if (burstImpulse > 0f)
+                {
+                    Vector3 dir = (c.tr.position - center);
+                    if (dir.sqrMagnitude < 1e-6f) dir = Random.onUnitSphere;
+                    else dir.Normalize();
+                    c.rb.AddForce(dir * burstImpulse, ForceMode.Impulse);
+                }
+                if (burstTorque > 0f)
+                    c.rb.AddTorque(Random.insideUnitSphere * burstTorque, ForceMode.Impulse);
+            }
+        }
     }
 
     void ResetDam()
     {
         if (!_isBroken) return;
         _isBroken = false;
+
+        if (brokenDam != null)
+        {
+            // Freeze chunks and restore their original local transforms before hiding,
+            // so the next break starts from a clean state.
+            for (int i = 0; i < _chunks.Count; i++)
+            {
+                var c = _chunks[i];
+                if (c.tr == null) continue;
+                if (c.rb != null)
+                {
+                    c.rb.linearVelocity = Vector3.zero;
+                    c.rb.angularVelocity = Vector3.zero;
+                    c.rb.isKinematic = true;
+                }
+                c.tr.localPosition = c.localPos;
+                c.tr.localRotation = c.localRot;
+                c.tr.localScale = c.localScale;
+            }
+            brokenDam.SetActive(false);
+        }
+
         if (intactDam != null)
             intactDam.SetActive(true);
+    }
+
+    // ── Chunk discovery & physics setup ─────────────────────────────────
+
+    void InitChunks()
+    {
+        _chunks.Clear();
+        if (brokenDam == null) { _chunksInitialised = true; return; }
+
+        // Make sure the hierarchy is enabled so GetComponentsInChildren finds them.
+        bool wasActive = brokenDam.activeSelf;
+        brokenDam.SetActive(true);
+
+        var renderers = recurseChildren
+            ? brokenDam.GetComponentsInChildren<MeshRenderer>(true)
+            : GetDirectMeshRenderers(brokenDam.transform);
+
+        // Distribute total mass evenly across chunks.
+        float perChunkMass = renderers.Length > 0 ? Mathf.Max(0.01f, totalMass / renderers.Length) : 1f;
+
+        foreach (var mr in renderers)
+        {
+            var go = mr.gameObject;
+            var mf = go.GetComponent<MeshFilter>();
+            if (mf == null || mf.sharedMesh == null) continue;
+
+            // MeshCollider — convex is required for non-kinematic Rigidbodies
+            var mc = go.GetComponent<MeshCollider>();
+            if (mc == null) mc = go.AddComponent<MeshCollider>();
+            mc.sharedMesh = mf.sharedMesh;
+            mc.convex = convexColliders;
+            if (chunkPhysicsMaterial != null) mc.sharedMaterial = chunkPhysicsMaterial;
+
+            var rb = go.GetComponent<Rigidbody>();
+            if (rb == null) rb = go.AddComponent<Rigidbody>();
+            rb.mass = perChunkMass;
+            rb.interpolation = RigidbodyInterpolation.Interpolate;
+            rb.collisionDetectionMode = CollisionDetectionMode.ContinuousDynamic;
+            rb.isKinematic = true; // start frozen, BreakDam unfreezes
+
+            _chunks.Add(new ChunkState
+            {
+                tr = go.transform,
+                localPos = go.transform.localPosition,
+                localRot = go.transform.localRotation,
+                localScale = go.transform.localScale,
+                rb = rb
+            });
+        }
+
+        if (!wasActive) brokenDam.SetActive(false);
+        _chunksInitialised = true;
+    }
+
+    static MeshRenderer[] GetDirectMeshRenderers(Transform root)
+    {
+        var list = new List<MeshRenderer>();
+        for (int i = 0; i < root.childCount; i++)
+        {
+            var mr = root.GetChild(i).GetComponent<MeshRenderer>();
+            if (mr != null) list.Add(mr);
+        }
+        return list.ToArray();
+    }
+
+    Vector3 ComputeChunkCenter()
+    {
+        if (_chunks.Count == 0) return brokenDam != null ? brokenDam.transform.position : transform.position;
+        Vector3 sum = Vector3.zero;
+        int n = 0;
+        for (int i = 0; i < _chunks.Count; i++)
+        {
+            if (_chunks[i].tr == null) continue;
+            sum += _chunks[i].tr.position;
+            n++;
+        }
+        return n > 0 ? sum / n : brokenDam.transform.position;
     }
 
     void RefreshUI()
