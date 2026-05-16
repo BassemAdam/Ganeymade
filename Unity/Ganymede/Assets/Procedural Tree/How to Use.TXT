@@ -1,5 +1,0 @@
-1. Create an empty GameObject with Mesh Filter and Mesh Renderer components.
-2. Add the tree material (Nature/Procedural Tree).
-3. Attach ProceduralTree.cs.
-4. Adjust the material and script values to create the desired tree.
-5. That's it!
