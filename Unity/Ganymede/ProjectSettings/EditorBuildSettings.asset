@@ -5,17 +5,14 @@ EditorBuildSettings:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Scenes:
-  - enabled: 0
-    path: Assets/Scenes/SampleScene.unity
-    guid: 99c9720ab356a0642a771bea13969a05
-  - enabled: 0
-    path: Assets/Scenes/Demo Scenes/Boat Scene.unity
-    guid: 6bc59eb421a9ad546afd303203661799
-  - enabled: 0
-    path: Assets/Scenes/Demo Scenes/Kitchen Scene.unity
-    guid: d6e9ba4144802344f9da8c2054a3d249
+  - enabled: 1
+    path: Assets/Scenes/Demo Scenes/MainMenu.unity
+    guid: 2dc5ec6d0e9d45d459a3fd7b43ef91e0
   - enabled: 1
     path: Assets/Scenes/Demo Scenes/Dam.unity
     guid: 1d239b864bdd56c4da5d549b13099f82
+  - enabled: 1
+    path: Assets/Scenes/Demo Scenes/Free Play.unity
+    guid: e10524e14dbb01349b05bc6da5422d85
   m_configObjects:
     com.unity.input.settings.actions: {fileID: -944628639613478452, guid: 052faaac586de48259a63d0c4782560b, type: 3}

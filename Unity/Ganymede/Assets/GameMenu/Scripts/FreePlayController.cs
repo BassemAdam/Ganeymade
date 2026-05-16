@@ -21,9 +21,22 @@ public class FreePlayController : MonoBehaviour
     [Tooltip("The VoxelSolidMaterial whose temperature to control.")]
     public VoxelSolidMaterial solidMaterial;
 
+    [Tooltip("Optional: HeatSourceObj on the same or different object. Auto-detected from solidMaterial if left empty.")]
+    public HeatSourceObj heatSourceObj;
+
+    [Tooltip("Optional: VoxelHeatSource on the same or different object. Auto-detected from solidMaterial if left empty.")]
+    public VoxelHeatSource voxelHeatSource;
+
     [Header("Bounds Movement")]
     [Tooltip("How far left/right the bounds can move from the starting position.")]
     public float boundsRange = 10f;
+
+    [Header("Simulation Speed")]
+    [Tooltip("Minimum time scale (slow motion).")]
+    public float minTimeScale = 0.01f;
+
+    [Tooltip("Maximum time scale.")]
+    public float maxTimeScale = 1f;
 
     [Header("Temperature")]
     [Tooltip("Minimum temperature on the slider.")]
@@ -42,9 +55,13 @@ public class FreePlayController : MonoBehaviour
     Slider _boundsXSlider;
     Slider _boundsZSlider;
     Slider _tempSlider;
+    Slider _simSpeedSlider;
     TMP_Text _boundsXValueText;
     TMP_Text _boundsZValueText;
     TMP_Text _tempValueText;
+    TMP_Text _simSpeedValueText;
+    Toggle _skyboxToggle;
+    Material _cachedSkybox;
 
     void Start()
     {
@@ -57,8 +74,25 @@ public class FreePlayController : MonoBehaviour
             _startZ = computePlugin.transform.position.z;
         }
 
+        // Auto-detect heat source components on the solid material's object
+        if (solidMaterial != null)
+        {
+            if (heatSourceObj == null)
+                heatSourceObj = solidMaterial.GetComponent<HeatSourceObj>();
+            if (voxelHeatSource == null)
+                voxelHeatSource = solidMaterial.GetComponent<VoxelHeatSource>();
+        }
+
         BuildUI();
         SyncSlidersFromState();
+    }
+
+    void OnDestroy()
+    {
+        Time.timeScale = 1f;
+        Time.fixedDeltaTime = 0.02f;
+        if (_cachedSkybox != null)
+            RenderSettings.skybox = _cachedSkybox;
     }
 
     void Update()
@@ -92,6 +126,29 @@ public class FreePlayController : MonoBehaviour
         if (solidMaterial == null) return;
         float temp = Mathf.Lerp(minTemperature, maxTemperature, normalized);
         solidMaterial.temperature = temp;
+        solidMaterial.isContinuousHeatSource = true;
+        if (heatSourceObj != null) heatSourceObj.temperature = temp;
+        if (voxelHeatSource != null) voxelHeatSource.temperature = temp;
+    }
+
+    void OnSimSpeedSliderChanged(float normalized)
+    {
+        float speed = Mathf.Lerp(minTimeScale, maxTimeScale, normalized);
+        Time.timeScale = speed;
+        Time.fixedDeltaTime = 0.02f * speed;
+    }
+
+    void OnSkyboxToggleChanged(bool isOn)
+    {
+        if (isOn)
+        {
+            RenderSettings.skybox = _cachedSkybox;
+        }
+        else
+        {
+            RenderSettings.skybox = null;
+        }
+        DynamicGI.UpdateEnvironment();
     }
 
     void SyncSlidersFromState()
@@ -107,6 +164,12 @@ public class FreePlayController : MonoBehaviour
             float norm = Mathf.InverseLerp(minTemperature, maxTemperature, solidMaterial.temperature);
             _tempSlider.SetValueWithoutNotify(norm);
         }
+
+        if (_simSpeedSlider != null)
+        {
+            float norm = Mathf.InverseLerp(minTimeScale, maxTimeScale, Time.timeScale);
+            _simSpeedSlider.SetValueWithoutNotify(norm);
+        }
     }
 
     void RefreshUI()
@@ -119,6 +182,12 @@ public class FreePlayController : MonoBehaviour
 
         if (_tempValueText != null && solidMaterial != null)
             _tempValueText.text = $"Temp:  <color=#FFD633><b>{solidMaterial.temperature:F0} °</b></color>";
+
+        if (_simSpeedValueText != null)
+        {
+            float pct = Time.timeScale * 100f;
+            _simSpeedValueText.text = $"Speed:  <color=#88DDAA><b>{pct:F0}%</b></color>";
+        }
     }
 
     // ── Build UI ────────────────────────────────────────────────────────
@@ -171,6 +240,24 @@ public class FreePlayController : MonoBehaviour
 
         AddHintLabel(panel.transform,
             $"{minTemperature:F0} ────── {maxTemperature:F0}", uiLayer);
+
+        AddSpacer(panel.transform, 8f, uiLayer);
+
+        // ── Simulation Speed control ────────────────────────────────────
+        AddSectionLabel(panel.transform, "Simulation Speed", uiLayer);
+        _simSpeedValueText = AddLabel(panel.transform, "Speed:  100%", uiLayer);
+        _simSpeedSlider = AddSlider(panel.transform, "SimSpeedSlider", uiLayer, OnSimSpeedSliderChanged);
+
+        AddHintLabel(panel.transform,
+            $"{minTimeScale * 100f:F0}% ────── {maxTimeScale * 100f:F0}%", uiLayer);
+
+        AddSpacer(panel.transform, 8f, uiLayer);
+
+        // ── Skybox toggle ───────────────────────────────────────────────
+        AddSectionLabel(panel.transform, "Environment", uiLayer);
+        _cachedSkybox = RenderSettings.skybox;
+        _skyboxToggle = AddToggle(panel.transform, "SkyboxToggle", "Skybox", uiLayer,
+            RenderSettings.skybox != null, OnSkyboxToggleChanged);
     }
 
     // ── UI helpers (matching existing minigame style) ────────────────────
@@ -356,10 +443,75 @@ public class FreePlayController : MonoBehaviour
 
         slider.handleRect = handleRT;
         slider.targetGraphic = handleImg;
+        slider.navigation = new Navigation { mode = Navigation.Mode.None };
 
         slider.onValueChanged.AddListener(onChange);
 
         return slider;
+    }
+
+    Toggle AddToggle(Transform parent, string name, string label, int layer,
+        bool initialValue, UnityEngine.Events.UnityAction<bool> onChange)
+    {
+        var go = new GameObject(name);
+        go.layer = layer;
+        go.transform.SetParent(parent, false);
+        go.AddComponent<RectTransform>();
+
+        var le = go.AddComponent<LayoutElement>();
+        le.preferredHeight = 30;
+
+        var hlg = go.AddComponent<HorizontalLayoutGroup>();
+        hlg.spacing = 8;
+        hlg.childAlignment = TextAnchor.MiddleLeft;
+        hlg.childControlWidth = false;
+        hlg.childControlHeight = true;
+        hlg.childForceExpandWidth = false;
+        hlg.childForceExpandHeight = false;
+
+        // Checkbox background
+        var boxGO = new GameObject("Background");
+        boxGO.layer = layer;
+        boxGO.transform.SetParent(go.transform, false);
+        var boxImg = boxGO.AddComponent<Image>();
+        boxImg.color = new Color(0.15f, 0.15f, 0.22f, 1f);
+        var boxLE = boxGO.AddComponent<LayoutElement>();
+        boxLE.preferredWidth = 22;
+        boxLE.preferredHeight = 22;
+
+        // Checkmark
+        var checkGO = new GameObject("Checkmark");
+        checkGO.layer = layer;
+        checkGO.transform.SetParent(boxGO.transform, false);
+        var checkImg = checkGO.AddComponent<Image>();
+        checkImg.color = new Color(0.3f, 0.55f, 0.85f, 1f);
+        var checkRT = checkGO.GetComponent<RectTransform>();
+        checkRT.anchorMin = new Vector2(0.15f, 0.15f);
+        checkRT.anchorMax = new Vector2(0.85f, 0.85f);
+        checkRT.offsetMin = Vector2.zero;
+        checkRT.offsetMax = Vector2.zero;
+
+        // Label
+        var labelGO = new GameObject("Label");
+        labelGO.layer = layer;
+        labelGO.transform.SetParent(go.transform, false);
+        labelGO.AddComponent<RectTransform>();
+        labelGO.AddComponent<CanvasRenderer>();
+        var tmp = labelGO.AddComponent<TextMeshProUGUI>();
+        tmp.text = label;
+        tmp.fontSize = 18;
+        tmp.color = new Color(0.85f, 0.88f, 0.92f);
+        var labelLE = labelGO.AddComponent<LayoutElement>();
+        labelLE.preferredWidth = 200;
+
+        var toggle = go.AddComponent<Toggle>();
+        toggle.isOn = initialValue;
+        toggle.targetGraphic = boxImg;
+        toggle.graphic = checkImg;
+        toggle.navigation = new Navigation { mode = Navigation.Mode.None };
+        toggle.onValueChanged.AddListener(onChange);
+
+        return toggle;
     }
 
     void AddSpacer(Transform parent, float height, int layer)
