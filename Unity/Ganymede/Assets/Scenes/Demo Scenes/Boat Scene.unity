@@ -420,7 +420,7 @@ MonoBehaviour:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 671089469}
-  m_Enabled: 1
+  m_Enabled: 0
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 667f1985ae19fdd44b21f9bb54b29c64, type: 3}
   m_Name: 
@@ -752,6 +752,9 @@ MonoBehaviour:
   surfaceOnly: 1
   maxLines: 50000
   refreshInterval: 0.2
+  normalLayers:
+    serializedVersion: 2
+    m_Bits: 4294967295
 --- !u!114 &781581044
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -1004,7 +1007,7 @@ MonoBehaviour:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 1188592644}
-  m_Enabled: 0
+  m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: e9eb36d79300fe7428f1000517630b74, type: 3}
   m_Name: 
@@ -1018,23 +1021,31 @@ MonoBehaviour:
       volumeDims: {x: 128, y: 128, z: 128}
       vapourSmoothingRadiusWS: 0.1
       maxKernelRadiusVoxels: 2
-    blur:
-      enabled: 1
-      radius: 4
-      sigma: 4
-      detailPreserve: 0
+    raymarchBlur:
+      liquidBlurEnabled: 1
+      liquidBlurRadius: 2
+      liquidBlurSigma: 4
+      liquidBlurDetailPreserve: 0
+      vapourBlurEnabled: 1
+      vapourBlurRadius: 4
+      vapourBlurSigma: 4
+      vapourBlurDetailPreserve: 0
     marchingCubesBlur:
-      enabled: 0
-      radius: 1
-      sigma: 0.1
-      detailPreserve: 0
+      liquidBlurEnabled: 0
+      liquidBlurRadius: 1
+      liquidBlurSigma: 1
+      liquidBlurDetailPreserve: 0
+      vapourBlurEnabled: 0
+      vapourBlurRadius: 1
+      vapourBlurSigma: 0.1
+      vapourBlurDetailPreserve: 0
     raymarchSmoothing:
-      liquidSmoothingRadiusWS: 1
+      liquidSmoothingRadiusWS: 0
       adaptiveRadiusEnabled: 1
-      liquidBulkSmoothingRadiusWS: 2.5
-      adaptiveDensitySurface: 175
-      adaptiveDensityBulk: 300
-      adaptiveDensityCurve: 0.4
+      liquidBulkSmoothingRadiusWS: 0.4
+      adaptiveDensitySurface: 181
+      adaptiveDensityBulk: 215
+      adaptiveDensityCurve: 1
     marchingCubesSmoothing:
       liquidSmoothingRadiusWS: 0
       adaptiveRadiusEnabled: 1
@@ -1047,27 +1058,9 @@ MonoBehaviour:
       rayMarchingMaterial: {fileID: 2100000, guid: 03c4cd8b0ea45e14190b02d13513c0d9, type: 2}
       marchingCubesMaterial: {fileID: 2100000, guid: a5f165da16e6e4a4e8b93a9c48ecc59b, type: 2}
       vapourRaymarchMaterial: {fileID: 2100000, guid: ecfb9a36afdd6404e9a46793705c4a27, type: 2}
+      screenSpaceFluidMaterial: {fileID: 2100000, guid: 92e2acaed84fb194a89f2cf5cc30a97c, type: 2}
       marchingCubesIsoLevel: 0
   visualProxyTransform: {fileID: 0}
-  particlesToDensityCompute: {fileID: 7200000, guid: 3c585bfcf792db443b823ea9e4d73d39, type: 3}
-  marchingCubesCompute: {fileID: 7200000, guid: a22c7c4891409a047968bd3b28af9da8, type: 3}
-  marchingCubesLUT: {fileID: 4900000, guid: 711f0eebef002a84e95e6dc230c006be, type: 3}
-  volumeDims: {x: 128, y: 128, z: 128}
-  smoothingRadiusWS: -1
-  rayMarchingMaterial: {fileID: 2100000, guid: 981a72c002f021c43bcf6a3e18c751a5, type: 2}
-  marchingCubesMaterial: {fileID: 2100000, guid: a5f165da16e6e4a4e8b93a9c48ecc59b, type: 2}
-  vapourRaymarchMaterial: {fileID: 2100000, guid: ecfb9a36afdd6404e9a46793705c4a27, type: 2}
-  useMarchingCubes: 0
-  marchingCubesIsoLevel: 0
-  blurVapourDensity: 1
-  blurLiquidDensity: 0
-  liquidBlurRadius: 1
-  liquidBlurSigma: 1
-  liquidBlurDetailPreserve: 0
-  blurRadius: 1
-  blurSigma: 1
-  blurDetailPreserve: 0.25
-  _settingsMigrated: 1
 --- !u!23 &1188592649
 MeshRenderer:
   m_ObjectHideFlags: 0
