@@ -1869,12 +1869,12 @@ MonoBehaviour:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 1886338140}
-  m_Enabled: 0
+  m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 1535b2b2a32c1f449ab8d68f071124f2, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::VoxelTracerCamera
-  voxelSystem: {fileID: 0}
+  voxelSystem: {fileID: 1465852633}
   rayMarchCS: {fileID: 7200000, guid: 7c0687ca08f9acd4fa03a2cabefcdc35, type: 3}
   visMode: 0
   surfaceColor: {r: 0.85, g: 0.85, b: 0.85, a: 1}
@@ -1882,7 +1882,7 @@ MonoBehaviour:
   lightColor: {r: 1, g: 1, b: 1, a: 1}
   ambientColor: {r: 0.12, g: 0.12, b: 0.18, a: 1}
   maxSteps: 1024
-  tempTexture: {fileID: 0}
+  tempTexture: {fileID: 11700000, guid: c34323848582ac24893ee04636919daf, type: 3}
   minDisplayTemp: 0
   maxDisplayTemp: 100
 --- !u!114 &1886338144

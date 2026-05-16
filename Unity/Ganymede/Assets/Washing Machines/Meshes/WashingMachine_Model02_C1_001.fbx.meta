@@ -1,7 +1,14 @@
 fileFormatVersion: 2
 guid: f2c93ec55df06bf42b8d8cc7d10f4fbd
+AssetOrigin:
+  serializedVersion: 1
+  productId: 314619
+  packageName: Functional Washing Machines
+  packageVersion: 1.0.0
+  assetPath: Assets/Washing Machines/Meshes/WashingMachine_Model02_C1_001.fbx
+  uploadId: 744231
 ModelImporter:
-  serializedVersion: 22200
+  serializedVersion: 24200
   internalIDToNameTable: []
   externalObjects: {}
   materials:
@@ -16,8 +23,6 @@ ModelImporter:
     optimizeGameObjects: 0
     removeConstantScaleCurves: 0
     motionNodeName: 
-    rigImportErrors: 
-    rigImportWarnings: 
     animationImportErrors: 
     animationImportWarnings: 
     animationRetargetingWarnings: 
@@ -32,7 +37,7 @@ ModelImporter:
     extraExposedTransformPaths: []
     extraUserProperties: []
     clipAnimations: []
-    isReadable: 0
+    isReadable: 1
   meshes:
     lODScreenPercentages: []
     globalScale: 1
@@ -58,6 +63,9 @@ ModelImporter:
     maxBonesPerVertex: 4
     minBoneWeight: 0.001
     optimizeBones: 1
+    generateMeshLods: 0
+    meshLodGenerationFlags: 0
+    maximumMeshLod: -1
     meshOptimizationFlags: -1
     indexFormat: 0
     secondaryUVAngleDistortion: 8
@@ -107,10 +115,3 @@ ModelImporter:
   userData: 
   assetBundleName: 
   assetBundleVariant: 
-AssetOrigin:
-  serializedVersion: 1
-  productId: 314619
-  packageName: Functional Washing Machines
-  packageVersion: 1.0.0
-  assetPath: Assets/Washing Machines/Meshes/WashingMachine_Model02_C1_001.fbx
-  uploadId: 744231
