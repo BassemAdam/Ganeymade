@@ -14,6 +14,7 @@
 
 #include <string.h>
 #include <cmath>
+#include <mutex>
 
 #include "Unity/IUnityGraphics.h"
 
@@ -3860,6 +3861,7 @@ static bool g_SolidMaskNeedsUpload = false;
 static bool g_SolidDiffusivityNeedsUpload = false;
 static bool g_HeatSourcePinsNeedsUpload = false;
 static bool g_SolidReady = false;
+static std::mutex g_DataMutex;
 
 // Optional Unity-side GPU buffer to receive latest particle output (GPU→GPU copy).
 // This avoids the inefficient GPU→CPU readback + CPU→GPU upload path used by ParticleRenderer.
@@ -4031,7 +4033,7 @@ extern "C" void UNITY_INTERFACE_EXPORT UNITY_INTERFACE_API
 SetSolidComputeData(float* data, int count)
 {
     if (count <= 0 || data == nullptr) return;
-
+    std::lock_guard<std::mutex> lock(g_DataMutex); 
     delete[] g_SolidTempInput;
     delete[] g_SolidTempOutput;
 
@@ -4048,7 +4050,7 @@ extern "C" void UNITY_INTERFACE_EXPORT UNITY_INTERFACE_API
 SetMaskData(uint32_t* mask, int count)
 {
     if (count <= 0 || mask == nullptr) return;
-
+    std::lock_guard<std::mutex> lock(g_DataMutex); 
     delete[] g_SolidMask;
     g_SolidMask = new uint32_t[count]();
     memcpy(g_SolidMask, mask, count * sizeof(uint32_t));
@@ -4068,6 +4070,7 @@ extern "C" void UNITY_INTERFACE_EXPORT UNITY_INTERFACE_API
 SetDiffusivityData(float* data, int count)
 {
     if (count <= 0 || data == nullptr) return;
+    std::lock_guard<std::mutex> lock(g_DataMutex); 
     delete[] g_SolidDiffusivity;
     g_SolidDiffusivity = new float[count]();
     memcpy(g_SolidDiffusivity, data, count * sizeof(float));
@@ -4078,7 +4081,7 @@ extern "C" void UNITY_INTERFACE_EXPORT UNITY_INTERFACE_API
 SetHeatSourceData(float* pinTemperatures, int count)
 {
     if (count <= 0 || pinTemperatures == nullptr) return;
- 
+    std::lock_guard<std::mutex> lock(g_DataMutex); 
     delete[] g_HeatSourcePins;
     g_HeatSourcePins = new float[count]();
     memcpy(g_HeatSourcePins, pinTemperatures, count * sizeof(float));
@@ -4368,122 +4371,122 @@ void VulkanSolidThermalPlugin::DispatchCompute()
 {
     if (!m_Initialized || m_Pipeline == VK_NULL_HANDLE || g_SolidCellCount == 0)
         return;
-
-    if (!m_BuffersReady || m_AllocatedCount != g_SolidCellCount)
-        CreateBuffers(g_SolidCellCount);
-    if (!m_BuffersReady)
-        return;
-
-    // ── Read previous frame's result (GPU is done — fence was waited on last frame)
-    if (g_SolidReady && m_ReadbackBuffer.mapped && g_SolidTempOutput != nullptr)
-    {
-        memcpy(g_SolidTempOutput, m_ReadbackBuffer.mapped, g_SolidCellCount * sizeof(float));
-    }
-
+    VkCommandBuffer ownCmd;
     VkDevice device = m_Instance.device;
-
-    // Allocate own command buffer
-    VkCommandBufferAllocateInfo cmdAllocInfo = {};
-    cmdAllocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
-    cmdAllocInfo.commandPool = m_CommandPool;
-    cmdAllocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-    cmdAllocInfo.commandBufferCount = 1;
-
-    VkCommandBuffer ownCmd = VK_NULL_HANDLE;
-    if (vkAllocateCommandBuffers(device, &cmdAllocInfo, &ownCmd) != VK_SUCCESS)
     {
-        //OutputDebugStringA("[SolidThermal] Failed to allocate command buffer\n");
-        return;
-    }
+        std::lock_guard<std::mutex> lock(g_DataMutex);
 
-    VkCommandBufferBeginInfo beginInfo = {};
-    beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-    beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
-    vkBeginCommandBuffer(ownCmd, &beginInfo);
+        if (!m_BuffersReady || m_AllocatedCount != g_SolidCellCount)
+            CreateBuffers(g_SolidCellCount);
+        if (!m_BuffersReady) return;
 
-    // ── Upload temperature grid if new data arrived ──────────────────────
-    if (g_SolidNeedsUpload && m_StagingBuffer.mapped)
-    {
-        memcpy(m_StagingBuffer.mapped, g_SolidTempInput, g_SolidCellCount * sizeof(float));
+        // read previous frame result
+        if (g_SolidReady && m_ReadbackBuffer.mapped && g_SolidTempOutput != nullptr)
+            memcpy(g_SolidTempOutput, m_ReadbackBuffer.mapped, g_SolidCellCount * sizeof(float));
 
-        VkBufferCopy copyRegion = {};
-        copyRegion.size = g_SolidCellCount * sizeof(float);
-        vkCmdCopyBuffer(ownCmd, m_StagingBuffer.buffer, m_TempBuffers[m_CurrentInput].buffer, 1, &copyRegion);
+        // Allocate own command buffer
+        VkCommandBufferAllocateInfo cmdAllocInfo = {};
+        cmdAllocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+        cmdAllocInfo.commandPool = m_CommandPool;
+        cmdAllocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+        cmdAllocInfo.commandBufferCount = 1;
 
-        VkMemoryBarrier bar = {};
-        bar.sType         = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
-        bar.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-        bar.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
-        vkCmdPipelineBarrier(ownCmd,
-            VK_PIPELINE_STAGE_TRANSFER_BIT,
-            VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
-            0, 1, &bar, 0, nullptr, 0, nullptr);
+        ownCmd = VK_NULL_HANDLE;
+        if (vkAllocateCommandBuffers(device, &cmdAllocInfo, &ownCmd) != VK_SUCCESS)
+        {
+            //OutputDebugStringA("[SolidThermal] Failed to allocate command buffer\n");
+            return;
+        }
 
-        g_SolidNeedsUpload = false;
-    }
+        VkCommandBufferBeginInfo beginInfo = {};
+        beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+        beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+        vkBeginCommandBuffer(ownCmd, &beginInfo);
 
-    // ── Upload mask if it changed ────────────────────────────────────────
-    if (g_SolidMaskNeedsUpload && m_MaskStagingBuffer.mapped)
-    {
-        memcpy(m_MaskStagingBuffer.mapped, g_SolidMask, g_SolidCellCount * sizeof(uint32_t));
+        // ── Upload temperature grid if new data arrived ──────────────────────
+        if (g_SolidNeedsUpload && m_StagingBuffer.mapped)
+        {
+            memcpy(m_StagingBuffer.mapped, g_SolidTempInput, g_SolidCellCount * sizeof(float));
 
-        VkBufferCopy maskCopy = {};
-        maskCopy.size = g_SolidCellCount * sizeof(uint32_t);
-        vkCmdCopyBuffer(ownCmd, m_MaskStagingBuffer.buffer, m_MaskBuffer.buffer, 1, &maskCopy);
+            VkBufferCopy copyRegion = {};
+            copyRegion.size = g_SolidCellCount * sizeof(float);
+            vkCmdCopyBuffer(ownCmd, m_StagingBuffer.buffer, m_TempBuffers[m_CurrentInput].buffer, 1, &copyRegion);
 
-        VkMemoryBarrier bar = {};
-        bar.sType         = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
-        bar.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-        bar.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
-        vkCmdPipelineBarrier(ownCmd,
-            VK_PIPELINE_STAGE_TRANSFER_BIT,
-            VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
-            0, 1, &bar, 0, nullptr, 0, nullptr);
+            VkMemoryBarrier bar = {};
+            bar.sType         = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
+            bar.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+            bar.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+            vkCmdPipelineBarrier(ownCmd,
+                VK_PIPELINE_STAGE_TRANSFER_BIT,
+                VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                0, 1, &bar, 0, nullptr, 0, nullptr);
 
-        g_SolidMaskNeedsUpload = false;
-    }
+            g_SolidNeedsUpload = false;
+        }
 
-    if (g_SolidDiffusivityNeedsUpload && m_DiffusivityStagingBuffer.mapped)
-    {
-        memcpy(m_DiffusivityStagingBuffer.mapped,
-            g_SolidDiffusivity, g_SolidCellCount * sizeof(float));
+        // ── Upload mask if it changed ────────────────────────────────────────
+        if (g_SolidMaskNeedsUpload && m_MaskStagingBuffer.mapped)
+        {
+            memcpy(m_MaskStagingBuffer.mapped, g_SolidMask, g_SolidCellCount * sizeof(uint32_t));
 
-        VkBufferCopy copy = {};
-        copy.size = g_SolidCellCount * sizeof(float);
-        vkCmdCopyBuffer(ownCmd, m_DiffusivityStagingBuffer.buffer,
-                        m_DiffusivityBuffer.buffer, 1, &copy);
+            VkBufferCopy maskCopy = {};
+            maskCopy.size = g_SolidCellCount * sizeof(uint32_t);
+            vkCmdCopyBuffer(ownCmd, m_MaskStagingBuffer.buffer, m_MaskBuffer.buffer, 1, &maskCopy);
 
-        VkMemoryBarrier bar = {};
-        bar.sType         = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
-        bar.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-        bar.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
-        vkCmdPipelineBarrier(ownCmd,
-            VK_PIPELINE_STAGE_TRANSFER_BIT,
-            VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
-            0, 1, &bar, 0, nullptr, 0, nullptr);
+            VkMemoryBarrier bar = {};
+            bar.sType         = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
+            bar.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+            bar.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+            vkCmdPipelineBarrier(ownCmd,
+                VK_PIPELINE_STAGE_TRANSFER_BIT,
+                VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                0, 1, &bar, 0, nullptr, 0, nullptr);
 
-        g_SolidDiffusivityNeedsUpload = false;
-    }
-    // ── Upload heat source pins ──────────────────────────────────────────
-    // Triggered on first call and whenever ThermalReceiver detects a source change.
-    if (g_HeatSourcePinsNeedsUpload && m_HeatSourcePinsStagingBuffer.mapped)
-    {
-        memcpy(m_HeatSourcePinsStagingBuffer.mapped, g_HeatSourcePins, g_SolidCellCount * sizeof(float));
- 
-        VkBufferCopy copy = {};
-        copy.size = g_SolidCellCount * sizeof(float);
-        vkCmdCopyBuffer(ownCmd, m_HeatSourcePinsStagingBuffer.buffer, m_HeatSourcePinsBuffer.buffer, 1, &copy);
- 
-        VkMemoryBarrier bar = {};
-        bar.sType         = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
-        bar.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-        bar.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
-        vkCmdPipelineBarrier(ownCmd,
-            VK_PIPELINE_STAGE_TRANSFER_BIT,
-            VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
-            0, 1, &bar, 0, nullptr, 0, nullptr);
- 
-        g_HeatSourcePinsNeedsUpload = false;
+            g_SolidMaskNeedsUpload = false;
+        }
+
+        if (g_SolidDiffusivityNeedsUpload && m_DiffusivityStagingBuffer.mapped)
+        {
+            memcpy(m_DiffusivityStagingBuffer.mapped,
+                g_SolidDiffusivity, g_SolidCellCount * sizeof(float));
+
+            VkBufferCopy copy = {};
+            copy.size = g_SolidCellCount * sizeof(float);
+            vkCmdCopyBuffer(ownCmd, m_DiffusivityStagingBuffer.buffer,
+                            m_DiffusivityBuffer.buffer, 1, &copy);
+
+            VkMemoryBarrier bar = {};
+            bar.sType         = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
+            bar.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+            bar.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+            vkCmdPipelineBarrier(ownCmd,
+                VK_PIPELINE_STAGE_TRANSFER_BIT,
+                VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                0, 1, &bar, 0, nullptr, 0, nullptr);
+
+            g_SolidDiffusivityNeedsUpload = false;
+        }
+        // ── Upload heat source pins ──────────────────────────────────────────
+        // Triggered on first call and whenever ThermalReceiver detects a source change.
+        if (g_HeatSourcePinsNeedsUpload && m_HeatSourcePinsStagingBuffer.mapped)
+        {
+            memcpy(m_HeatSourcePinsStagingBuffer.mapped, g_HeatSourcePins, g_SolidCellCount * sizeof(float));
+    
+            VkBufferCopy copy = {};
+            copy.size = g_SolidCellCount * sizeof(float);
+            vkCmdCopyBuffer(ownCmd, m_HeatSourcePinsStagingBuffer.buffer, m_HeatSourcePinsBuffer.buffer, 1, &copy);
+    
+            VkMemoryBarrier bar = {};
+            bar.sType         = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
+            bar.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+            bar.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+            vkCmdPipelineBarrier(ownCmd,
+                VK_PIPELINE_STAGE_TRANSFER_BIT,
+                VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                0, 1, &bar, 0, nullptr, 0, nullptr);
+    
+            g_HeatSourcePinsNeedsUpload = false;
+        }
     }
 
     // ── Dispatch diffusion shader ────────────────────────────────────────
