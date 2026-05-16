@@ -27,7 +27,10 @@ Shader "Custom/WaterRaymarching"
         _BoundaryNormalBlendDistance ("Boundary Normal Blend Distance", Range(0.0, 2.0)) = 0.3
         _BoundaryNormalUpBiasPower ("Boundary Up Bias Power", Range(1.0, 12.0)) = 5.0
         [Header(Screen Space Reflections)]
-        _SSRStrength ("SSR Blend Strength", Range(0.0, 1.0)) = 0.85
+        _SSRStrength ("SSR Blend Strength", Range(0.0, 2.0)) = 1.25
+        _SSRColorBoost ("SSR Color Boost", Range(0.0, 8.0)) = 1.5
+        _SSRMinBlend ("SSR Minimum Hit Blend", Range(0.0, 1.0)) = 0.12
+        [Toggle(_SSR_USE_SCENE_NORMALS)] _SSRUseSceneNormals ("SSR Use Scene-Normal Backface Check", Float) = 0
         _SSRStepSize ("SSR Step Size (WS)", Range(0.005, 1.0)) = 0.05
         _SSRMaxDistance ("SSR Max Distance (WS)", Range(0.1, 40.0)) = 10.0
         _SSRMaxSteps ("SSR Max Steps", Range(8, 256)) = 64
@@ -91,6 +94,7 @@ Shader "Custom/WaterRaymarching"
             #pragma multi_compile_fragment _ _REFLECTION_PROBE_BOX_PROJECTION
             #pragma multi_compile_fragment _ _REFLECTION_PROBE_ATLAS
             #pragma multi_compile_fragment _ REFLECTION_PROBE_ROTATION
+            #pragma shader_feature_local_fragment _SSR_USE_SCENE_NORMALS
             #pragma multi_compile _ _CLUSTER_LIGHT_LOOP
             #pragma multi_compile _ _SHADOWS_SOFT
 
@@ -98,7 +102,9 @@ Shader "Custom/WaterRaymarching"
             #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Lighting.hlsl"
             #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/GlobalIllumination.hlsl"
             #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/DeclareDepthTexture.hlsl"
+            #if defined(_SSR_USE_SCENE_NORMALS)
             #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/DeclareNormalsTexture.hlsl"
+            #endif
             #include "RayMarching Includes/RayMarchGeometry.hlsl"
 
             struct WaterRaymarchMeshInput
@@ -136,6 +142,8 @@ Shader "Custom/WaterRaymarching"
                 float  _BoundaryNormalUpBiasPower;
 
                 float  _SSRStrength;
+                float  _SSRColorBoost;
+                float  _SSRMinBlend;
                 float  _SSRStepSize;
                 float  _SSRMaxDistance;
                 float  _SSRMaxSteps;

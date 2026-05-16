@@ -45,6 +45,18 @@ float WaterSSRComputeEdgeFade(float2 screenUV, float edgeFadeWidth)
     return saturate(minEdgeDistance / max(edgeFadeWidth, 1e-4));
 }
 
+float3 WaterSSRGetSceneNormalWS(float2 screenUV, out float sceneNormalValid)
+{
+#if defined(_SSR_USE_SCENE_NORMALS)
+    float3 sceneNormalWS = normalize(SampleSceneNormals(screenUV));
+    sceneNormalValid = step(1e-4, dot(sceneNormalWS, sceneNormalWS));
+    return sceneNormalWS;
+#else
+    sceneNormalValid = 0.0;
+    return float3(0.0, 1.0, 0.0);
+#endif
+}
+
 bool WaterSSRProjectPoint(
     float3 samplePosWS,
     out float2 sampleUV,
@@ -159,8 +171,8 @@ WaterSSRTraceResult TraceWaterScreenSpaceReflection(
                 }
             }
 
-            float3 sceneNormalWS = normalize(SampleSceneNormals(hitUV));
-            float sceneNormalValid = step(1e-4, dot(sceneNormalWS, sceneNormalWS));
+            float sceneNormalValid;
+            float3 sceneNormalWS = WaterSSRGetSceneNormalWS(hitUV, sceneNormalValid);
             float facingDot = dot(sceneNormalWS, -reflectDirWS);
             float backfacePass = (sceneNormalValid > 0.5)
                 ? step(_SSRBackfaceThreshold, facingDot)
@@ -171,13 +183,16 @@ WaterSSRTraceResult TraceWaterScreenSpaceReflection(
                 trace.hit = true;
                 trace.hitMask = 1.0;
                 trace.hitUV = hitUV;
-                trace.hitColor = SAMPLE_TEXTURE2D(_CameraOpaqueTexture, sampler_CameraOpaqueTexture, hitUV).rgb;
+                trace.hitColor = SAMPLE_TEXTURE2D(_CameraOpaqueTexture, sampler_CameraOpaqueTexture, hitUV).rgb
+                               * max(_SSRColorBoost, 0.0);
                 trace.depthDelta = hitDepthDelta;
                 trace.edgeFade = WaterSSRComputeEdgeFade(hitUV, _SSREdgeFadeWidth);
                 trace.thicknessFade = 1.0 - saturate(hitDepthDelta / thickness);
                 trace.backfacePass = backfacePass;
                 trace.fadeFactor = trace.edgeFade * trace.thicknessFade * trace.backfacePass;
-                trace.blendWeight = saturate(_SSRStrength) * trace.fadeFactor;
+                float strengthBlend = saturate(max(_SSRStrength, 0.0) * trace.fadeFactor);
+                float minimumBlend = saturate(_SSRMinBlend);
+                trace.blendWeight = max(strengthBlend, minimumBlend * trace.hitMask);
                 return trace;
             }
         }
@@ -200,8 +215,13 @@ float3 ComposeSceneDepthDebugColor(float2 screenUV)
 
 float3 ComposeSceneNormalDebugColor(float2 screenUV)
 {
-    float3 normalWS = normalize(SampleSceneNormals(screenUV));
+    float sceneNormalValid;
+    float3 normalWS = WaterSSRGetSceneNormalWS(screenUV, sceneNormalValid);
+#if defined(_SSR_USE_SCENE_NORMALS)
     return normalWS * 0.5 + 0.5;
+#else
+    return float3(0.5, 0.5, 0.5);
+#endif
 }
 
 #endif

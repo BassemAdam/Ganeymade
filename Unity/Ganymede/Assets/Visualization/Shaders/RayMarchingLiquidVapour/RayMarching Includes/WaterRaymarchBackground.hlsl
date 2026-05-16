@@ -5,6 +5,7 @@ struct WaterRaymarchBackgroundData
 {
     float2     backgroundScreenUV;
     float      sceneDistanceAlongRay;
+    float      refractionValidity;
     SurfaceHit surfaceHit;
 };
 
@@ -93,14 +94,69 @@ float3 RefineLiquidSurfacePositionWS(
     return 0.5 * (aWS + bWS);
 }
 
+bool TryReconstructSceneWorldPosition(float2 screenUV, out float3 positionWS)
+{
+    float rawDepth = SampleSceneDepth(screenUV);
+#if UNITY_REVERSED_Z
+    if (rawDepth <= 1e-6)
+    {
+        positionWS = 0.0;
+        return false;
+    }
+#else
+    if (rawDepth >= 0.999999)
+    {
+        positionWS = 0.0;
+        return false;
+    }
+#endif
+
+    positionWS = ComputeWorldSpacePosition(screenUV, rawDepth, UNITY_MATRIX_I_VP);
+    return true;
+}
+
+float ComputeRefractionValidity(
+    float2 refractedUV,
+    float refractedSceneDistanceAlongRay,
+    float surfaceDistanceAlongRay,
+    float isoLevel,
+    float surfaceDetectionMargin)
+{
+    float validity = 1.0;
+
+    float3 scenePosWS;
+    if (TryReconstructSceneWorldPosition(refractedUV, scenePosWS))
+    {
+        float liquidThreshold = isoLevel + surfaceDetectionMargin;
+        float submergedMask = (IsInsideDensityBoundsWS(scenePosWS)
+                            && SampleAdjustedLiquidDensityWS(scenePosWS) >= liquidThreshold)
+            ? 1.0
+            : 0.0;
+        validity *= submergedMask;
+    }
+
+    float frontTolerance = max(_StepSize * 2.0, 0.01);
+    float behindSurfaceMask = step(surfaceDistanceAlongRay + frontTolerance, refractedSceneDistanceAlongRay);
+    validity *= behindSurfaceMask;
+
+    return validity;
+}
+
 float2 CalculateRefractedSceneUV(
     WaterRaymarchViewData viewData,
     WaterRaymarchVolumeData volumeData,
     SurfaceHit surfaceHit,
-    float refractionStrength)
+    float refractionStrength,
+    float isoLevel,
+    float surfaceDetectionMargin,
+    out float refractionValidity)
 {
+    refractionValidity = 1.0;
     if (!surfaceHit.hit || surfaceHit.totalInternalReflection || refractionStrength <= 1e-5)
+    {
+        refractionValidity = 0.0;
         return viewData.screenUV;
+    }
 
     float3 refractDir = normalize(surfaceHit.refractDir);
     float3 refractOriginWS = surfaceHit.posWS + refractDir * 1e-3;
@@ -113,17 +169,40 @@ float2 CalculateRefractedSceneUV(
 
     float distanceToExit = refractBounds.x + refractBounds.y;
     if (distanceToExit <= 1e-5)
+    {
+        refractionValidity = 0.0;
         return viewData.screenUV;
+    }
 
     float3 refractedExitPositionWS = refractOriginWS + refractDir * distanceToExit;
     float2 physicallyRefractedUV = ProjectWorldPositionToScreenUV(refractedExitPositionWS);
 
+    float3 cameraToSurfaceWS = surfaceHit.posWS - viewData.cameraPositionWS;
+    float surfaceDistanceAlongRay = length(cameraToSurfaceWS);
+    float3 surfaceViewDirWS = (surfaceDistanceAlongRay > 1e-5)
+        ? (cameraToSurfaceWS / surfaceDistanceAlongRay)
+        : viewData.viewRayDirectionWS;
+    float surfaceDepthDenominator = max(dot(surfaceViewDirWS, WaterSSRCameraForwardWS()), 1e-4);
+    float refractedSceneDistanceAlongRay = SampleSceneDistanceAlongRay(
+        physicallyRefractedUV,
+        surfaceDepthDenominator
+    );
+
+    refractionValidity = ComputeRefractionValidity(
+        physicallyRefractedUV,
+        refractedSceneDistanceAlongRay,
+        surfaceDistanceAlongRay,
+        isoLevel,
+        surfaceDetectionMargin
+    );
+
     float2 uvOvershoot = max(float2(0, 0), abs(physicallyRefractedUV - 0.5) - 0.5);
     float  offScreen   = max(uvOvershoot.x, uvOvershoot.y);
     float  edgeFade    = 1.0 - saturate(offScreen * 20.0);
+    float  refractBlend = saturate(refractionStrength) * edgeFade * saturate(refractionValidity);
 
     return clamp(
-        lerp(viewData.screenUV, physicallyRefractedUV, saturate(refractionStrength) * edgeFade),
+        lerp(viewData.screenUV, physicallyRefractedUV, refractBlend),
         0.001,
         0.999
     );
@@ -236,6 +315,7 @@ WaterRaymarchBackgroundData BuildWaterRaymarchBackgroundData(
     backgroundData.backgroundScreenUV = viewData.screenUV;
     float originalSceneDistanceAlongRay = SampleSceneDistanceAlongRay(viewData.screenUV, viewData.viewDepthDenominator);
     backgroundData.sceneDistanceAlongRay = originalSceneDistanceAlongRay;
+    backgroundData.refractionValidity = 1.0;
     backgroundData.surfaceHit = NoSurfaceHit();
 
     if (originalSceneDistanceAlongRay <= volumeData.distanceToVolume)
@@ -257,7 +337,10 @@ WaterRaymarchBackgroundData BuildWaterRaymarchBackgroundData(
             viewData,
             volumeData,
             backgroundData.surfaceHit,
-            refractionStrength
+            refractionStrength,
+            isoLevel,
+            surfaceDetectionMargin,
+            backgroundData.refractionValidity
         );
         float refractedSceneDistanceAlongRay = SampleSceneDistanceAlongRay(
             backgroundData.backgroundScreenUV,
@@ -328,7 +411,7 @@ WaterBackgroundContributions ComputeWaterBackgroundContributions(
         _CameraOpaqueTexture,
         sampler_CameraOpaqueTexture,
         backgroundData.backgroundScreenUV
-    ).rgb;
+    ).rgb * saturate(backgroundData.refractionValidity);
     contributions.reflectedEnvironmentColor = 0.0;
     contributions.reflectedSSRColor = 0.0;
     contributions.ssrTrace = MakeWaterSSRTraceResultDefault();
