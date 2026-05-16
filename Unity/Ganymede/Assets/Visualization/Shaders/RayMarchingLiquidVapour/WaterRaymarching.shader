@@ -79,10 +79,7 @@ Shader "Custom/WaterRaymarching"
         Pass
         {
             Name "ForwardWaterRaymarch"
-            Tags
-            {
-                "LightMode" = "UniversalForward"
-            }
+            Tags { "LightMode" = "UniversalForward" }
 
             HLSLPROGRAM
             #pragma vertex vert
