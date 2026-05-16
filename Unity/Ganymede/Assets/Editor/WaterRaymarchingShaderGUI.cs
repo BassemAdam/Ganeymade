@@ -89,6 +89,9 @@ public sealed class WaterRaymarchingShaderGUI : ShaderGUI
                 DrawSubSection("Screen Space Reflections (SSR)", ref s_SSR, () =>
                 {
                     Draw("_SSRStrength");
+                    Draw("_SSRColorBoost");
+                    Draw("_SSRMinBlend");
+                    Draw("_SSRUseSceneNormals");
                     Draw("_SSRStepSize");
                     Draw("_SSRMaxDistance");
                     Draw("_SSRMaxSteps");
@@ -96,7 +99,7 @@ public sealed class WaterRaymarchingShaderGUI : ShaderGUI
                     Draw("_SSREdgeFadeWidth");
                     Draw("_SSRBackfaceThreshold");
                     EditorGUILayout.HelpBox(
-                        "SSR traces reflection rays in screen space against camera depth. If a ray misses, runs off-screen, or fails backface/thickness checks, reflection falls back to the environment probe. Use Scene Depth/Scene Normal + SSR Hit/Fetch/Fade debug modes to tune quality.",
+                        "SSR traces reflection rays in screen space against camera depth. Strength controls fade-weighted blend, Color Boost amplifies fetched SSR color, and Minimum Hit Blend enforces a floor when a valid hit exists. Enable Scene-Normal Backface Check only when your pipeline provides a compatible camera normals texture; if you see MSAA bindMS warnings, keep this toggle off. If a ray misses, runs off-screen, or fails checks, reflection falls back to the environment probe. Use Scene Depth/Scene Normal + SSR Hit/Fetch/Fade debug modes to tune quality.",
                         MessageType.None);
                 });
             });
