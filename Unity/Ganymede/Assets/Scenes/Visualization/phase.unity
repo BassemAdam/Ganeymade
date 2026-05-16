@@ -605,6 +605,8 @@ MonoBehaviour:
   emissionRadius: 0.15
   initialTemperature: 25
   isActive: 1
+  latticeSpacing: 0
+  latticeSize: {x: 1, y: 1, z: 1}
 --- !u!4 &281062058
 Transform:
   m_ObjectHideFlags: 0
@@ -1714,6 +1716,9 @@ MonoBehaviour:
   surfaceOnly: 1
   maxLines: 10000
   refreshInterval: 0.2
+  normalLayers:
+    serializedVersion: 2
+    m_Bits: 4294967295
 --- !u!114 &781581044
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -2613,7 +2618,7 @@ MonoBehaviour:
       adaptiveDensityBulk: 260
       adaptiveDensityCurve: 0.4
     rendering:
-      mode: 2
+      mode: 0
       rayMarchingMaterial: {fileID: 2100000, guid: 03c4cd8b0ea45e14190b02d13513c0d9, type: 2}
       marchingCubesMaterial: {fileID: 2100000, guid: a5f165da16e6e4a4e8b93a9c48ecc59b, type: 2}
       vapourRaymarchMaterial: {fileID: 2100000, guid: ecfb9a36afdd6404e9a46793705c4a27, type: 2}
@@ -2812,7 +2817,7 @@ Transform:
   m_GameObject: {fileID: 1268717246}
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: -2.76, y: 4.61, z: -0.86}
+  m_LocalPosition: {x: 4.142, y: 4.61, z: -0.86}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []

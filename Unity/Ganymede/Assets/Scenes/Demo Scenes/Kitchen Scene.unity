@@ -545,7 +545,7 @@ MonoBehaviour:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 681215785}
-  m_Enabled: 1
+  m_Enabled: 0
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: e9eb36d79300fe7428f1000517630b74, type: 3}
   m_Name: 
@@ -561,8 +561,8 @@ MonoBehaviour:
       maxKernelRadiusVoxels: 2
     raymarchBlur:
       liquidBlurEnabled: 1
-      liquidBlurRadius: 3
-      liquidBlurSigma: 3.19
+      liquidBlurRadius: 2
+      liquidBlurSigma: 4
       liquidBlurDetailPreserve: 0
       vapourBlurEnabled: 1
       vapourBlurRadius: 4
@@ -1714,7 +1714,7 @@ MonoBehaviour:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 1885709156}
-  m_Enabled: 0
+  m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 667f1985ae19fdd44b21f9bb54b29c64, type: 3}
   m_Name: 
@@ -2076,6 +2076,30 @@ PrefabInstance:
     - target: {fileID: 1886725506850302762, guid: df50b00d653da4daeb7be587a0685c4d, type: 3}
       propertyPath: m_IsActive
       value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 3363281152818628506, guid: df50b00d653da4daeb7be587a0685c4d, type: 3}
+      propertyPath: m_LocalPosition.x
+      value: -1.786
+      objectReference: {fileID: 0}
+    - target: {fileID: 3363281152818628506, guid: df50b00d653da4daeb7be587a0685c4d, type: 3}
+      propertyPath: m_LocalPosition.y
+      value: -1.175
+      objectReference: {fileID: 0}
+    - target: {fileID: 3363281152818628506, guid: df50b00d653da4daeb7be587a0685c4d, type: 3}
+      propertyPath: m_LocalPosition.z
+      value: -1.369
+      objectReference: {fileID: 0}
+    - target: {fileID: 3464056144979687993, guid: df50b00d653da4daeb7be587a0685c4d, type: 3}
+      propertyPath: m_LocalPosition.x
+      value: 1.126
+      objectReference: {fileID: 0}
+    - target: {fileID: 3464056144979687993, guid: df50b00d653da4daeb7be587a0685c4d, type: 3}
+      propertyPath: m_LocalPosition.y
+      value: -0.463
+      objectReference: {fileID: 0}
+    - target: {fileID: 3464056144979687993, guid: df50b00d653da4daeb7be587a0685c4d, type: 3}
+      propertyPath: m_LocalPosition.z
+      value: 1.372
       objectReference: {fileID: 0}
     - target: {fileID: 5392743254603223645, guid: df50b00d653da4daeb7be587a0685c4d, type: 3}
       propertyPath: m_Enabled

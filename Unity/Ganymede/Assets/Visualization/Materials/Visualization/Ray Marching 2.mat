@@ -107,14 +107,14 @@ Material:
     - _AddPrecomputedVelocity: 0
     - _AlphaClip: 0
     - _AlphaToMask: 0
-    - _BakedNormalBlend: 0.522
+    - _BakedNormalBlend: 1
     - _Blend: 0
     - _BlendModePreserveSpecular: 1
     - _BlueNoiseScale: 1
     - _BlueNoiseStrength: 0
     - _BlueNoiseTimeSpeed: 0
-    - _BoundaryNormalBlendDistance: 2
-    - _BoundaryNormalUpBiasPower: 6.78
+    - _BoundaryNormalBlendDistance: 1.385
+    - _BoundaryNormalUpBiasPower: 11.88
     - _BumpScale: 1
     - _CausticsScale: 2
     - _CausticsSpeed: 0.3
@@ -128,7 +128,7 @@ Material:
     - _DebugReflectionCubemapMode: 2
     - _DebugViewMode: 0
     - _DensityMultiplier: 1
-    - _DensityOffset: -0.37
+    - _DensityOffset: -0.18
     - _DensityPower: 1.5
     - _DetailAlbedoMapScale: 1
     - _DetailNormalMapScale: 1
@@ -148,15 +148,25 @@ Material:
     - _NoiseDriftSpeed: 0.7
     - _NoiseOctaves: 2.87
     - _NoiseScale: 1.49
-    - _NormalSampleRadiusVoxels: 6
+    - _NormalSampleRadiusVoxels: 5.53
     - _OcclusionStrength: 1
     - _Parallax: 0.005
     - _QueueOffset: 0
     - _ReceiveShadows: 1
-    - _ReflectionStrength: 0.329
-    - _ReflectionVisibilityBoost: 9.81
-    - _ReflectionVisibilityFloor: 0
+    - _ReflectionStrength: 1
+    - _ReflectionVisibilityBoost: 3.76
+    - _ReflectionVisibilityFloor: 0.04
     - _RefractionStrength: 1
+    - _SSRBackfaceThreshold: 0.232
+    - _SSRColorBoost: 7.85
+    - _SSREdgeFadeWidth: 0.05
+    - _SSRMaxDistance: 10
+    - _SSRMaxSteps: 64
+    - _SSRMinBlend: 0.12
+    - _SSRStepSize: 0.05
+    - _SSRStrength: 0.486
+    - _SSRThickness: 0.08
+    - _SSRUseSceneNormals: 0
     - _Smoothness: 0.5
     - _SmoothnessTextureChannel: 0
     - _SpecularHighlights: 1
@@ -164,7 +174,7 @@ Material:
     - _SrcBlendAlpha: 1
     - _StepSize: 0.259
     - _Surface: 0
-    - _SurfaceDetectionMargin: 0.04
+    - _SurfaceDetectionMargin: 0.19
     - _SurfaceRefineIterations: 8
     - _TIRSoftness: 0.5
     - _VapourAOStepSize: 0.946
