@@ -14,7 +14,7 @@ OcclusionCullingSettings:
 RenderSettings:
   m_ObjectHideFlags: 0
   serializedVersion: 10
-  m_Fog: 0
+  m_Fog: 1
   m_FogColor: {r: 0.5, g: 0.5, b: 0.5, a: 1}
   m_FogMode: 3
   m_FogDensity: 0.01
@@ -23,10 +23,10 @@ RenderSettings:
   m_AmbientSkyColor: {r: 0.212, g: 0.227, b: 0.259, a: 1}
   m_AmbientEquatorColor: {r: 0.114, g: 0.125, b: 0.133, a: 1}
   m_AmbientGroundColor: {r: 0.047, g: 0.043, b: 0.035, a: 1}
-  m_AmbientIntensity: 1
+  m_AmbientIntensity: 1.01
   m_AmbientMode: 0
   m_SubtractiveShadowColor: {r: 0.42, g: 0.478, b: 0.627, a: 1}
-  m_SkyboxMaterial: {fileID: 2100000, guid: 01484d803016d5e478d234e3c7b25927, type: 2}
+  m_SkyboxMaterial: {fileID: 2100000, guid: 40fa5696077438a49bbce1aac01eba84, type: 2}
   m_HaloStrength: 0.5
   m_FlareStrength: 1
   m_FlareFadeSpeed: 3
@@ -136,7 +136,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 1
+  m_IsActive: 0
 --- !u!199 &246557441
 ParticleSystemRenderer:
   serializedVersion: 7
@@ -5483,7 +5483,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 2118744695351396450, guid: 47defb3df32204a4390f9dd2ccd21639, type: 3}
       propertyPath: m_LocalPosition.y
-      value: -2.8
+      value: 15.6
       objectReference: {fileID: 0}
     - target: {fileID: 2118744695351396450, guid: 47defb3df32204a4390f9dd2ccd21639, type: 3}
       propertyPath: m_LocalPosition.z
@@ -5824,7 +5824,7 @@ Light:
   serializedVersion: 13
   m_Type: 1
   m_Color: {r: 1, g: 1, b: 1, a: 1}
-  m_Intensity: 1
+  m_Intensity: 7.28
   m_Range: 10
   m_SpotAngle: 30
   m_InnerSpotAngle: 21.80208
@@ -5926,7 +5926,7 @@ MonoBehaviour:
   boundsMode: 1
   gridMin: {x: -10, y: -10, z: -10}
   gridMax: {x: 10, y: 10, z: 10}
-  voxelSize: 0.15
+  voxelSize: 0.3
   autoFitPadding: 1
   fillVolume: 1
   fillSweepRounds: 2
@@ -5983,12 +5983,12 @@ MonoBehaviour:
     densityGrid:
       volumeDims: {x: 128, y: 128, z: 128}
       vapourSmoothingRadiusWS: 0.1
-      maxKernelRadiusVoxels: 3
+      maxKernelRadiusVoxels: 2
     raymarchBlur:
       liquidBlurEnabled: 1
       liquidBlurRadius: 2
-      liquidBlurSigma: 1.35
-      liquidBlurDetailPreserve: 0.093
+      liquidBlurSigma: 4
+      liquidBlurDetailPreserve: 0
       vapourBlurEnabled: 1
       vapourBlurRadius: 4
       vapourBlurSigma: 4
@@ -6005,19 +6005,19 @@ MonoBehaviour:
     raymarchSmoothing:
       liquidSmoothingRadiusWS: 1
       adaptiveRadiusEnabled: 1
-      liquidBulkSmoothingRadiusWS: 2.5
-      adaptiveDensitySurface: 175
-      adaptiveDensityBulk: 300
-      adaptiveDensityCurve: 0.4
+      liquidBulkSmoothingRadiusWS: 0.4
+      adaptiveDensitySurface: 181
+      adaptiveDensityBulk: 215
+      adaptiveDensityCurve: 1
     marchingCubesSmoothing:
       liquidSmoothingRadiusWS: 0
       adaptiveRadiusEnabled: 1
-      liquidBulkSmoothingRadiusWS: 0.25
+      liquidBulkSmoothingRadiusWS: 0.19
       adaptiveDensitySurface: 170
       adaptiveDensityBulk: 260
-      adaptiveDensityCurve: 0.4
+      adaptiveDensityCurve: 0.14
     rendering:
-      mode: 2
+      mode: 0
       rayMarchingMaterial: {fileID: 2100000, guid: 03c4cd8b0ea45e14190b02d13513c0d9, type: 2}
       marchingCubesMaterial: {fileID: 2100000, guid: a5f165da16e6e4a4e8b93a9c48ecc59b, type: 2}
       vapourRaymarchMaterial: {fileID: 2100000, guid: ecfb9a36afdd6404e9a46793705c4a27, type: 2}
@@ -6308,11 +6308,11 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::VoxelDynamic
   enableFluidForces: 1
   buoyancyMode: 0
-  objectDensity: 50
-  dragCoefficient: 1
+  objectDensity: 90
+  dragCoefficient: 3.2
   angularDragCoefficient: 0.5
-  sinkFactor: 0.2
-  stayUpright: 1
+  sinkFactor: 0.102
+  stayUpright: 0
   autoSetMass: 1
   submergedFraction: 0
   lastBuoyancyForce: {x: 0, y: 0, z: 0}
@@ -6687,7 +6687,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 1
+  m_IsActive: 0
 --- !u!114 &1923009166
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -6952,6 +6952,10 @@ PrefabInstance:
       value: 100
       objectReference: {fileID: 0}
     - target: {fileID: 4161998456328252244, guid: 18cf1fa5220a198409fde72db8b3e2a5, type: 3}
+      propertyPath: sdfFriction
+      value: 0.416
+      objectReference: {fileID: 0}
+    - target: {fileID: 4161998456328252244, guid: 18cf1fa5220a198409fde72db8b3e2a5, type: 3}
       propertyPath: gasStiffness
       value: 100
       objectReference: {fileID: 0}
@@ -6981,7 +6985,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 4161998456328252244, guid: 18cf1fa5220a198409fde72db8b3e2a5, type: 3}
       propertyPath: particleCount
-      value: 32768
+      value: 65536
       objectReference: {fileID: 0}
     - target: {fileID: 4161998456328252244, guid: 18cf1fa5220a198409fde72db8b3e2a5, type: 3}
       propertyPath: sdfSkinOffset

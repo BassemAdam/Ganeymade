@@ -1,0 +1,16 @@
+fileFormatVersion: 2
+guid: e8fc0def05cbfa34c82a1c8ea2ff5897
+ShaderImporter:
+  externalObjects: {}
+  defaultTextures: []
+  nonModifiableTextures: []
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 372048
+  packageName: Procedural Tree
+  packageVersion: 1.0
+  assetPath: Assets/Procedural Tree/Shaders/Procedural Tree.shader
+  uploadId: 895288

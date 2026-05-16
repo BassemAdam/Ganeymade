@@ -1,0 +1,14 @@
+fileFormatVersion: 2
+guid: f2e1981c9a40682499007016327f8d1f
+PrefabImporter:
+  externalObjects: {}
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 372048
+  packageName: Procedural Tree
+  packageVersion: 1.0
+  assetPath: Assets/Procedural Tree/Prefabs/Pine Tree.prefab
+  uploadId: 895288

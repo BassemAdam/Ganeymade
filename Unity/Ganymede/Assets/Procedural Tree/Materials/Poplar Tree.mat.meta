@@ -1,0 +1,15 @@
+fileFormatVersion: 2
+guid: d978ddd334d14454bb95036b83c808f4
+NativeFormatImporter:
+  externalObjects: {}
+  mainObjectFileID: 2100000
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 372048
+  packageName: Procedural Tree
+  packageVersion: 1.0
+  assetPath: Assets/Procedural Tree/Materials/Poplar Tree.mat
+  uploadId: 895288

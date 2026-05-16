@@ -1,0 +1,18 @@
+fileFormatVersion: 2
+guid: bdd06755fa86000489152edc62ef6e98
+MonoImporter:
+  externalObjects: {}
+  serializedVersion: 2
+  defaultReferences: []
+  executionOrder: 0
+  icon: {instanceID: 0}
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 372048
+  packageName: Procedural Tree
+  packageVersion: 1.0
+  assetPath: Assets/Procedural Tree/Scripts/ProceduralTree.cs
+  uploadId: 895288

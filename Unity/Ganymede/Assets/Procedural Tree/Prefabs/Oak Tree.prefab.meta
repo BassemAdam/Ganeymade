@@ -1,0 +1,14 @@
+fileFormatVersion: 2
+guid: f591993b18cead649bba0f0ab8bc4ac8
+PrefabImporter:
+  externalObjects: {}
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 372048
+  packageName: Procedural Tree
+  packageVersion: 1.0
+  assetPath: Assets/Procedural Tree/Prefabs/Oak Tree.prefab
+  uploadId: 895288
