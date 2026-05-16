@@ -14,6 +14,9 @@ public sealed class WaterPhaseDensityPipeline
     private readonly int _normalizeKernel;
     private readonly int _blurDensityKernel;
     private readonly int _bakeNormalsKernel;
+    private int _lastBoundResourcesVersion = -1;
+    // Cached group counts — only change when volumeDims changes (tied to resource version)
+    private int _groupsX, _groupsY, _groupsZ;
 
     private static readonly int ID_VolumeDims = Shader.PropertyToID("_VolumeDims");
     private static readonly int ID_ParticleCount = Shader.PropertyToID("_ParticleCount");
@@ -43,6 +46,11 @@ public sealed class WaterPhaseDensityPipeline
         _normalizeKernel = _computeShader.FindKernel("NormalizeToTexture");
         _blurDensityKernel = _computeShader.FindKernel("BlurDensity");
         _bakeNormalsKernel = _computeShader.FindKernel("BakeNormals");
+
+        // True constants — never change for the lifetime of this pipeline
+        _computeShader.SetFloat(ID_ParticleContribution, ParticleContribution);
+        _computeShader.SetFloat(ID_FixedPointScale, FixedPointScale);
+        _computeShader.SetVector(ID_InvDensityScaleRG, new Vector4(LiquidInvDensityScale, 1.0f, 0f, 0f));
     }
 
     public void Execute(
@@ -52,76 +60,61 @@ public sealed class WaterPhaseDensityPipeline
         Vector3 boundsMin,
         Vector3 boundsMax)
     {
-        Vector3Int volumeDims = resources.VolumeDims;
         int particleCount = Mathf.Max(1, computePlugin.particleCount);
 
-        BindStaticResources(resources);
-        BindSharedFrameParameters(computePlugin, settings, volumeDims, particleCount, boundsMin, boundsMax);
+        BindStaticResourcesIfNeeded(resources);
+        BindPerFrameParameters(computePlugin, settings, resources.VolumeDims, particleCount, boundsMin, boundsMax);
 
-        int groupsX = Mathf.CeilToInt(volumeDims.x / 8.0f);
-        int groupsY = Mathf.CeilToInt(volumeDims.y / 8.0f);
-        int groupsZ = Mathf.CeilToInt(volumeDims.z / 8.0f);
         int particleGroups = Mathf.Max(1, Mathf.CeilToInt(particleCount / 256.0f));
 
-        _computeShader.Dispatch(_clearKernel, groupsX, groupsY, groupsZ);
+        _computeShader.Dispatch(_clearKernel, _groupsX, _groupsY, _groupsZ);
         _computeShader.Dispatch(_splatKernel, particleGroups, 1, 1);
-        _computeShader.Dispatch(_normalizeKernel, groupsX, groupsY, groupsZ);
+        _computeShader.Dispatch(_normalizeKernel, _groupsX, _groupsY, _groupsZ);
 
-        DispatchDensityBlurIfEnabled(settings.ActiveBlur, resources, groupsX, groupsY, groupsZ, 0);
-        DispatchDensityBlurIfEnabled(settings.ActiveBlur, resources, groupsX, groupsY, groupsZ, 1);
-        DispatchNormalBake(resources, groupsX, groupsY, groupsZ);
+        DispatchDensityBlurIfEnabled(settings.ActiveBlur, resources, _groupsX, _groupsY, _groupsZ, 0);
+        DispatchDensityBlurIfEnabled(settings.ActiveBlur, resources, _groupsX, _groupsY, _groupsZ, 1);
+        DispatchNormalBake(resources, _groupsX, _groupsY, _groupsZ);
     }
 
-    private void BindStaticResources(WaterPhaseResources resources)
+    private void BindStaticResourcesIfNeeded(WaterPhaseResources resources)
     {
+        if (resources == null || _lastBoundResourcesVersion == resources.Version)
+            return;
+
         _computeShader.SetBuffer(_clearKernel, "_DensityGrid", resources.DensityGridBuffer);
         _computeShader.SetBuffer(_splatKernel, "_DensityGrid", resources.DensityGridBuffer);
         _computeShader.SetBuffer(_splatKernel, "_ParticleBuffer", resources.ParticleOutputBuffer);
         _computeShader.SetBuffer(_normalizeKernel, "_DensityGrid", resources.DensityGridBuffer);
         _computeShader.SetTexture(_normalizeKernel, "_DensityTexture3D_RG", resources.PhaseDensityTexture);
+        _computeShader.SetTexture(_blurDensityKernel, "_DensityTexture3D_Read", resources.PhaseDensityTexture);
+        _computeShader.SetTexture(_blurDensityKernel, "_DensityTexture3D_RG", resources.PhaseDensityScratchTexture);
+        _computeShader.SetTexture(_bakeNormalsKernel, "_DensityTexture3D_Read", resources.PhaseDensityTexture);
         _computeShader.SetTexture(_bakeNormalsKernel, "_NormalTexture3D", resources.SurfaceNormalTexture);
-    }
 
-    private void BindSharedFrameParameters(
-        UseComputePlugin computePlugin,
-        WaterPhaseBridgeSettings settings,
-        Vector3Int volumeDims,
-        int particleCount,
-        Vector3 boundsMin,
-        Vector3 boundsMax)
-    {
+        // VolumeDims and group counts only change when resources are reallocated
+        Vector3Int volumeDims = resources.VolumeDims;
         _computeShader.SetInts(ID_VolumeDims, volumeDims.x, volumeDims.y, volumeDims.z);
-        _computeShader.SetInt(ID_ParticleCount, particleCount);
-        _computeShader.SetVector(ID_BoundsMinWS, new Vector4(boundsMin.x, boundsMin.y, boundsMin.z, 0f));
-        _computeShader.SetVector(ID_BoundsMaxWS, new Vector4(boundsMax.x, boundsMax.y, boundsMax.z, 0f));
-        _computeShader.SetFloat(ID_ParticleContribution, ParticleContribution);
-        _computeShader.SetFloat(ID_FixedPointScale, FixedPointScale);
-        _computeShader.SetVector(
-            ID_InvDensityScaleRG,
-            new Vector4(LiquidInvDensityScale, 1.0f, 0f, 0f));
-        BindSplatParameters(computePlugin, settings, volumeDims, boundsMin, boundsMax);
+        _groupsX = Mathf.CeilToInt(volumeDims.x / 8.0f);
+        _groupsY = Mathf.CeilToInt(volumeDims.y / 8.0f);
+        _groupsZ = Mathf.CeilToInt(volumeDims.z / 8.0f);
+
+        _lastBoundResourcesVersion = resources.Version;
     }
 
-    private void BindSplatParameters(
-        UseComputePlugin computePlugin,
-        WaterPhaseBridgeSettings settings,
-        Vector3Int volumeDims,
-        Vector3 boundsMin,
-        Vector3 boundsMax)
+    /// <summary>
+    /// Binds inspector-editable smoothing parameters that do not change at runtime.
+    /// Call once from Start after EnsureDensityPipeline.
+    /// </summary>
+    public void BindSmoothingParameters(WaterPhaseBridgeSettings settings)
     {
         var grid = settings.DensityGrid;
         var smoothing = settings.ActiveSmoothing;
 
         float surfaceRadius = Mathf.Max(0f, smoothing.liquidSmoothingRadiusWS);
-
-
         float bulkRadius = smoothing.adaptiveRadiusEnabled
             ? smoothing.liquidBulkSmoothingRadiusWS
             : surfaceRadius;
-
         float vapourRadius = Mathf.Max(0f, grid.vapourSmoothingRadiusWS);
-
-        float loopRadius = Mathf.Max(Mathf.Max(surfaceRadius, bulkRadius), vapourRadius);
 
         _computeShader.SetFloat(ID_SmoothingRadiusWS_LiquidSmall, surfaceRadius);
         _computeShader.SetFloat(ID_SmoothingRadiusWS_LiquidBulk, bulkRadius);
@@ -129,14 +122,33 @@ public sealed class WaterPhaseDensityPipeline
         _computeShader.SetFloat(ID_AdaptiveDensitySurface, Mathf.Max(0f, smoothing.adaptiveDensitySurface));
         _computeShader.SetFloat(ID_AdaptiveDensityBulk, Mathf.Max(smoothing.adaptiveDensitySurface + 0.01f, smoothing.adaptiveDensityBulk));
         _computeShader.SetFloat(ID_AdaptiveDensityCurve, Mathf.Max(0.01f, smoothing.adaptiveDensityCurve));
+    }
+
+    private void BindPerFrameParameters(
+        UseComputePlugin computePlugin,
+        WaterPhaseBridgeSettings settings,
+        Vector3Int volumeDims,
+        int particleCount,
+        Vector3 boundsMin,
+        Vector3 boundsMax)
+    {
+        _computeShader.SetInt(ID_ParticleCount, particleCount);
+        _computeShader.SetVector(ID_BoundsMinWS, new Vector4(boundsMin.x, boundsMin.y, boundsMin.z, 0f));
+        _computeShader.SetVector(ID_BoundsMaxWS, new Vector4(boundsMax.x, boundsMax.y, boundsMax.z, 0f));
+        _computeShader.SetFloat(ID_RestDensity, Mathf.Max(0.01f, computePlugin.restDensity));
+
+        var grid = settings.DensityGrid;
+        var smoothing = settings.ActiveSmoothing;
+        float surfaceRadius = Mathf.Max(0f, smoothing.liquidSmoothingRadiusWS);
+        float bulkRadius = smoothing.adaptiveRadiusEnabled ? smoothing.liquidBulkSmoothingRadiusWS : surfaceRadius;
+        float vapourRadius = Mathf.Max(0f, grid.vapourSmoothingRadiusWS);
+        float loopRadius = Mathf.Max(Mathf.Max(surfaceRadius, bulkRadius), vapourRadius);
 
         _computeShader.SetInt(
             ID_KernelRadiusVoxels,
             Mathf.Min(
                 Mathf.Max(1, grid.maxKernelRadiusVoxels),
                 ComputeKernelRadiusVoxels(loopRadius, volumeDims, boundsMin, boundsMax)));
-
-        _computeShader.SetFloat(ID_RestDensity, Mathf.Max(0.01f, computePlugin.restDensity));
     }
 
     private static int ComputeKernelRadiusVoxels(float smoothingRadiusWS, Vector3Int volumeDims, Vector3 boundsMin, Vector3 boundsMax)
@@ -173,8 +185,6 @@ public sealed class WaterPhaseDensityPipeline
         _computeShader.SetFloat(ID_BlurSigma, blur.GetSigma(channel));
         _computeShader.SetFloat(ID_BlurDetailPreserve, blur.GetDetailPreserve(channel));
         _computeShader.SetInt(ID_BlurChannel, channel);
-        _computeShader.SetTexture(_blurDensityKernel, "_DensityTexture3D_Read", resources.PhaseDensityTexture);
-        _computeShader.SetTexture(_blurDensityKernel, "_DensityTexture3D_RG", resources.PhaseDensityScratchTexture);
         _computeShader.Dispatch(_blurDensityKernel, groupsX, groupsY, groupsZ);
         // https://docs.unity3d.com/6000.4/Documentation/ScriptReference/Graphics.CopyTexture.html
         Graphics.CopyTexture(resources.PhaseDensityScratchTexture, resources.PhaseDensityTexture);
@@ -182,7 +192,6 @@ public sealed class WaterPhaseDensityPipeline
 
     private void DispatchNormalBake(WaterPhaseResources resources, int groupsX, int groupsY, int groupsZ)
     {
-        _computeShader.SetTexture(_bakeNormalsKernel, "_DensityTexture3D_Read", resources.PhaseDensityTexture);
         _computeShader.Dispatch(_bakeNormalsKernel, groupsX, groupsY, groupsZ);
     }
 }

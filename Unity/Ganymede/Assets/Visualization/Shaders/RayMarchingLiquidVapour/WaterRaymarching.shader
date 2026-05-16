@@ -26,6 +26,17 @@ Shader "Custom/WaterRaymarching"
         _BakedNormalBlend ("Baked Normal Blend", Range(0.0, 1.0)) = 0.0
         _BoundaryNormalBlendDistance ("Boundary Normal Blend Distance", Range(0.0, 2.0)) = 0.3
         _BoundaryNormalUpBiasPower ("Boundary Up Bias Power", Range(1.0, 12.0)) = 5.0
+        [Header(Screen Space Reflections)]
+        _SSRStrength ("SSR Blend Strength", Range(0.0, 2.0)) = 1.25
+        _SSRColorBoost ("SSR Color Boost", Range(0.0, 8.0)) = 1.5
+        _SSRMinBlend ("SSR Minimum Hit Blend", Range(0.0, 1.0)) = 0.12
+        [Toggle(_SSR_USE_SCENE_NORMALS)] _SSRUseSceneNormals ("SSR Use Scene-Normal Backface Check", Float) = 0
+        _SSRStepSize ("SSR Step Size (WS)", Range(0.005, 1.0)) = 0.05
+        _SSRMaxDistance ("SSR Max Distance (WS)", Range(0.1, 40.0)) = 10.0
+        _SSRMaxSteps ("SSR Max Steps", Range(8, 256)) = 64
+        _SSRThickness ("SSR Thickness Tolerance", Range(0.001, 2.0)) = 0.08
+        _SSREdgeFadeWidth ("SSR Edge Fade Width", Range(0.001, 0.5)) = 0.08
+        _SSRBackfaceThreshold ("SSR Backface Dot Threshold", Range(-1.0, 1.0)) = 0.05
         [Header(Vapour Rendering)]
         _VapourBaseColor ("Vapour Base Color", Color) = (1.0, 1.0, 1.0, 1)
         _VapourAbsorption ("Vapour Absorption (density -> opacity)", Range(0.1, 20.0)) = 8.0
@@ -83,6 +94,7 @@ Shader "Custom/WaterRaymarching"
             #pragma multi_compile_fragment _ _REFLECTION_PROBE_BOX_PROJECTION
             #pragma multi_compile_fragment _ _REFLECTION_PROBE_ATLAS
             #pragma multi_compile_fragment _ REFLECTION_PROBE_ROTATION
+            #pragma shader_feature_local_fragment _SSR_USE_SCENE_NORMALS
             #pragma multi_compile _ _CLUSTER_LIGHT_LOOP
             #pragma multi_compile _ _SHADOWS_SOFT
 
@@ -90,6 +102,9 @@ Shader "Custom/WaterRaymarching"
             #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Lighting.hlsl"
             #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/GlobalIllumination.hlsl"
             #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/DeclareDepthTexture.hlsl"
+            #if defined(_SSR_USE_SCENE_NORMALS)
+            #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/DeclareNormalsTexture.hlsl"
+            #endif
             #include "RayMarching Includes/RayMarchGeometry.hlsl"
 
             struct WaterRaymarchMeshInput
@@ -105,13 +120,12 @@ Shader "Custom/WaterRaymarching"
             };
 
             CBUFFER_START(UnityPerMaterial)
-                // Liquid volumetric
-                float3 _ScatteringCoefficients;      // sigma_t for liquid (extinction = scatter + absorb)
-                float3 _LiquidScatterColor;          // scatter albedo tint
-                float  _DensityMultiplier;           // liquid density scale for volume, surface detection, and normals
-                float  _DensityOffset;               // liquid density bias for volume, surface detection, and normals
+                float3 _ScatteringCoefficients;
+                float3 _LiquidScatterColor;
+                float  _DensityMultiplier;
+                float  _DensityOffset;
                 float  _LightStepSize;
-                // Surface optics
+
                 float  _StepSize;
                 float  _IsoLevel;
                 float  _DebugViewMode;
@@ -126,7 +140,17 @@ Shader "Custom/WaterRaymarching"
                 float  _BakedNormalBlend;
                 float  _BoundaryNormalBlendDistance;
                 float  _BoundaryNormalUpBiasPower;
-                // Vapour rendering — procedural shape with shadow modulation for god rays.
+
+                float  _SSRStrength;
+                float  _SSRColorBoost;
+                float  _SSRMinBlend;
+                float  _SSRStepSize;
+                float  _SSRMaxDistance;
+                float  _SSRMaxSteps;
+                float  _SSRThickness;
+                float  _SSREdgeFadeWidth;
+                float  _SSRBackfaceThreshold;
+
                 half4  _VapourBaseColor;
                 float  _VapourAbsorption;
                 float  _VapourGodRayStrength;
@@ -136,7 +160,7 @@ Shader "Custom/WaterRaymarching"
                 float  _VapourPresenceThreshold;
                 float  _VapourFullDensity;
                 float  _VapourDensityMultiplier;
-                // Vapour procedural structure — same defaults/formula family as Custom/VapourVolume.
+
                 float  _NoiseScale;
                 float4 _NoiseDriftDir;
                 float  _NoiseDriftSpeed;
@@ -167,6 +191,7 @@ Shader "Custom/WaterRaymarching"
             #include "RayMarching Includes/RayMarchSurface.hlsl"
             #include "RayMarching Includes/WaterRaymarchView.hlsl"
             #include "RayMarching Includes/WaterRaymarchVolume.hlsl"
+            #include "RayMarching Includes/WaterRaymarchSSR.hlsl"
             #include "RayMarching Includes/WaterRaymarchBackground.hlsl"
 
             WaterRaymarchVaryings vert(WaterRaymarchMeshInput IN)
@@ -208,10 +233,6 @@ Shader "Custom/WaterRaymarching"
                 float safeStepSize   = max(_StepSize, 1e-4);
                 float currentDistance = volumeData.distanceToVolume + safeStepSize * viewData.blueNoiseValue;
                 float exitDistance    = min(volumeData.volumeExitDistance, backgroundData.sceneDistanceAlongRay);
-                // Per-pixel blue noise base for shadow jitter (channel 1 = independent
-                // distribution from the view-ray channel 0).  Combined with a golden-ratio
-                // step sequence inside the loop so each shadow ray gets a unique offset,
-                // not the same one for every step on this pixel.
                 float shadowJitterBase = SampleWaterBlueNoiseChannel(viewData.screenUV, 1);
                 float surfaceDistanceAlongRay = backgroundData.surfaceHit.hit
                     ? distance(viewData.cameraPositionWS, backgroundData.surfaceHit.posWS)
@@ -230,31 +251,18 @@ Shader "Custom/WaterRaymarching"
                     float3 samplePositionWS = viewData.cameraPositionWS + viewData.viewRayDirectionWS * stepStartDistance;
                     currentDistance += stepLength;
 
-                    // One raw grid sample gives us both phases:
-                    //   R / phase 0 = liquid
-                    //   G / phase 1 = vapour
-                    // Vapour procedural shaping is skipped when the raw vapour
-                    // channel is empty, so liquid-only steps avoid FBM work.
                     float2 rawDensity = SampleDensityRG_WS(samplePositionWS);
                     float  dl = AdjustLiquidDensity(rawDensity.x);
                     float  dv = (rawDensity.y > 1e-6) ? BuildVapourDensityWS(samplePositionWS, rawDensity.y) : 0.0;
 
-                    // Skip empty steps without paying for a shadow march.
                     if (dl + dv < 1e-6)
                         continue;
 
                     float3 sigmaE = _ScatteringCoefficients * dl + EvaluateSimpleVapourExtinction(dv);
 
-                    // Only liquid samples need the expensive liquid self-shadow
-                    // march. Vapour-only samples skip this completely.
                     float3 sunTransmittance = 1.0;
                     if (dl > 1e-6)
                     {
-                        // Golden-ratio (0.618...) step sequence layered on the per-pixel
-                        // blue noise base.  Each view step gets a unique shadow jitter in
-                        // [0,1) that is well-distributed across all steps on this pixel,
-                        // breaking sun-direction banding that would persist if every step
-                        // used the same per-pixel value.
                         float shadowJitter = frac(shadowJitterBase + frac(stepStartDistance * 0.61803398875));
                         sunTransmittance = CalculateTransmittedSunLightLiquid(
                             samplePositionWS,
@@ -264,9 +272,6 @@ Shader "Custom/WaterRaymarching"
                         );
                     }
 
-                    // Main-light shadowing drives both liquid shadows and vapour
-                    // god rays. Vapour applies a visibility floor in
-                    // EvaluateVapourDirectScatter so shadowed cells do not go black.
                     half shadowAtten = 1.0;
                     if (dl + dv > 1e-6)
                     {
@@ -313,13 +318,6 @@ Shader "Custom/WaterRaymarching"
                                 }
                                 if (dl > 1e-6)
                                 {
-                                    // Beer-Lambert single scatter: L_s = sigma_s * rho * L_in * ds
-                                    // No self-shadow march for point lights: the march direction
-                                    // changes per sample position and per light, making a volumetric
-                                    // shadow walk prohibitively expensive per step.  Distance
-                                    // attenuation + shadow-map attenuation (shadowAttenuation) still
-                                    // produce correctly attenuated coloured light pooling inside the
-                                    // liquid volume.
                                     liquidScatterAdditional += _LiquidScatterColor * dl * safeStepSize
                                         * radiance * additionalLight.shadowAttenuation;
                                 }

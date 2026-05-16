@@ -1,14 +1,6 @@
 #ifndef SSF_DEPTH_INCLUDED
 #define SSF_DEPTH_INCLUDED
 
-// ============================================================
-// Pass: ScreenSpaceFluidDepth
-//   Render each particle as a sphere impostor.
-//   Color (RFloat) = positive linear eye-depth in metres.
-//   SV_Depth       = correct hardware Z so the closest particle
-//                    wins per-pixel (Simon Green Step 1).
-// ============================================================
-
 struct DepthOut
 {
     float4 color : SV_Target;
@@ -27,8 +19,8 @@ DepthOut fragSSFDepth(ParticleVaryings i)
 
     DepthOut o;
     o.depth = h.clipPos.z / h.clipPos.w;
-    o.color = float4(-h.viewPos.z, 0, 0, 1);   // positive eye depth (m)
+    o.color = float4(-h.viewPos.z, 0, 0, 1);
     return o;
 }
 
-#endif // SSF_DEPTH_INCLUDED
+#endif

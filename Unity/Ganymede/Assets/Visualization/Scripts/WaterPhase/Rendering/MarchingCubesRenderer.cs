@@ -32,6 +32,7 @@ public class MarchingCubesRenderer : IDisposable
     // ---- Material ----
     private Material _matInstance;
     private readonly Material _sourceMaterial;
+    private readonly MaterialPropertyBlock _drawProperties = new MaterialPropertyBlock();
 
     // ---- Constants ----
     private const int VertexStride = 32; // float4 position + float4 normal
@@ -60,6 +61,17 @@ public class MarchingCubesRenderer : IDisposable
     // ---- State ----
     private int _lastVertexCount;
     private bool _disposed;
+    private bool _staticKernelBindingsApplied;
+    private readonly int _waterLayer;  // cached once — LayerMask.NameToLayer is not free
+    private ComputeBuffer _boundClearArgsBuffer;
+    private ComputeBuffer _boundMarchArgsBuffer;
+    private ComputeBuffer _boundComputeVertexBuffer;
+    private ComputeBuffer _boundDrawVertexBuffer;
+    private ComputeBuffer _boundThicknessVertexBuffer;
+    private RenderTexture _boundDensityTexture;
+    private RenderTexture _boundNormalTexture;
+    private Material _boundThicknessMaterial;
+    private int _boundThicknessPassIndex = -1;
 
     /// <summary>
     /// Creates a new MarchingCubesRenderer.
@@ -91,10 +103,9 @@ public class MarchingCubesRenderer : IDisposable
         _lengthsBuffer = new ComputeBuffer(s_lengths.Length, sizeof(int));
         _lengthsBuffer.SetData(s_lengths);
 
-        // Bind LUT buffers once (they never change)
-        _compute.SetBuffer(_kMarch, PID_Lut, _lutBuffer);
-        _compute.SetBuffer(_kMarch, PID_Offsets, _offsetsBuffer);
-        _compute.SetBuffer(_kMarch, PID_Lengths, _lengthsBuffer);
+        ApplyStaticKernelBindings();
+
+        _waterLayer = LayerMask.NameToLayer("Water");
 
         // Register to draw into the custom water depth rendering pass
         WaterThicknessFeature.OnDrawWaterProcedural += DrawProceduralThickness;
@@ -128,23 +139,12 @@ public class MarchingCubesRenderer : IDisposable
             sizeWS.y / Mathf.Max(1, dims.y - 1),
             sizeWS.z / Mathf.Max(1, dims.z - 1));
 
+        BindDispatchResources(densityTexture3D, normalTexture3D);
+
         // Reset draw args
-        _compute.SetBuffer(_kClear, "drawArgs", _drawArgsBuffer);
         _compute.Dispatch(_kClear, 1, 1, 1);
 
         // Bind per-frame data
-        _compute.SetBuffer(_kMarch, "drawArgs", _drawArgsBuffer);
-        _compute.SetBuffer(_kMarch, PID_Vertices, _vertexBuffer);
-        // LUT buffers are also rebound every frame: Unity drops one-time kernel
-        // bindings whenever the compute shader is reimported (e.g. after an edit
-        // to any .compute file in the project triggers a cascade reimport), and
-        // the next Dispatch fails with "Property (lengths) at kernel index (0)
-        // is not set". Rebinding here is cheap and makes the renderer immune.
-        _compute.SetBuffer(_kMarch, PID_Lut,     _lutBuffer);
-        _compute.SetBuffer(_kMarch, PID_Offsets, _offsetsBuffer);
-        _compute.SetBuffer(_kMarch, PID_Lengths, _lengthsBuffer);
-        _compute.SetTexture(_kMarch, PID_DensityTexture3D, densityTexture3D);
-        _compute.SetTexture(_kMarch, PID_NormalTexture3D,  normalTexture3D);
         _compute.SetInts(PID_GridSize, dims.x, dims.y, dims.z);
         _compute.SetVector(PID_VoxelSize, new Vector4(voxelSize.x, voxelSize.y, voxelSize.z, 0f));
         _compute.SetVector(PID_BoundsMinWS, new Vector4(boundsMin.x, boundsMin.y, boundsMin.z, 0f));
@@ -156,21 +156,13 @@ public class MarchingCubesRenderer : IDisposable
         int gz = Mathf.CeilToInt(dims.z / 8f);
         _compute.Dispatch(_kMarch, gx, gy, gz);
 
-        // Ensure material instance
-        if (_matInstance == null)
-            _matInstance = new Material(_sourceMaterial);
-        else
-            _matInstance.CopyPropertiesFromMaterial(_sourceMaterial);
-
-        _matInstance.EnableKeyword(KW_Procedural);
-        _matInstance.SetBuffer(PID_VertexBuffer, _vertexBuffer);
+        EnsureMaterialInstance();
 
         Bounds drawBounds = new Bounds((boundsMin + boundsMax) * 0.5f, sizeWS);
 
         // Force this procedural mesh to render on the specific "Water" layer 
         // to catch the custom Render Passes. If it doesn't exist, fall back to given layer.
-        int waterLayer = LayerMask.NameToLayer("Water");
-        int finalLayer = waterLayer != -1 ? waterLayer : layer;
+        int finalLayer = _waterLayer != -1 ? _waterLayer : layer;
 
         Graphics.DrawProceduralIndirect(
             _matInstance,
@@ -179,10 +171,69 @@ public class MarchingCubesRenderer : IDisposable
             _drawArgsBuffer,
             0,
             null,
-            null,
+            _drawProperties,
             ShadowCastingMode.Off,
             true,
             finalLayer);
+    }
+
+    private void ApplyStaticKernelBindings()
+    {
+        _compute.SetBuffer(_kMarch, PID_Lut, _lutBuffer);
+        _compute.SetBuffer(_kMarch, PID_Offsets, _offsetsBuffer);
+        _compute.SetBuffer(_kMarch, PID_Lengths, _lengthsBuffer);
+        _staticKernelBindingsApplied = true;
+    }
+
+    private void BindDispatchResources(RenderTexture densityTexture3D, RenderTexture normalTexture3D)
+    {
+        if (!_staticKernelBindingsApplied)
+            ApplyStaticKernelBindings();
+
+        if (_boundClearArgsBuffer != _drawArgsBuffer)
+        {
+            _compute.SetBuffer(_kClear, "drawArgs", _drawArgsBuffer);
+            _boundClearArgsBuffer = _drawArgsBuffer;
+        }
+
+        if (_boundMarchArgsBuffer != _drawArgsBuffer)
+        {
+            _compute.SetBuffer(_kMarch, "drawArgs", _drawArgsBuffer);
+            _boundMarchArgsBuffer = _drawArgsBuffer;
+        }
+
+        if (_boundComputeVertexBuffer != _vertexBuffer)
+        {
+            _compute.SetBuffer(_kMarch, PID_Vertices, _vertexBuffer);
+            _boundComputeVertexBuffer = _vertexBuffer;
+        }
+
+        if (_boundDrawVertexBuffer != _vertexBuffer)
+        {
+            _drawProperties.SetBuffer(PID_VertexBuffer, _vertexBuffer);
+            _boundDrawVertexBuffer = _vertexBuffer;
+        }
+
+        if (_boundDensityTexture != densityTexture3D)
+        {
+            _compute.SetTexture(_kMarch, PID_DensityTexture3D, densityTexture3D);
+            _boundDensityTexture = densityTexture3D;
+        }
+
+        if (_boundNormalTexture != normalTexture3D)
+        {
+            _compute.SetTexture(_kMarch, PID_NormalTexture3D, normalTexture3D);
+            _boundNormalTexture = normalTexture3D;
+        }
+    }
+
+    private void EnsureMaterialInstance()
+    {
+        if (_matInstance != null)
+            return;
+
+        _matInstance = new Material(_sourceMaterial);
+        _matInstance.EnableKeyword(KW_Procedural);
     }
 
     private void EnsureBuffers(Vector3Int dims)
@@ -228,23 +279,31 @@ public class MarchingCubesRenderer : IDisposable
     private void DrawProceduralThickness(RasterCommandBuffer cmd, Material thicknessMat)
     {
         if (_disposed || _drawArgsBuffer == null || _vertexBuffer == null || thicknessMat == null) return;
-        
-        // Ensure the thickness material natively has the keyword and buffer attached
-        thicknessMat.EnableKeyword(KW_Procedural);
-        thicknessMat.SetBuffer(PID_VertexBuffer, _vertexBuffer);
+
+        if (_boundThicknessMaterial != thicknessMat)
+        {
+            thicknessMat.EnableKeyword(KW_Procedural);
+            _boundThicknessMaterial = thicknessMat;
+            _boundThicknessPassIndex = thicknessMat.FindPass("WaterThicknessGen");
+            if (_boundThicknessPassIndex < 0)
+                _boundThicknessPassIndex = 0;
+            _boundThicknessVertexBuffer = null;
+        }
+
+        if (_boundThicknessVertexBuffer != _vertexBuffer)
+        {
+            thicknessMat.SetBuffer(PID_VertexBuffer, _vertexBuffer);
+            _boundThicknessVertexBuffer = _vertexBuffer;
+        }
         
         // Also tell the command buffer explicitly
         cmd.EnableShaderKeyword(KW_Procedural);
         cmd.SetGlobalBuffer(PID_VertexBuffer, _vertexBuffer);
-        
-        // Issue the indirect draw using the thickness material
-        int passIndex = thicknessMat.FindPass("WaterThicknessGen");
-        if (passIndex < 0) passIndex = 0; // Fallback
 
         cmd.DrawProceduralIndirect(
             Matrix4x4.identity, 
             thicknessMat, 
-            passIndex, 
+            _boundThicknessPassIndex, 
             MeshTopology.Triangles, 
             _drawArgsBuffer, 
             0);

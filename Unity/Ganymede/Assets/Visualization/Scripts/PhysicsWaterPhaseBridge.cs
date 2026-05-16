@@ -26,58 +26,73 @@ public class PhysicsWaterPhaseBridge : MonoBehaviour
     private WaterPhaseMarchingCubesRenderer _marchingRenderer;
     private WaterPhaseScreenSpaceFluidRenderer _screenSpaceFluidRenderer;
     private UnityParticleOutputBridge _particleOutputBridge;
-    private WaterSurfaceRenderMode _lastRenderMode;
-    private bool _initialized;
+    private bool _usesDensityPipeline;
+    private System.Action<Vector3, Vector3> _renderAction;
 
     private void Awake()
     {
         CacheComponents();
         CreateHelpers();
         _particleStride = Marshal.SizeOf<Particle>();
-
-        if (_raymarchRenderer != null)
-            visualProxyTransform = _raymarchRenderer.EnsureProxy(visualProxyTransform);
     }
 
     private void OnEnable()
     {
         CacheComponents();
-        CreateHelpers();
-
         if (_particleStride <= 0)
             _particleStride = Marshal.SizeOf<Particle>();
-
-        if (_raymarchRenderer != null)
-            visualProxyTransform = _raymarchRenderer.EnsureProxy(visualProxyTransform);
     }
 
     private void Start()
     {
-        if (!TryInitializeBridge())
+        if (_computePlugin == null || _sourceMeshFilter == null || _sourceMeshRenderer == null)
+        {
+            Debug.LogError("[PhysicsWaterPhaseBridge] Missing required components.");
+            enabled = false;
+            return;
+        }
+
+        if (!ValidateConfiguration())
         {
             enabled = false;
             return;
         }
 
+        _usesDensityPipeline = settings.Rendering.mode != WaterSurfaceRenderMode.ScreenSpaceFluid;
+
+        if (_usesDensityPipeline)
+        {
+            EnsureDensityPipeline();
+            if (_densityPipeline == null)
+            {
+                enabled = false;
+                return;
+            }
+            _densityPipeline.BindSmoothingParameters(settings);
+        }
+
+        if (settings.Rendering.mode == WaterSurfaceRenderMode.RaymarchVolume && _raymarchRenderer != null)
+            visualProxyTransform = _raymarchRenderer.EnsureProxy(visualProxyTransform);
+
         PrimeResources();
+
+        _renderAction = settings.Rendering.mode switch
+        {
+            WaterSurfaceRenderMode.RaymarchVolume    => RenderRaymarch,
+            WaterSurfaceRenderMode.ScreenSpaceFluid  => RenderScreenSpaceFluid,
+            _                                        => RenderMarchingCubes
+        };
     }
 
     private void LateUpdate()
     {
-        // if (!isActiveAndEnabled)
-        //     return;
-        //
-        // if (!TryInitializeBridge())
-        //     return;
-        //
-        // _resources.Ensure(settings.DensityGrid.volumeDims, _computePlugin.particleCount, _particleStride);
-        // _particleOutputBridge.RegisterIfNeeded(_resources.ParticleOutputBuffer);
-
+        PrimeResources();
         _computePlugin.GetBoundsWS(out Vector3 boundsMin, out Vector3 boundsMax);
-        if (UsesDensityPipeline())
+
+        if (_usesDensityPipeline)
             _densityPipeline.Execute(_computePlugin, settings, _resources, boundsMin, boundsMax);
 
-        RenderActivePresentation(boundsMin, boundsMax);
+        _renderAction(boundsMin, boundsMax);
     }
 
     private void OnDestroy()
@@ -95,47 +110,11 @@ public class PhysicsWaterPhaseBridge : MonoBehaviour
             _marchingRenderer.Release();
     }
 
-    private bool TryInitializeBridge()
-    {
-        CacheComponents();
-        CreateHelpers();
-
-        if (_computePlugin == null || _sourceMeshFilter == null || _sourceMeshRenderer == null)
-            return false;
-
-        if (_particleStride <= 0)
-            _particleStride = Marshal.SizeOf<Particle>();
-
-        if (!ValidateConfiguration())
-            return false;
-
-        if (UsesDensityPipeline())
-        {
-            EnsureDensityPipeline();
-            if (_densityPipeline == null)
-                return false;
-        }
-        else
-        {
-            _densityPipeline = null;
-        }
-
-        if (_screenSpaceFluidRenderer == null && settings.Rendering.mode == WaterSurfaceRenderMode.ScreenSpaceFluid)
-            return false;
-
-        if (!_initialized)
-        {
-            _lastRenderMode = settings.Rendering.mode;
-            _initialized = true;
-        }
-
-        return true;
-    }
-
     private void PrimeResources()
     {
-        _resources.Ensure(settings.DensityGrid.volumeDims, _computePlugin.particleCount, _particleStride);
-        _particleOutputBridge.RegisterIfNeeded(_resources.ParticleOutputBuffer);
+        bool resourcesChanged = _resources.Ensure(settings.DensityGrid.volumeDims, _computePlugin.particleCount, _particleStride);
+        if (resourcesChanged)
+            _particleOutputBridge.RegisterIfNeeded(_resources.ParticleOutputBuffer);
     }
 
     private void CacheComponents()
@@ -226,61 +205,28 @@ public class PhysicsWaterPhaseBridge : MonoBehaviour
             _densityPipeline = new WaterPhaseDensityPipeline(computeShader);
     }
 
-    private void RenderActivePresentation(Vector3 boundsMin, Vector3 boundsMax)
+    private void RenderRaymarch(Vector3 boundsMin, Vector3 boundsMax)
     {
-        if (settings.Rendering.mode != _lastRenderMode)
-        {
-            if (_raymarchRenderer != null)
-                _raymarchRenderer.SetInactive();
-            if (_marchingRenderer != null)
-                _marchingRenderer.SetInactive();
-            if (_screenSpaceFluidRenderer != null)
-                _screenSpaceFluidRenderer.SetInactive();
+        if (_raymarchRenderer == null) return;
+        _raymarchRenderer.Render(
+            visualProxyTransform,
+            settings.Rendering.rayMarchingMaterial,
+            _computePlugin,
+            _resources,
+            boundsMin,
+            boundsMax);
+    }
 
-            _lastRenderMode = settings.Rendering.mode;
-        }
+    private void RenderScreenSpaceFluid(Vector3 boundsMin, Vector3 boundsMax)
+    {
+        if (_screenSpaceFluidRenderer == null) return;
+        _screenSpaceFluidRenderer.Render(settings, _computePlugin, _resources, boundsMin, boundsMax, gameObject.layer);
+    }
 
-        if (settings.Rendering.mode == WaterSurfaceRenderMode.RaymarchVolume)
-        {
-            if (_marchingRenderer != null)
-                _marchingRenderer.SetInactive();
-            if (_screenSpaceFluidRenderer != null)
-                _screenSpaceFluidRenderer.SetInactive();
-
-            if (_raymarchRenderer != null)
-            {
-                visualProxyTransform = _raymarchRenderer.EnsureProxy(visualProxyTransform);
-                _raymarchRenderer.Render(
-                    visualProxyTransform,
-                    settings.Rendering.rayMarchingMaterial,
-                    _computePlugin,
-                    _resources,
-                    boundsMin,
-                    boundsMax);
-            }
-
-            return;
-        }
-
-        if (_raymarchRenderer != null)
-            _raymarchRenderer.SetInactive();
-
-        if (settings.Rendering.mode == WaterSurfaceRenderMode.ScreenSpaceFluid)
-        {
-            if (_marchingRenderer != null)
-                _marchingRenderer.SetInactive();
-
-            if (_screenSpaceFluidRenderer != null)
-                _screenSpaceFluidRenderer.Render(settings, _computePlugin, _resources, boundsMin, boundsMax, gameObject.layer);
-
-            return;
-        }
-
-        if (_screenSpaceFluidRenderer != null)
-            _screenSpaceFluidRenderer.SetInactive();
-
-        if (_marchingRenderer != null)
-            _marchingRenderer.Render(settings, _resources, boundsMin, boundsMax, gameObject.layer);
+    private void RenderMarchingCubes(Vector3 boundsMin, Vector3 boundsMax)
+    {
+        if (_marchingRenderer == null) return;
+        _marchingRenderer.Render(settings, _resources, boundsMin, boundsMax, gameObject.layer);
     }
 
     private void OnValidate()
@@ -298,11 +244,6 @@ public class PhysicsWaterPhaseBridge : MonoBehaviour
         ValidateAdaptiveSmoothing(settings.MarchingCubesSmoothing);
 
         settings.Rendering.marchingCubesIsoLevel = Mathf.Clamp01(settings.Rendering.marchingCubesIsoLevel);
-    }
-
-    private bool UsesDensityPipeline()
-    {
-        return settings != null && settings.Rendering.mode != WaterSurfaceRenderMode.ScreenSpaceFluid;
     }
 
     private static void ValidateAdaptiveSmoothing(WaterPhaseAdaptiveSmoothingSettings smoothing)

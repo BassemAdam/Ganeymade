@@ -16,22 +16,31 @@ public sealed class WaterPhaseResources : IDisposable
     public RenderTexture PhaseDensityScratchTexture => _phaseDensityScratchTexture;
     public RenderTexture SurfaceNormalTexture => _surfaceNormalTexture;
     public Vector3Int VolumeDims { get; private set; }
+    public int Version { get; private set; }
 
-    public void Ensure(Vector3Int requestedVolumeDims, int particleCount, int particleStride)
+    public bool Ensure(Vector3Int requestedVolumeDims, int particleCount, int particleStride)
     {
-        VolumeDims = new Vector3Int(
+        Vector3Int requestedDims = new Vector3Int(
             Mathf.Max(1, requestedVolumeDims.x),
             Mathf.Max(1, requestedVolumeDims.y),
             Mathf.Max(1, requestedVolumeDims.z));
 
+        bool changed = requestedDims != VolumeDims;
+        VolumeDims = requestedDims;
+
         int clampedParticleCount = Mathf.Max(1, particleCount);
         int gridCount = VolumeDims.x * VolumeDims.y * VolumeDims.z;
 
-        EnsureParticleBuffer(clampedParticleCount, particleStride);
-        EnsureDensityGrid(gridCount);
-        _phaseDensityTexture = EnsureTexture(_phaseDensityTexture, VolumeDims, RenderTextureFormat.RGHalf);
-        _phaseDensityScratchTexture = EnsureTexture(_phaseDensityScratchTexture, VolumeDims, RenderTextureFormat.RGHalf);
-        _surfaceNormalTexture = EnsureTexture(_surfaceNormalTexture, VolumeDims, RenderTextureFormat.ARGBHalf);
+        changed |= EnsureParticleBuffer(clampedParticleCount, particleStride);
+        changed |= EnsureDensityGrid(gridCount);
+        changed |= EnsureTexture(ref _phaseDensityTexture, VolumeDims, RenderTextureFormat.RGHalf);
+        changed |= EnsureTexture(ref _phaseDensityScratchTexture, VolumeDims, RenderTextureFormat.RGHalf);
+        changed |= EnsureTexture(ref _surfaceNormalTexture, VolumeDims, RenderTextureFormat.ARGBHalf);
+
+        if (changed)
+            Version++;
+
+        return changed;
     }
 
     public void Release()
@@ -48,33 +57,35 @@ public sealed class WaterPhaseResources : IDisposable
         Release();
     }
 
-    private void EnsureParticleBuffer(int particleCount, int particleStride)
+    private bool EnsureParticleBuffer(int particleCount, int particleStride)
     {
         if (_particleOutputBuffer != null && _particleOutputBuffer.count == particleCount && _particleOutputBuffer.stride == particleStride)
-            return;
+            return false;
 
         ReleaseBuffer(ref _particleOutputBuffer);
         _particleOutputBuffer = new ComputeBuffer(particleCount, particleStride, ComputeBufferType.Structured);
+        return true;
     }
 
-    private void EnsureDensityGrid(int gridCount)
+    private bool EnsureDensityGrid(int gridCount)
     {
         int totalCellCount = gridCount * 2;
         if (_densityGridBuffer != null && _densityGridBuffer.count == totalCellCount)
-            return;
+            return false;
 
         ReleaseBuffer(ref _densityGridBuffer);
         _densityGridBuffer = new ComputeBuffer(totalCellCount, sizeof(uint), ComputeBufferType.Structured);
+        return true;
     }
 
-    private static RenderTexture EnsureTexture(RenderTexture texture, Vector3Int dims, RenderTextureFormat format)
+    private static bool EnsureTexture(ref RenderTexture texture, Vector3Int dims, RenderTextureFormat format)
     {
         if (texture != null &&
             texture.width == dims.x &&
             texture.height == dims.y &&
             texture.volumeDepth == dims.z)
         {
-            return texture;
+            return false;
         }
 
         if (texture != null)
@@ -94,7 +105,8 @@ public sealed class WaterPhaseResources : IDisposable
             autoGenerateMips = false
         };
         created.Create();
-        return created;
+        texture = created;
+        return true;
     }
 
     private static void ReleaseBuffer(ref ComputeBuffer buffer)
