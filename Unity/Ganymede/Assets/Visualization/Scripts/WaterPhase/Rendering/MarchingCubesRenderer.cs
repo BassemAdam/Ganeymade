@@ -72,6 +72,12 @@ public class MarchingCubesRenderer : IDisposable
     private RenderTexture _boundNormalTexture;
     private Material _boundThicknessMaterial;
     private int _boundThicknessPassIndex = -1;
+    // Per-frame binding cache — skip redundant SetInts/SetFloat/SetVector calls
+    private Vector3Int _lastDispatchDims;
+    private int _cachedGroupsX, _cachedGroupsY, _cachedGroupsZ;
+    private float _lastIsoLevel = float.NaN;
+    private Vector3 _lastBoundsMinMC = new Vector3(float.NaN, 0f, 0f);
+    private Vector3 _lastBoundsSize = new Vector3(float.NaN, 0f, 0f);
 
     /// <summary>
     /// Creates a new MarchingCubesRenderer.
@@ -133,32 +139,53 @@ public class MarchingCubesRenderer : IDisposable
 
         EnsureBuffers(dims);
 
-        Vector3 sizeWS = boundsMax - boundsMin;
-        Vector3 voxelSize = new Vector3(
-            sizeWS.x / Mathf.Max(1, dims.x - 1),
-            sizeWS.y / Mathf.Max(1, dims.y - 1),
-            sizeWS.z / Mathf.Max(1, dims.z - 1));
+        Vector3 boundsSize = boundsMax - boundsMin;
 
         BindDispatchResources(densityTexture3D, normalTexture3D);
 
         // Reset draw args
         _compute.Dispatch(_kClear, 1, 1, 1);
 
-        // Bind per-frame data
-        _compute.SetInts(PID_GridSize, dims.x, dims.y, dims.z);
-        _compute.SetVector(PID_VoxelSize, new Vector4(voxelSize.x, voxelSize.y, voxelSize.z, 0f));
-        _compute.SetVector(PID_BoundsMinWS, new Vector4(boundsMin.x, boundsMin.y, boundsMin.z, 0f));
-        _compute.SetFloat(PID_IsoLevel, Mathf.Clamp01(isoLevel));
+        // Bind per-frame data — only when the inputs actually change
+        bool dimsChanged = dims != _lastDispatchDims;
+        if (dimsChanged)
+        {
+            _lastDispatchDims = dims;
+            _compute.SetInts(PID_GridSize, dims.x, dims.y, dims.z);
+            _cachedGroupsX = Mathf.CeilToInt(dims.x / 8f);
+            _cachedGroupsY = Mathf.CeilToInt(dims.y / 8f);
+            _cachedGroupsZ = Mathf.CeilToInt(dims.z / 8f);
+        }
+
+        if (dimsChanged || boundsSize != _lastBoundsSize)
+        {
+            _lastBoundsSize = boundsSize;
+            _compute.SetVector(PID_VoxelSize, new Vector4(
+                boundsSize.x / Mathf.Max(1, dims.x - 1),
+                boundsSize.y / Mathf.Max(1, dims.y - 1),
+                boundsSize.z / Mathf.Max(1, dims.z - 1),
+                0f));
+        }
+
+        if (boundsMin != _lastBoundsMinMC)
+        {
+            _lastBoundsMinMC = boundsMin;
+            _compute.SetVector(PID_BoundsMinWS, new Vector4(boundsMin.x, boundsMin.y, boundsMin.z, 0f));
+        }
+
+        float clampedIso = Mathf.Clamp01(isoLevel);
+        if (clampedIso != _lastIsoLevel)
+        {
+            _lastIsoLevel = clampedIso;
+            _compute.SetFloat(PID_IsoLevel, clampedIso);
+        }
 
         // Dispatch
-        int gx = Mathf.CeilToInt(dims.x / 8f);
-        int gy = Mathf.CeilToInt(dims.y / 8f);
-        int gz = Mathf.CeilToInt(dims.z / 8f);
-        _compute.Dispatch(_kMarch, gx, gy, gz);
+        _compute.Dispatch(_kMarch, _cachedGroupsX, _cachedGroupsY, _cachedGroupsZ);
 
         EnsureMaterialInstance();
 
-        Bounds drawBounds = new Bounds((boundsMin + boundsMax) * 0.5f, sizeWS);
+        Bounds drawBounds = new Bounds((boundsMin + boundsMax) * 0.5f, boundsSize);
 
         // Force this procedural mesh to render on the specific "Water" layer 
         // to catch the custom Render Passes. If it doesn't exist, fall back to given layer.

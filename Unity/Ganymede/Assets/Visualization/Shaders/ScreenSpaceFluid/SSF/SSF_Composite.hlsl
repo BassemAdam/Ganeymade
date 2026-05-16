@@ -15,12 +15,6 @@ float  _ThicknessAbsorption;
 float  _ReflectionStrength;
 float  _RefractionStrength;
 
-TEXTURE2D(_WaterSSFLightDepth);   SAMPLER(sampler_WaterSSFLightDepth);
-float4x4 _WaterSSFLightVP;
-float    _WaterSSFLightShadowEnabled;
-float    _WaterSSFLightShadowStrength;
-float    _WaterSSFLightShadowBias;
-
 struct CompositeOut
 {
     half4 color : SV_Target;
@@ -41,24 +35,6 @@ float3 SampleEnvironment(float3 R_WS, float3 posWS, float2 uv, float perceptualR
     return GlossyEnvironmentReflection(normalize(R_WS), posWS,
                                        saturate(perceptualRoughness),
                                        1.0h, uv);
-}
-
-float SSFLightShadowAtten(float3 posWS)
-{
-    if (_WaterSSFLightShadowEnabled < 0.5) return 1.0;
-
-    float4 lc = mul(_WaterSSFLightVP, float4(posWS, 1.0));
-    if (lc.w <= 0.0) return 1.0;
-    float3 ndc = lc.xyz / lc.w;
-    float2 uv  = ndc.xy * 0.5 + 0.5;
-    if (any(uv < 0.0) || any(uv > 1.0)) return 1.0;
-
-    float receiverEye = -lc.z;
-    float blockerEye  = SAMPLE_TEXTURE2D(_WaterSSFLightDepth, sampler_WaterSSFLightDepth, uv).r;
-    if (blockerEye < 1e-4) return 1.0;
-
-    float lit = (receiverEye <= blockerEye + _WaterSSFLightShadowBias) ? 1.0 : 0.0;
-    return lerp(1.0, lit, saturate(_WaterSSFLightShadowStrength));
 }
 
 CompositeOut fragSSFComposite(Varyings IN)
@@ -109,8 +85,6 @@ CompositeOut fragSSFComposite(Varyings IN)
     if (R_WS.y < 0.0) fresnel *= 0.1;
 
     half3 result = lerp(refrColor, reflColor * _ReflectionStrength, fresnel);
-
-    result *= SSFLightShadowAtten(pWS);
 
     CompositeOut o;
     o.color = half4(result, 1.0);

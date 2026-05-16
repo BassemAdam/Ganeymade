@@ -59,18 +59,6 @@ Shader "Custom/WaterScreenSpaceFluid"
 
         Pass
         {
-            Name "ScreenSpaceFluidLightDepth"
-            Cull Off  ZWrite On  ZTest LEqual  Blend One Zero
-            HLSLPROGRAM
-            #pragma target 4.5
-            #pragma vertex   vertSSFLightDepth
-            #pragma fragment fragSSFLightDepth
-            #include "SSF/SSF_LightDepth.hlsl"
-            ENDHLSL
-        }
-
-        Pass
-        {
             Name "ScreenSpaceFluidBlur"
             Cull Off  ZWrite Off  ZTest Always  Blend One Zero
             HLSLPROGRAM

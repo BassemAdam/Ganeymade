@@ -68,7 +68,7 @@ public class PhysicsWaterPhaseBridge : MonoBehaviour
                 enabled = false;
                 return;
             }
-            _densityPipeline.BindSmoothingParameters(settings);
+            _densityPipeline.BindSmoothingParameters(settings, _computePlugin.restDensity);
         }
 
         if (settings.Rendering.mode == WaterSurfaceRenderMode.RaymarchVolume && _raymarchRenderer != null)

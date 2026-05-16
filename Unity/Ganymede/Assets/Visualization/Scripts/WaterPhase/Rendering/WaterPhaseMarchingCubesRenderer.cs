@@ -26,6 +26,8 @@ public sealed class WaterPhaseMarchingCubesRenderer : IDisposable
     private MeshRenderer _vapourBoxRenderer;
     private MaterialPropertyBlock _vapourPropertyBlock;
     private int _lastVapourResourceVersion = -1;
+    private Vector3 _lastVapourBoundsMin = new Vector3(float.NaN, 0f, 0f);
+    private Vector3 _lastVapourBoundsMax = new Vector3(float.NaN, 0f, 0f);
 
     public WaterPhaseMarchingCubesRenderer(Transform ownerTransform, MeshFilter sourceMeshFilter)
     {
@@ -63,13 +65,18 @@ public sealed class WaterPhaseMarchingCubesRenderer : IDisposable
         if (_vapourBoxObject == null || _vapourBoxRenderer == null)
             return;
 
-        Vector3 center = (boundsMin + boundsMax) * 0.5f;
-        Vector3 size = boundsMax - boundsMin;
-        _vapourBoxObject.transform.position = center;
-        _vapourBoxObject.transform.localScale = size;
-        _vapourBoxObject.transform.rotation = Quaternion.identity;
+        bool boundsChanged = boundsMin != _lastVapourBoundsMin || boundsMax != _lastVapourBoundsMax;
+        if (boundsChanged)
+        {
+            _lastVapourBoundsMin = boundsMin;
+            _lastVapourBoundsMax = boundsMax;
+            _vapourBoxObject.transform.position = (boundsMin + boundsMax) * 0.5f;
+            _vapourBoxObject.transform.localScale = boundsMax - boundsMin;
+            _vapourBoxObject.transform.rotation = Quaternion.identity;
+        }
 
-        if (_lastVapourResourceVersion != resources.Version)
+        bool resourceChanged = _lastVapourResourceVersion != resources.Version;
+        if (resourceChanged)
         {
             _vapourPropertyBlock.SetTexture(ID_PhysicsDensityGrid, resources.PhaseDensityTexture);
             _vapourPropertyBlock.SetTexture(ID_PhysicsNormalGrid, resources.SurfaceNormalTexture);
@@ -80,9 +87,14 @@ public sealed class WaterPhaseMarchingCubesRenderer : IDisposable
             _lastVapourResourceVersion = resources.Version;
         }
 
-        _vapourPropertyBlock.SetVector(ID_PhysicsBoundsMinWS, new Vector4(boundsMin.x, boundsMin.y, boundsMin.z, 0f));
-        _vapourPropertyBlock.SetVector(ID_PhysicsBoundsMaxWS, new Vector4(boundsMax.x, boundsMax.y, boundsMax.z, 0f));
-        _vapourBoxRenderer.SetPropertyBlock(_vapourPropertyBlock);
+        if (boundsChanged)
+        {
+            _vapourPropertyBlock.SetVector(ID_PhysicsBoundsMinWS, new Vector4(boundsMin.x, boundsMin.y, boundsMin.z, 0f));
+            _vapourPropertyBlock.SetVector(ID_PhysicsBoundsMaxWS, new Vector4(boundsMax.x, boundsMax.y, boundsMax.z, 0f));
+        }
+
+        if (resourceChanged || boundsChanged)
+            _vapourBoxRenderer.SetPropertyBlock(_vapourPropertyBlock);
         _vapourBoxRenderer.enabled = true;
     }
 
@@ -106,6 +118,8 @@ public sealed class WaterPhaseMarchingCubesRenderer : IDisposable
         _activeVapourMaterial = null;
         _activeVapourLayer = -1;
         _lastVapourResourceVersion = -1;
+        _lastVapourBoundsMin = new Vector3(float.NaN, 0f, 0f);
+        _lastVapourBoundsMax = new Vector3(float.NaN, 0f, 0f);
 
         if (_vapourBoxObject != null)
         {

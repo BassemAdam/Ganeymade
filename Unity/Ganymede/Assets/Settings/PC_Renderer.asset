@@ -45,11 +45,6 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::WaterScreenSpaceFluidFeature
   m_Active: 1
   injectionPoint: 450
-  enableLightShadow: 0
-  lightShadowResolution: 1024
-  lightShadowStrength: 0.85
-  lightShadowBias: 0.05
-  lightShadowExtraExtent: 1
 --- !u!114 &11400000
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -136,11 +131,6 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::WaterScreenSpaceFluidFeature
   m_Active: 1
   injectionPoint: 450
-  enableLightShadow: 0
-  lightShadowResolution: 1024
-  lightShadowStrength: 0.85
-  lightShadowBias: 0.05
-  lightShadowExtraExtent: 1
 --- !u!114 &7833122117494664109
 MonoBehaviour:
   m_ObjectHideFlags: 0

@@ -30,14 +30,12 @@ public sealed class WaterPhaseScreenSpaceFluidRenderer
     private Material      _passCacheMaterial;
     private int           _depthPass = -1;
     private int           _thicknessPass = -1;
-    private int           _lightDepthPass = -1;
 
     public WaterPhaseScreenSpaceFluidRenderer(MeshRenderer sourceMeshRenderer)
     {
         _sourceMeshRenderer = sourceMeshRenderer;
         WaterScreenSpaceFluidFeature.OnDrawDepth      += DrawParticlesDepth;
         WaterScreenSpaceFluidFeature.OnDrawThickness  += DrawParticlesThickness;
-        WaterScreenSpaceFluidFeature.OnDrawLightDepth += DrawParticlesLightDepth;
     }
 
     // Called every frame by PhysicsWaterPhaseBridge when SSF mode is active.
@@ -91,7 +89,6 @@ public sealed class WaterPhaseScreenSpaceFluidRenderer
         _passCacheMaterial = null;
         _depthPass = -1;
         _thicknessPass = -1;
-        _lightDepthPass = -1;
         WaterScreenSpaceFluidFeature.IsActive       = false;
         WaterScreenSpaceFluidFeature.ActiveMaterial = null;
         WaterScreenSpaceFluidFeature.HasBounds      = false;
@@ -101,7 +98,6 @@ public sealed class WaterPhaseScreenSpaceFluidRenderer
     {
         WaterScreenSpaceFluidFeature.OnDrawDepth      -= DrawParticlesDepth;
         WaterScreenSpaceFluidFeature.OnDrawThickness  -= DrawParticlesThickness;
-        WaterScreenSpaceFluidFeature.OnDrawLightDepth -= DrawParticlesLightDepth;
         SetInactive();
     }
 
@@ -121,14 +117,6 @@ public sealed class WaterPhaseScreenSpaceFluidRenderer
 
         PrepareMaterialForDraw(mat);
         DrawQuads(cmd, mat, _thicknessPass);
-    }
-
-    private void DrawParticlesLightDepth(RasterCommandBuffer cmd, Material mat)
-    {
-        if (!_active || mat == null || _particleBuffer == null || _particleCount <= 0) return;
-
-        PrepareMaterialForDraw(mat);
-        DrawQuads(cmd, mat, _lightDepthPass);
     }
 
     // ---- Helpers ---------------------------------------------------------
@@ -168,10 +156,6 @@ public sealed class WaterPhaseScreenSpaceFluidRenderer
         _thicknessPass = mat.FindPass("ScreenSpaceFluidThickness");
         if (_thicknessPass < 0)
             _thicknessPass = 1;
-
-        _lightDepthPass = mat.FindPass("ScreenSpaceFluidLightDepth");
-        if (_lightDepthPass < 0)
-            _lightDepthPass = 2;
 
         _passCacheMaterial = mat;
         _boundMaterial = null;

@@ -17,6 +17,10 @@ public sealed class WaterPhaseDensityPipeline
     private int _lastBoundResourcesVersion = -1;
     // Cached group counts — only change when volumeDims changes (tied to resource version)
     private int _groupsX, _groupsY, _groupsZ;
+    // Cached static parameters — computed once in BindSmoothingParameters, never change at runtime
+    private float _cachedLoopRadius;
+    private int _cachedMaxKernelRadiusVoxels = 1;
+    private Vector3 _lastBoundsSize = new Vector3(float.NaN, 0f, 0f);
 
     private static readonly int ID_VolumeDims = Shader.PropertyToID("_VolumeDims");
     private static readonly int ID_ParticleCount = Shader.PropertyToID("_ParticleCount");
@@ -63,7 +67,7 @@ public sealed class WaterPhaseDensityPipeline
         int particleCount = Mathf.Max(1, computePlugin.particleCount);
 
         BindStaticResourcesIfNeeded(resources);
-        BindPerFrameParameters(computePlugin, settings, resources.VolumeDims, particleCount, boundsMin, boundsMax);
+        BindPerFrameParameters(particleCount, resources.VolumeDims, boundsMin, boundsMax);
 
         int particleGroups = Mathf.Max(1, Mathf.CeilToInt(particleCount / 256.0f));
 
@@ -102,10 +106,10 @@ public sealed class WaterPhaseDensityPipeline
     }
 
     /// <summary>
-    /// Binds inspector-editable smoothing parameters that do not change at runtime.
+    /// Binds all static compute parameters that do not change at runtime.
     /// Call once from Start after EnsureDensityPipeline.
     /// </summary>
-    public void BindSmoothingParameters(WaterPhaseBridgeSettings settings)
+    public void BindSmoothingParameters(WaterPhaseBridgeSettings settings, float restDensity)
     {
         var grid = settings.DensityGrid;
         var smoothing = settings.ActiveSmoothing;
@@ -122,33 +126,37 @@ public sealed class WaterPhaseDensityPipeline
         _computeShader.SetFloat(ID_AdaptiveDensitySurface, Mathf.Max(0f, smoothing.adaptiveDensitySurface));
         _computeShader.SetFloat(ID_AdaptiveDensityBulk, Mathf.Max(smoothing.adaptiveDensitySurface + 0.01f, smoothing.adaptiveDensityBulk));
         _computeShader.SetFloat(ID_AdaptiveDensityCurve, Mathf.Max(0.01f, smoothing.adaptiveDensityCurve));
+
+        // RestDensity and KernelRadius inputs are also static — bind once here.
+        _computeShader.SetFloat(ID_RestDensity, Mathf.Max(0.01f, restDensity));
+        _cachedLoopRadius = Mathf.Max(Mathf.Max(surfaceRadius, bulkRadius), vapourRadius);
+        _cachedMaxKernelRadiusVoxels = Mathf.Max(1, grid.maxKernelRadiusVoxels);
+        // Reset sentinel so KernelRadius is recomputed on the first Execute call.
+        _lastBoundsSize = new Vector3(float.NaN, 0f, 0f);
     }
 
     private void BindPerFrameParameters(
-        UseComputePlugin computePlugin,
-        WaterPhaseBridgeSettings settings,
-        Vector3Int volumeDims,
         int particleCount,
+        Vector3Int volumeDims,
         Vector3 boundsMin,
         Vector3 boundsMax)
     {
         _computeShader.SetInt(ID_ParticleCount, particleCount);
         _computeShader.SetVector(ID_BoundsMinWS, new Vector4(boundsMin.x, boundsMin.y, boundsMin.z, 0f));
         _computeShader.SetVector(ID_BoundsMaxWS, new Vector4(boundsMax.x, boundsMax.y, boundsMax.z, 0f));
-        _computeShader.SetFloat(ID_RestDensity, Mathf.Max(0.01f, computePlugin.restDensity));
 
-        var grid = settings.DensityGrid;
-        var smoothing = settings.ActiveSmoothing;
-        float surfaceRadius = Mathf.Max(0f, smoothing.liquidSmoothingRadiusWS);
-        float bulkRadius = smoothing.adaptiveRadiusEnabled ? smoothing.liquidBulkSmoothingRadiusWS : surfaceRadius;
-        float vapourRadius = Mathf.Max(0f, grid.vapourSmoothingRadiusWS);
-        float loopRadius = Mathf.Max(Mathf.Max(surfaceRadius, bulkRadius), vapourRadius);
-
-        _computeShader.SetInt(
-            ID_KernelRadiusVoxels,
-            Mathf.Min(
-                Mathf.Max(1, grid.maxKernelRadiusVoxels),
-                ComputeKernelRadiusVoxels(loopRadius, volumeDims, boundsMin, boundsMax)));
+        // KernelRadius depends only on bounds SIZE (not position) and volumeDims.
+        // Skip the float math and SetInt when the bounds box hasn't been resized.
+        Vector3 boundsSize = boundsMax - boundsMin;
+        if (boundsSize != _lastBoundsSize)
+        {
+            _lastBoundsSize = boundsSize;
+            _computeShader.SetInt(
+                ID_KernelRadiusVoxels,
+                Mathf.Min(
+                    _cachedMaxKernelRadiusVoxels,
+                    ComputeKernelRadiusVoxels(_cachedLoopRadius, volumeDims, boundsMin, boundsMax)));
+        }
     }
 
     private static int ComputeKernelRadiusVoxels(float smoothingRadiusWS, Vector3Int volumeDims, Vector3 boundsMin, Vector3 boundsMax)

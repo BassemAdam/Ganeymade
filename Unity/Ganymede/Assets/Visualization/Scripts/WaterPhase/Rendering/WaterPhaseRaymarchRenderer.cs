@@ -19,6 +19,8 @@ public sealed class WaterPhaseRaymarchRenderer
     private Renderer _proxyRenderer;
     private int _lastBoundResourceVersion = -1;
     private Material _lastAssignedMaterial;
+    private Vector3 _lastBoundsMin = new Vector3(float.NaN, 0f, 0f);
+    private Vector3 _lastBoundsMax = new Vector3(float.NaN, 0f, 0f);
 
     public WaterPhaseRaymarchRenderer(Transform ownerTransform, MeshFilter sourceMeshFilter, MeshRenderer sourceMeshRenderer)
     {
@@ -98,18 +100,22 @@ public sealed class WaterPhaseRaymarchRenderer
             _lastAssignedMaterial = raymarchMaterial;
         }
 
-        Vector3 center = (boundsMin + boundsMax) * 0.5f;
-        Vector3 size = boundsMax - boundsMin;
         bool movingSimulationRoot = computePlugin != null &&
                                     computePlugin.boundsAreLocalToTransform &&
                                     proxyTransform == computePlugin.transform;
 
-        if (!movingSimulationRoot)
-            proxyTransform.position = center;
+        bool boundsChanged = boundsMin != _lastBoundsMin || boundsMax != _lastBoundsMax;
+        if (boundsChanged)
+        {
+            _lastBoundsMin = boundsMin;
+            _lastBoundsMax = boundsMax;
+            proxyTransform.localScale = boundsMax - boundsMin;
+            if (!movingSimulationRoot)
+                proxyTransform.position = (boundsMin + boundsMax) * 0.5f;
+        }
 
-        proxyTransform.localScale = size;
-
-        if (_lastBoundResourceVersion != resources.Version)
+        bool resourceChanged = _lastBoundResourceVersion != resources.Version;
+        if (resourceChanged)
         {
             _propertyBlock.SetTexture(ID_PhysicsDensityGrid, resources.PhaseDensityTexture);
             _propertyBlock.SetTexture(ID_PhysicsNormalGrid, resources.SurfaceNormalTexture);
@@ -119,9 +125,14 @@ public sealed class WaterPhaseRaymarchRenderer
             _lastBoundResourceVersion = resources.Version;
         }
 
-        _propertyBlock.SetVector(ID_PhysicsBoundsMinWS, new Vector4(boundsMin.x, boundsMin.y, boundsMin.z, 0f));
-        _propertyBlock.SetVector(ID_PhysicsBoundsMaxWS, new Vector4(boundsMax.x, boundsMax.y, boundsMax.z, 0f));
-        _proxyRenderer.SetPropertyBlock(_propertyBlock);
+        if (boundsChanged)
+        {
+            _propertyBlock.SetVector(ID_PhysicsBoundsMinWS, new Vector4(boundsMin.x, boundsMin.y, boundsMin.z, 0f));
+            _propertyBlock.SetVector(ID_PhysicsBoundsMaxWS, new Vector4(boundsMax.x, boundsMax.y, boundsMax.z, 0f));
+        }
+
+        if (resourceChanged || boundsChanged)
+            _proxyRenderer.SetPropertyBlock(_propertyBlock);
     }
 
     public void SetInactive()
