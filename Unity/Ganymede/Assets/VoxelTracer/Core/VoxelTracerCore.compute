@@ -1,12 +1,5 @@
-// ============================================================================
-// VoxelTracerCore.compute
-// GPU voxelization: SAT surface voxelization (atomic),
-// axis-sweep flood fill (6 directions × N rounds),
-// buffer-to-texture conversion, gradient normals.
-// Static/dynamic split: static voxels cached, dynamic voxels per-frame.
-//
+// static/dynamic split: static voxels cached, dynamic voxels per-frame.
 // Packed buffer layout: bit 0 = surface, bit 1 = confirmed outside (flood).
-// ============================================================================
 #pragma kernel Clear
 #pragma kernel Surface
 #pragma kernel SweepFill
@@ -83,7 +76,7 @@ bool AxisOverlap(float3 v0, float3 v1, float3 v2, float3 ext, float3 axis)
     return !((max(p0, max(p1, p2)) < -r) || (r < min(p0, min(p1, p2))));
 }
 
-// Full SAT triangle-AABB intersection (Tomas Akenine-Moller)
+// Full SAT triangle-AABB intersection tomas akenine moller
 bool TriAABBIntersect(float3 va, float3 vb, float3 vc, float3 center, float3 ext)
 {
     float3 v0 = va - center;
@@ -131,7 +124,7 @@ void Clear(uint3 id : SV_DispatchThreadID)
     _FillTex[p] = 0.0;
 }
 
-// 1: Surface voxelization — all triangles, atomic write
+// 1: Surface voxelization , all triangles, atomic write
 [numthreads(64, 1, 1)]
 void Surface(uint3 id : SV_DispatchThreadID)
 {
@@ -168,7 +161,7 @@ void Surface(uint3 id : SV_DispatchThreadID)
     }
 }
 
-// 2: Axis-sweep flood fill (both directions per axis in one dispatch)
+// Axis-sweep flood fill (both directions per axis in one dispatch)
 // Dispatched over a 2D plane perpendicular to _SweepAxis.
 // Each thread sweeps one line forward then backward,
 // propagating "outside" from both boundary faces, stopping at surfaces.
@@ -271,7 +264,7 @@ void BuildTexture(uint3 id : SV_DispatchThreadID)
     }
 }
 
-// 4: Compute gradient-based normals from blurred fill texture
+//xompute gradient-based normals from blurred fill texture
 [numthreads(8, 8, 8)]
 void ComputeNormals(uint3 id : SV_DispatchThreadID)
 {
@@ -305,7 +298,7 @@ void ComputeNormals(uint3 id : SV_DispatchThreadID)
     _NormalTex[p] = float4(n, 1);
 }
 
-// 4b: 3x3x3 box blur on _FillTex → _BlurredFillTex (for smooth normals)
+// 3x3x3 box blur on _FillTex to _BlurredFillTex (for smooth normals), this is however no longer needed
 [numthreads(8, 8, 8)]
 void BlurFill(uint3 id : SV_DispatchThreadID)
 {
@@ -324,7 +317,7 @@ void BlurFill(uint3 id : SV_DispatchThreadID)
     _BlurredFillTex[p] = sum / 27.0;
 }
 
-// 5: Copy static surface → working, clear flood bit (3D, dirty-region dispatch)
+// 5: Copy static surface , working, clear flood bit (3D, dirty-region dispatch)
 // packed = staticPacked & 1u (keep surface bit 0, clear flood bit 1)
 [numthreads(8, 8, 8)]
 void CopyAndClearFlood(uint3 id : SV_DispatchThreadID)
@@ -373,7 +366,7 @@ void ClearVoxelBuffer(uint3 id : SV_DispatchThreadID)
     _VoxelBuffer[idx] = 0u;
 }
 
-// 10: Copy working buffer → static cache (GPU-side, avoids CPU readback stall)
+// 10: Copy working buffer static cache (GPU-side, avoids CPU readback stall)
 RWStructuredBuffer<uint> _DstBuffer;
 [numthreads(8, 8, 8)]
 void CopyWorkingToStatic(uint3 id : SV_DispatchThreadID)
