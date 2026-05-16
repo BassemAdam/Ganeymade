@@ -80,9 +80,6 @@ public class ThermalReceiver : MonoBehaviour
     // Tracks the set of sources baked into heatSourceData so we can detect changes and re-upload only when necessary.
     private List<HeatSourceSnapshot> _trackedSourceSnapshots = new List<HeatSourceSnapshot>();
 
-    // Tracks the VoxelTracerSystem voxelize-frame counter so any dynamic-object
-    // re-voxelization also triggers a GPU refresh
-    private int _lastVoxelizeFrameCount = -1;
     // ─── Lifecycle ──────────────────────────────────────────────────────
 
     IEnumerator Start()
@@ -120,7 +117,6 @@ public class ThermalReceiver : MonoBehaviour
         GL.IssuePluginEvent(GetRenderEventFunc(), 4);
 
         SnapshotCurrentSources();
-        _lastVoxelizeFrameCount = voxelTracer.VoxelizeFrameCount;
 
         initialized = true;
     }
@@ -137,17 +133,10 @@ public class ThermalReceiver : MonoBehaviour
             return;
         }
         // Re-read HeatSourceTexture whenever sources appear, disappear, move, or change temperature.  
-        bool voxelFrameChanged = voxelTracer.VoxelizeFrameCount != _lastVoxelizeFrameCount;
-        if ((HeatSourcesChanged() || voxelFrameChanged) && !_refreshingHeatSources)
+        if (HeatSourcesChanged() && !_refreshingHeatSources)
         {
-            if (verbose)
-            {
-                if (voxelFrameChanged)
-                    Debug.Log("[ThermalReceiver] Voxel grid updated (dynamic objects) — refreshing GPU data.");
-                else
-                    Debug.Log("[ThermalReceiver] start heat source refresh");
-            }
-            StartCoroutine(RefreshSolidData());
+            if (verbose) Debug.Log("[ThermalReceiver] start heat source refresh");
+            StartCoroutine(RefreshHeatSources());
         }
 
         float dt = Time.deltaTime;
@@ -170,7 +159,7 @@ public class ThermalReceiver : MonoBehaviour
         int gz = voxelTracer.Nz;
         int sliceSize = gx * gy;
 
-        // ── Fill texture to mask (single async 3D request, no per-slice stalls) ──
+        // ── Fill texture → mask (single async 3D request, no per-slice stalls) ──
         {
             var req = AsyncGPUReadback.Request(voxelTracer.FillTexture);
             yield return new WaitUntil(() => req.done);
@@ -192,7 +181,7 @@ public class ThermalReceiver : MonoBehaviour
             }
         }
 
-        // ── Temperature texture to gridData ─────────────────────────────────
+        // ── Temperature texture → gridData ─────────────────────────────────
         {
             var req = AsyncGPUReadback.Request(voxelTracer.TemperatureTexture);
             yield return new WaitUntil(() => req.done);
@@ -214,7 +203,7 @@ public class ThermalReceiver : MonoBehaviour
             }
         }
 
-        // ── Diffusivity texture tp diffusivityData ──────────────────────────
+        // ── Diffusivity texture → diffusivityData ──────────────────────────
         {
             var req = AsyncGPUReadback.Request(voxelTracer.DiffusivityTexture);
             yield return new WaitUntil(() => req.done);
@@ -236,7 +225,7 @@ public class ThermalReceiver : MonoBehaviour
             }
         }
 
-        // ── HeatSourceTexture to heatSourceData ─────────────────────────────
+        // ── HeatSourceTexture → heatSourceData ─────────────────────────────
         if (voxelTracer.HeatSourceTexture != null)
         {
             var req = AsyncGPUReadback.Request(voxelTracer.HeatSourceTexture);
@@ -271,111 +260,43 @@ public class ThermalReceiver : MonoBehaviour
         SetDiffusivityData(diffusivityData, gx * gy * gz);
     }
     //Re-reads only the HeatSourceTexture and re-uploads heatSourceData.
-    private IEnumerator RefreshSolidData()
+    private IEnumerator RefreshHeatSources()
     {
-        if (_refreshingHeatSources) 
-            yield break;
+        if (_refreshingHeatSources) yield break;  // prevent concurrent refreshes if sources change mid-refresh
         _refreshingHeatSources = true;
 
-        yield return null;
-
-        int gx = voxelTracer.Nx, gy = voxelTracer.Ny, gz = voxelTracer.Nz;
+        int gx = voxelTracer.Nx;
+        int gy = voxelTracer.Ny;
+        int gz = voxelTracer.Nz;
         int sliceSize = gx * gy;
-        int total = gx * gy * gz;
 
-        // Re-read fill texture to maskData
-        var fillReq = AsyncGPUReadback.Request(voxelTracer.FillTexture);
-        yield return new WaitUntil(() => fillReq.done);
-        if (!fillReq.hasError)
+        if (voxelTracer.HeatSourceTexture == null) { _refreshingHeatSources = false; yield break; }
+
+        // Single async 3D request — no temp RT, no per-slice ReadPixels, no allocations.
+        var req = AsyncGPUReadback.Request(voxelTracer.HeatSourceTexture);
+        yield return new WaitUntil(() => req.done);
+
+        if (!req.hasError)
         {
-            int slices = fillReq.layerCount > 0 ? fillReq.layerCount : gz;
+            int slices = req.layerCount > 0 ? req.layerCount : gz;
             for (int z = 0; z < gz && z < slices; z++)
             {
-                var slice = fillReq.GetData<float>(z);
+                var slice = req.GetData<float>(z);
                 int n = Mathf.Min(slice.Length, sliceSize);
                 int dstBase = z * sliceSize;
                 for (int i = 0; i < n; i++)
-                    maskData[dstBase + i] = slice[i] > 0.5f ? 1u : 0u;
+                    heatSourceData[dstBase + i] = slice[i];
             }
         }
 
-        // Re-read diffusivity texture to diffusivityData
-        var diffReq = AsyncGPUReadback.Request(voxelTracer.DiffusivityTexture);
-        yield return new WaitUntil(() => diffReq.done);
-        if (!diffReq.hasError)
-        {
-            int slices = diffReq.layerCount > 0 ? diffReq.layerCount : gz;
-            for (int z = 0; z < gz && z < slices; z++)
-            {
-                var slice = diffReq.GetData<float>(z);
-                int n = Mathf.Min(slice.Length, sliceSize);
-                int dstBase = z * sliceSize;
-                for (int i = 0; i < n; i++)
-                    diffusivityData[dstBase + i] = Mathf.Clamp(slice[i], 0f, 30f);
-            }
-        }
-
-        // Re-read heat source texture to heatSourceData
-        if (voxelTracer.HeatSourceTexture != null)
-        {
-            var hsReq = AsyncGPUReadback.Request(voxelTracer.HeatSourceTexture);
-            yield return new WaitUntil(() => hsReq.done);
-            if (!hsReq.hasError)
-            {
-                int slices = hsReq.layerCount > 0 ? hsReq.layerCount : gz;
-                for (int z = 0; z < gz && z < slices; z++)
-                {
-                    var slice = hsReq.GetData<float>(z);
-                    int n = Mathf.Min(slice.Length, sliceSize);
-                    int dstBase = z * sliceSize;
-                    for (int i = 0; i < n; i++)
-                        heatSourceData[dstBase + i] = slice[i];
-                }
-            }
-        }
-
-        int pinnedAfterReadback = 0;
-        foreach (float v in heatSourceData) 
-            if (v > 0f) 
-                pinnedAfterReadback++;
-        if (verbose)
-            Debug.Log($"[ThermalReceiver] [STAGE 1] After HeatSourceTexture GPU readback — pinnedVoxels={pinnedAfterReadback}");
-
-        //preserve the existing temps for fixed solid voxels, seed new solid voxels at ambient
-        GetSolidComputeResult(readbackData, total);
-        for (int i = 0; i < total; i++)
-            gridData[i] = maskData[i] == 1u ? (readbackData[i] > 0f ? readbackData[i] : defaultAmbientTemp): 0f;
-
-        // Upload the three textures to the native plugin
-        SetSolidComputeData(gridData, total);
-        SetMaskData(maskData, total);
-        SetDiffusivityData(diffusivityData, total);
-
-        int pinnedBeforeUpload = 0;
-        foreach (float v in heatSourceData) 
-            if (v > 0f) 
-                pinnedBeforeUpload++;
-        if (verbose)
-            Debug.Log($"[ThermalReceiver] [STAGE 2] About to call SetHeatSourceData — pinnedVoxels={pinnedBeforeUpload}");
-
-        SetHeatSourceData(heatSourceData, total);
+        SetHeatSourceData(heatSourceData, gx * gy * gz);
 
         SnapshotCurrentSources();
-        _lastVoxelizeFrameCount = voxelTracer.VoxelizeFrameCount;
         _refreshingHeatSources = false;
 
-        if (verbose)
-        {
-            int pinnedCount = 0;
-            foreach (float v in heatSourceData) 
-                if (v > 0f) 
-                    pinnedCount++;
-            int solidCount = 0;
-            foreach (uint v in maskData) 
-                if (v > 0u) 
-                    solidCount++;
-            Debug.Log($"[ThermalReceiver] Solid data refreshed — solidVoxels={solidCount}  pinnedVoxels={pinnedCount}");
-        }
+        int pinnedCount = 0;
+        foreach (float v in heatSourceData) if (v > 0f) pinnedCount++;
+        if (verbose) Debug.Log($"[ThermalReceiver] Heat sources refreshed — {pinnedCount} pinned voxels.");
     }
 
     // ─── Change detection ────────────────────────────────────────────────
@@ -387,18 +308,13 @@ public class ThermalReceiver : MonoBehaviour
     private bool HeatSourcesChanged()
     {
         var sources = VoxelTracerSystem.SolidMaterials;
-
-        // Count all active solid materials, not just heat sources in case a material moves 
-        int count = 0;
+        // Count only flagged sources
+        int flaggedCount = 0;
         foreach (var sm in sources)
-            if (sm != null && sm.isActiveAndEnabled) 
-                count++;
+            if (sm != null && sm.isContinuousHeatSource) 
+                flaggedCount++;
 
-        if ( verbose && count != _trackedSourceSnapshots.Count) 
-        {
-            Debug.Log($"[ThermalReceiver] [CHANGED] Source count changed: tracked={_trackedSourceSnapshots.Count} current={count}");
-            return true;
-        }
+        if (flaggedCount != _trackedSourceSnapshots.Count) return true;
 
         var snapshotMap = new Dictionary<int, HeatSourceSnapshot>(_trackedSourceSnapshots.Count);
         foreach (var snap in _trackedSourceSnapshots)
@@ -406,32 +322,11 @@ public class ThermalReceiver : MonoBehaviour
 
         foreach (var sm in sources)
         {
-            if (sm == null || !sm.isActiveAndEnabled) 
-                continue;
-            if (!snapshotMap.TryGetValue(sm.GetInstanceID(), out var snap)) 
-                {
-                    if (verbose) Debug.Log($"[ThermalReceiver] [CHANGED] New untracked source: {sm.name}");
-                    return true;
-                }
-            if (snap.isContinuousHeatSource != sm.isContinuousHeatSource) 
-                {
-                    if (verbose) Debug.Log($"[ThermalReceiver] [CHANGED] isContinuousHeatSource toggled on {sm.name}");
-                    return true;
-                }
-            if (!Mathf.Approximately(snap.temperature, sm.temperature)) 
-                {
-                    if (verbose) Debug.Log($"[ThermalReceiver] [CHANGED] Temperature changed on {sm.name}: {snap.temperature} to {sm.temperature}");
-                    return true;
-                }
-
-            // Check movement via renderer bounds center 
-            var r = sm.GetComponent<Renderer>();
-            Vector3 currentCenter = r != null ? r.bounds.center : sm.transform.position;
-            if ((snap.boundsCenter - currentCenter).sqrMagnitude > 1e-6f) 
-               {
-                    Debug.Log($"[ThermalReceiver] [CHANGED] Position changed on {sm.name}: {snap.boundsCenter} to {currentCenter}");
-                    return true;
-                }
+            if (sm == null || !sm.isContinuousHeatSource) continue;
+            if (!snapshotMap.TryGetValue(sm.GetInstanceID(), out var snap)) return true;
+            if (snap.isContinuousHeatSource != sm.isContinuousHeatSource) return true;
+            if (!Mathf.Approximately(snap.temperature, sm.temperature)) return true;
+            if ((snap.position - sm.transform.position).sqrMagnitude > 1e-6f) return true;
         }
         return false;
     }
@@ -441,16 +336,13 @@ public class ThermalReceiver : MonoBehaviour
         _trackedSourceSnapshots.Clear();
         foreach (var sm in VoxelTracerSystem.SolidMaterials)
         {
-            if (sm == null || !sm.isActiveAndEnabled) 
-                continue;
-            var r = sm.GetComponent<Renderer>();
+            if (sm == null || !sm.isContinuousHeatSource) continue;
             _trackedSourceSnapshots.Add(new HeatSourceSnapshot
             {
-                instanceID = sm.GetInstanceID(),
+                instanceID  = sm.GetInstanceID(),
                 temperature = sm.temperature,
                 isContinuousHeatSource = sm.isContinuousHeatSource,
                 position = sm.transform.position,
-                boundsCenter = r != null ? r.bounds.center : sm.transform.position,
             });
         }
     }
@@ -458,18 +350,6 @@ public class ThermalReceiver : MonoBehaviour
     private IEnumerator Reinitialize()
     {
         initialized = false;
-
-        //save  the current temperatures before wiping arrays to read back whatever the GPU has to reseed after resize.
-        float[] oldReadback = null;
-        int oldTotal = gridWidth * gridHeight * gridDepth;
-        if (readbackData != null && oldTotal > 0)
-        {
-            oldReadback = new float[oldTotal];
-            GetSolidComputeResult(oldReadback, oldTotal);
-        }
-        int oldWidth = gridWidth;
-        int oldHeight = gridHeight;
-        int oldDepth = gridDepth;
 
         gridWidth = voxelTracer.Nx;
         gridHeight = voxelTracer.Ny;
@@ -485,43 +365,6 @@ public class ThermalReceiver : MonoBehaviour
         yield return StartCoroutine(ReadTexturesAsync());
         DebugTextureReadback();
 
-        // reseed gridData to preserve temps where grid coords match
-        bool sameSize = gridWidth == oldWidth && gridHeight == oldHeight && gridDepth == oldDepth;
-        if (oldReadback != null && sameSize)
-        {
-            // Grid didn't actually resize (just a re-init ping) hence copy temps directly.
-            for (int i = 0; i < totalCells; i++)
-                gridData[i] = maskData[i] == 1u? (oldReadback[i] > 0f ? oldReadback[i] : defaultAmbientTemp):0f;
-        }
-        else if (oldReadback != null)
-        {
-            // Grid resized , remap by voxel coordinate.
-            for (int z = 0; z < gridDepth; z++)
-            for (int y = 0; y < gridHeight; y++)
-            for (int x = 0; x < gridWidth; x++)
-            {
-                int newi = z * gridWidth * gridHeight + y * gridWidth + x;
-                if (maskData[newi] == 0u) 
-                    continue;
-                if (x < oldWidth && y < oldHeight && z < oldDepth)
-                {
-                    int oldi = z * oldWidth * oldHeight + y * oldWidth + x;
-                    gridData[newi] = oldReadback[oldi] > 0f ? oldReadback[oldi] : defaultAmbientTemp;
-                }
-                else
-                {
-                    gridData[newi] = defaultAmbientTemp;
-                }
-            }
-        }
-        else
-        {
-            // No previous data , seed all solid voxels at ambient.
-            for (int i = 0; i < totalCells; i++)
-                gridData[i] = maskData[i] == 1u ? defaultAmbientTemp : 0f;
-        }
-        // ────────────────────────────────────────────────────────────────────
-
         SetSolidComputeData(gridData, totalCells);
         SetMaskData(maskData, totalCells);
         SetDiffusivityData(diffusivityData, totalCells);
@@ -530,8 +373,8 @@ public class ThermalReceiver : MonoBehaviour
 
         yield return new WaitForEndOfFrame();
 
-        frameCount  = 0;
-        _lastVoxelizeFrameCount = voxelTracer.VoxelizeFrameCount;
+        //InitVisualization();
+        frameCount = 0;
         initialized = true;
     }
 
@@ -546,13 +389,6 @@ public class ThermalReceiver : MonoBehaviour
     private void LogDiffusionStats(float dt)
     {
         GetSolidComputeResult(readbackData, readbackData.Length);
-
-        int pinnedAtLogTime = 0;
-        foreach (float v in heatSourceData) 
-            if (v > 0f) 
-                pinnedAtLogTime++;
-        if (verbose)
-            Debug.Log($"[ThermalReceiver] [STAGE 3] heatSourceData at log time — pinnedVoxels={pinnedAtLogTime}");
 
         float minT = float.MaxValue;
         float maxT = float.MinValue;
@@ -710,29 +546,7 @@ public class ThermalReceiver : MonoBehaviour
                         diffusedNeighbours++;
                         diffusedSum += t;
                     }
-            
-            int solidAdjacentToSource = 0;
-            int nonSolidAdjacentToSource = 0;
-            for (int z = 0; z < gridDepth; z++)
-            for (int y = 0; y < gridHeight; y++)
-            for (int x = 0; x < gridWidth; x++)
-            {
-                int i = z * gridWidth * gridHeight + y * gridWidth + x;
-                if (heatSourceData[i] <= 0f) continue;          // not a pinned voxel
-                int[] dx = { -1,1,0,0,0,0 };
-                int[] dy = { 0,0,-1,1,0,0 };
-                int[] dz = { 0,0,0,0,-1,1 };
-                for (int n = 0; n < 6; n++)
-                {
-                    int nx = x+dx[n], ny = y+dy[n], nz = z+dz[n];
-                    if (nx<0||nx>=gridWidth||ny<0||ny>=gridHeight||nz<0||nz>=gridDepth) continue;
-                    int ni = nz*gridWidth*gridHeight + ny*gridWidth + nx;
-                    if (heatSourceData[ni] > 0f) continue;      // skip other pinned voxels
-                    if (maskData[ni] == 1u) solidAdjacentToSource++;
-                    else nonSolidAdjacentToSource++;
-                }
-            }
-            Debug.Log($"[ThermalReceiver] [ADJACENCY] Voxels neighbouring any pinned cell — solid(mask=1)={solidAdjacentToSource}  air(mask=0)={nonSolidAdjacentToSource}");
+
             diffusedAvg = diffusedNeighbours > 0 ? (float)(diffusedSum / diffusedNeighbours) : 0f;
             sb.AppendLine($"  └ {sm.name} ({(isSphere ? "sphere" : "AABB")})  " +
                         $"pinTemp={sm.temperature:F1}°  pinnedVoxels={pinnedBySource}  " +
@@ -866,6 +680,5 @@ public class ThermalReceiver : MonoBehaviour
         public float temperature;
         public bool isContinuousHeatSource;
         public Vector3 position;
-        public Vector3 boundsCenter; 
     }
 }

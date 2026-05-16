@@ -48,9 +48,6 @@ public sealed class VoxelDynamic : MonoBehaviour
     [HideInInspector] public float submergedFraction;
     [HideInInspector] public Vector3 lastBuoyancyForce;
     [HideInInspector] public Vector3 lastDragForce;
-    [HideInInspector] public Vector3 lastPosition = Vector3.positiveInfinity;
-    [HideInInspector] public Quaternion lastRotation;
-    [HideInInspector] public Vector3 lastScale;
 
     // Cached references
     [System.NonSerialized] public Rigidbody rb;
@@ -100,16 +97,5 @@ public sealed class VoxelDynamic : MonoBehaviour
         Vector3 s = worldBounds.size;
         // Approximate as 60% of bounding box (accounts for mesh not filling full AABB)
         return s.x * s.y * s.z * 0.6f;
-    }
-    
-    public bool HasMoved()
-    {
-        Transform t = transform;
-        if (t.position == lastPosition && t.rotation == lastRotation && t.localScale == lastScale)
-            return false;
-        lastPosition = t.position;
-        lastRotation = t.rotation;
-        lastScale = t.localScale;
-        return true;
     }
 }
