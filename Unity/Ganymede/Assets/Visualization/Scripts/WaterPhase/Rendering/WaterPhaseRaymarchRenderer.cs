@@ -10,6 +10,8 @@ public sealed class WaterPhaseRaymarchRenderer
     private static readonly int ID_PhysicsBoundsMinWS = Shader.PropertyToID("_PhysicsBoundsMinWS");
     private static readonly int ID_PhysicsBoundsMaxWS = Shader.PropertyToID("_PhysicsBoundsMaxWS");
     private static readonly int ID_PhysicsVolumeDims = Shader.PropertyToID("_PhysicsVolumeDims");
+    private static readonly int ID_VapourVelocityTex = Shader.PropertyToID("_VapourVelocityTex");
+    private static readonly int ID_VapourNoiseTex    = Shader.PropertyToID("_VapourNoiseTex");
 
     private readonly Transform _ownerTransform;
     private readonly MeshFilter _sourceMeshFilter;
@@ -122,8 +124,12 @@ public sealed class WaterPhaseRaymarchRenderer
             _propertyBlock.SetVector(
                 ID_PhysicsVolumeDims,
                 new Vector4(resources.VolumeDims.x, resources.VolumeDims.y, resources.VolumeDims.z, 0f));
+            _propertyBlock.SetTexture(ID_VapourVelocityTex, resources.VapourVelocityTexture);
             _lastBoundResourceVersion = resources.Version;
         }
+
+        // Bind the advected noise texture every frame: it ping-pongs, so the pointer changes each frame.
+        _propertyBlock.SetTexture(ID_VapourNoiseTex, resources.VapourNoiseSrcTex);
 
         if (boundsChanged)
         {

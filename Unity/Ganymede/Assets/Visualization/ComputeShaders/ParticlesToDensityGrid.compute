@@ -3,6 +3,10 @@
 #pragma kernel NormalizeToTexture
 #pragma kernel BlurDensity
 #pragma kernel BakeNormals
+#pragma kernel ClearVelocityGrid
+#pragma kernel SplatVapourVelocity
+#pragma kernel NormalizeVelocityToTexture
+#pragma kernel AdvectVapourNoise
 
 struct Particle
 {
@@ -31,6 +35,15 @@ RWStructuredBuffer<uint>    _DensityGrid;
 RWTexture3D<float2>         _DensityTexture3D_RG;
 Texture3D<float2>           _DensityTexture3D_Read;
 RWTexture3D<float4>         _NormalTexture3D;
+
+// Velocity splat — 4 slabs per voxel: vx_biased, vy_biased, vz_biased, weight
+RWStructuredBuffer<uint>    _VelocityGrid;
+RWTexture3D<float4>         _VelocityTexture3D;
+
+// Fixed-point encoding for normalized velocity direction in [-1, 1]:
+// encoded = round((dir + VEL_BIAS) * VEL_FIXED_SCALE), giving uint range [0, 2*VEL_FIXED_SCALE]
+static const float VEL_FIXED_SCALE = 1024.0;
+static const float VEL_BIAS        = 1.0;
 
 int3   _VolumeDims;
 uint   _ParticleCount;
@@ -262,4 +275,179 @@ void BakeNormals(uint3 id : SV_DispatchThreadID)
     float3 n = (len >= 1e-4) ? -(grad / len) : float3(0.0, 0.0, 0.0);
 
     _NormalTexture3D[id] = float4(n, 0.0);
+}
+
+// ─── Velocity splat kernels ───────────────────────────────────────────────────
+
+// Zeros all 4 slabs (vx, vy, vz, weight) of the velocity grid.
+[numthreads(8, 8, 8)]
+void ClearVelocityGrid(uint3 id : SV_DispatchThreadID)
+{
+    if (id.x >= (uint)_VolumeDims.x || id.y >= (uint)_VolumeDims.y || id.z >= (uint)_VolumeDims.z)
+        return;
+
+    uint N   = (uint)(_VolumeDims.x * _VolumeDims.y * _VolumeDims.z);
+    uint idx = GridIndex((int3)id);
+    _VelocityGrid[idx]          = 0u;
+    _VelocityGrid[N + idx]      = 0u;
+    _VelocityGrid[2u * N + idx] = 0u;
+    _VelocityGrid[3u * N + idx] = 0u;
+}
+
+// Accumulates normalized velocity directions for each vapour particle into _VelocityGrid.
+// Only vapour particles (phase == 1) contribute. Near-stationary particles are skipped.
+[numthreads(256, 1, 1)]
+void SplatVapourVelocity(uint id : SV_DispatchThreadID)
+{
+    if (id >= _ParticleCount)
+        return;
+
+    Particle p = _ParticleBuffer[id];
+    if (p.phase != 1)
+        return;   // vapour only
+
+    float speed = length(p.velocity);
+    if (speed < 0.01)
+        return;   // skip near-stationary particles
+
+    float3 dir = p.velocity / speed;   // unit direction, components in [-1, 1]
+
+    float3 minWS  = _BoundsMinWS.xyz;
+    float3 maxWS  = _BoundsMaxWS.xyz;
+    float3 sizeWS = max(maxWS - minWS, 1e-5);
+
+    float3 uvw = (p.position - minWS) / sizeWS;
+    if (uvw.x < 0.0 || uvw.y < 0.0 || uvw.z < 0.0 || uvw.x > 1.0 || uvw.y > 1.0 || uvw.z > 1.0)
+        return;
+
+    int3 voxel = (int3)floor(uvw * (float3)(_VolumeDims - 1));
+    if (IsOutOfBounds(voxel))
+        return;
+
+    // Encode: bias [-1,1] to [0,2], scale by VEL_FIXED_SCALE — safe uint range
+    uint3 enc = (uint3)round((dir + VEL_BIAS) * VEL_FIXED_SCALE);
+
+    uint N   = (uint)(_VolumeDims.x * _VolumeDims.y * _VolumeDims.z);
+    uint idx = GridIndex(voxel);
+    uint orig;
+    InterlockedAdd(_VelocityGrid[idx],          enc.x, orig);
+    InterlockedAdd(_VelocityGrid[N + idx],       enc.y, orig);
+    InterlockedAdd(_VelocityGrid[2u * N + idx],  enc.z, orig);
+    InterlockedAdd(_VelocityGrid[3u * N + idx],  1u,    orig);
+}
+
+// Averages accumulated velocity directions and writes normalized (dir, confidence) to the 3D texture.
+// confidence approaches 1.0 as more particles contribute (reaches 1 at ~4 particles/voxel).
+[numthreads(8, 8, 8)]
+void NormalizeVelocityToTexture(uint3 id : SV_DispatchThreadID)
+{
+    if (id.x >= (uint)_VolumeDims.x || id.y >= (uint)_VolumeDims.y || id.z >= (uint)_VolumeDims.z)
+        return;
+
+    uint N      = (uint)(_VolumeDims.x * _VolumeDims.y * _VolumeDims.z);
+    uint idx    = GridIndex((int3)id);
+    uint weight = _VelocityGrid[3u * N + idx];
+
+    if (weight == 0u)
+    {
+        _VelocityTexture3D[id] = float4(0, 0, 0, 0);
+        return;
+    }
+
+    // Decode: divide by weight (average), undo scale+bias to recover direction in [-1,1]
+    float invWeight = 1.0 / (float)weight;
+    float3 dir = float3(
+        (float)_VelocityGrid[idx]          * invWeight / VEL_FIXED_SCALE - VEL_BIAS,
+        (float)_VelocityGrid[N + idx]       * invWeight / VEL_FIXED_SCALE - VEL_BIAS,
+        (float)_VelocityGrid[2u * N + idx]  * invWeight / VEL_FIXED_SCALE - VEL_BIAS
+    );
+
+    // The averaged direction may be shorter than 1 (opposing particles cancel); normalize it.
+    float len = length(dir);
+    float3 avgDir = (len > 0.01) ? (dir / len) : float3(0, 0, 0);
+
+    // confidence: 0 at 0 particles, smoothly reaches 1 at 4 particles
+    float confidence = saturate(float(weight) * 0.25);
+
+    _VelocityTexture3D[id] = float4(avgDir, confidence);
+}
+
+// ─── AdvectVapourNoise ───────────────────────────────────────────────────────
+// Semi-Lagrangian advection of a ping-pong noise 3D texture driven by the
+// particle velocity field.  Each voxel back-traces to where its content came
+// FROM last frame (prevUVW = uvw − vel·dt·speed) and samples the source
+// texture there (trilinear, clamp).  Where vapour particles are present the
+// voxel is refreshed with fresh procedural noise at rate _NoiseInjectionRate.
+// This replaces the old per-shader drift-coordinate approach that caused
+// shear fragmentation at high velocity influence values.
+
+Texture3D<float>   _VapourNoiseSrc;
+SamplerState       sampler_VapourNoiseSrc;
+RWTexture3D<float> _VapourNoiseDst;
+
+float _DeltaTime;
+float _NoiseAdvectSpeed;
+float _NoiseInjectionRate;
+float _VapourPresenceThresholdCompute;
+
+// Hash + value noise used for fresh-noise injection (3-octave FBM)
+float AdvNoise_Hash(float3 p)
+{
+    p  = frac(p * float3(443.897, 441.423, 437.195));
+    p += dot(p, p.yzx + 19.19);
+    return frac((p.x + p.y) * p.z);
+}
+
+float AdvNoise_Value(float3 p)
+{
+    float3 i = floor(p);
+    float3 f = frac(p);
+    float3 u = f * f * f * (f * (f * 6.0 - 15.0) + 10.0);
+    return lerp(
+        lerp(lerp(AdvNoise_Hash(i),                  AdvNoise_Hash(i + float3(1,0,0)), u.x),
+             lerp(AdvNoise_Hash(i + float3(0,1,0)),  AdvNoise_Hash(i + float3(1,1,0)), u.x), u.y),
+        lerp(lerp(AdvNoise_Hash(i + float3(0,0,1)),  AdvNoise_Hash(i + float3(1,0,1)), u.x),
+             lerp(AdvNoise_Hash(i + float3(0,1,1)),  AdvNoise_Hash(i + float3(1,1,1)), u.x), u.y),
+        u.z);
+}
+
+// 3-octave FBM — cheap enough for a compute kernel
+float AdvNoise_FBM(float3 p)
+{
+    return (AdvNoise_Value(p)                                        * 4.0
+          + AdvNoise_Value(p * 2.1 + float3(1.7, 3.4, 5.1))        * 2.0
+          + AdvNoise_Value(p * 4.3 + float3(2.3, 1.8, 4.2)))       * (1.0 / 7.0);
+}
+
+[numthreads(8, 8, 8)]
+void AdvectVapourNoise(uint3 id : SV_DispatchThreadID)
+{
+    if (id.x >= (uint)_VolumeDims.x || id.y >= (uint)_VolumeDims.y || id.z >= (uint)_VolumeDims.z)
+        return;
+
+    float3 dims = float3(_VolumeDims);
+    float3 uvw  = (float3(id) + 0.5) / dims;
+
+    // Velocity at this voxel (written by NormalizeVelocityToTexture this frame).
+    // xyz = unit direction, w = confidence [0,1].
+    float4 vel = _VelocityTexture3D[id];
+
+    // Blend between a global upward fallback (no particles) and particle velocity.
+    float3 advectDir = lerp(float3(0.0, 1.0, 0.0), vel.xyz, vel.w);
+
+    // Semi-Lagrangian back-trace: where did this voxel's content come FROM?
+    float3 prevUVW = saturate(uvw - advectDir * (_DeltaTime * _NoiseAdvectSpeed));
+
+    // Sample source noise at the previous position (trilinear, clamp-to-edge).
+    float advected = _VapourNoiseSrc.SampleLevel(sampler_VapourNoiseSrc, prevUVW, 0);
+
+    // Determine injection weight from vapour density (G channel of density texture).
+    float vapDens = _DensityTexture3D_Read[(int3)id].g;
+    float inject  = saturate((vapDens - _VapourPresenceThresholdCompute) * 5.0) * _NoiseInjectionRate;
+
+    // Fresh procedural noise at this world-space position for injection.
+    float3 posWS  = _BoundsMinWS.xyz + uvw * (_BoundsMaxWS.xyz - _BoundsMinWS.xyz);
+    float  fresh  = AdvNoise_FBM(posWS * 0.9);
+
+    _VapourNoiseDst[id] = lerp(advected, fresh, inject);
 }

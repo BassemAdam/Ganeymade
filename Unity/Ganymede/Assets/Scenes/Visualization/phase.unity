@@ -592,7 +592,7 @@ MonoBehaviour:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 281062055}
-  m_Enabled: 1
+  m_Enabled: 0
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: ccc445b9f904c1446bcac3f66c2b47db, type: 3}
   m_Name: 
@@ -2151,7 +2151,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 7193c26c385088b48869367ff217e876, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::VoxelSolidMaterial
-  temperature: 0
+  temperature: 412.5
   thermalDiffusivity: 30
   coolingRate: 0.01
   isContinuousHeatSource: 1
@@ -2618,7 +2618,7 @@ MonoBehaviour:
       adaptiveDensityBulk: 260
       adaptiveDensityCurve: 0.4
     rendering:
-      mode: 2
+      mode: 0
       rayMarchingMaterial: {fileID: 2100000, guid: 03c4cd8b0ea45e14190b02d13513c0d9, type: 2}
       marchingCubesMaterial: {fileID: 2100000, guid: a5f165da16e6e4a4e8b93a9c48ecc59b, type: 2}
       vapourRaymarchMaterial: {fileID: 2100000, guid: ecfb9a36afdd6404e9a46793705c4a27, type: 2}
@@ -3944,7 +3944,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 4161998456328252244, guid: 18cf1fa5220a198409fde72db8b3e2a5, type: 3}
       propertyPath: spawnPoolReserve
-      value: 32768
+      value: 0
       objectReference: {fileID: 0}
     - target: {fileID: 4161998456328252244, guid: 18cf1fa5220a198409fde72db8b3e2a5, type: 3}
       propertyPath: thermalDiffusivity

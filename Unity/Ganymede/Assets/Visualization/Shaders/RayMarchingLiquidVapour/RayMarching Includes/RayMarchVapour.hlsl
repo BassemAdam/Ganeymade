@@ -1,6 +1,12 @@
 #ifndef RAY_MARCH_VAPOUR_INCLUDED
 #define RAY_MARCH_VAPOUR_INCLUDED
 
+// Advected vapour noise texture.  Updated each frame by the AdvectVapourNoise
+// compute kernel (semi-Lagrangian advection along the particle velocity field).
+// Bound per-frame via MaterialPropertyBlock.
+TEXTURE3D(_VapourNoiseTex);
+SAMPLER(sampler_VapourNoiseTex);
+
 
 bool HasPhysicalVapour(float rawVapourDensity)
 {
@@ -111,26 +117,31 @@ float SampleVapourDensityProceduralWS(float3 posWS, float rawVapourDensity)
     if (!HasPhysicalVapour(rawVapourDensity))
         return 0.0;
 
-    float3 driftDir = GetVapourNoiseDriftDirectionWS();
-    float3 driftedPos = posWS + driftDir * (_Time.y * _NoiseDriftSpeed);
-    float3 p = driftedPos / max(_NoiseScale, 1e-5);
+    // Large-scale shape: sample the GPU-advected noise texture.
+    // This texture is updated each frame by the AdvectVapourNoise compute kernel,
+    // which performs semi-Lagrangian advection along the particle velocity field.
+    float3 uvw = DensityGridUVW(posWS);
+    float advectedShape = _VapourNoiseTex.SampleLevel(sampler_VapourNoiseTex, uvw, 0);
+
+    // High-frequency detail: lightweight FBM fixed in world space (no drift).
+    // Adds wispy sub-voxel structure the 3D texture resolution can't store.
+    float3 p = posWS / max(_NoiseScale, 1e-5);
     p.y /= max(_VapourVerticalStretch, 0.05);
-
-    float3 flowA = RaymarchVapourVectorNoise3D(p * 0.7);
-    float3 flowB = RaymarchVapourVectorNoise3D(p * 1.37 + flowA * 0.55 + _Time.y * 0.07);
-    float3 flow = flowA * 0.65 + flowB * 0.35;
-    float3 warpedP = p + flow * max(_VapourWarpStrength, 0.0);
-
+    float3 flowA = RaymarchVapourVectorNoise3D(p * 0.55 + _Time.y * 0.015);
+    float3 warpedP = p + flowA * max(_VapourWarpStrength, 0.0);
     int octaves = clamp(_NoiseOctaves, 1, 8);
-    float baseNoise = RaymarchVapourFBM(warpedP, octaves, 2.0, 0.5);
-    float erosionNoise = RaymarchVapourFBM(
-        warpedP * max(_VapourErosionScale, 0.01) + flow * 0.5,
-        min(octaves + 1, 8),
-        2.0,
-        0.5
-    );
+    float detailNoise = RaymarchVapourFBM(warpedP, octaves, 2.0, 0.5);
 
-    float erodedNoise = baseNoise - erosionNoise * max(_VapourErosionStrength, 0.0);
+    // Combine: advected texture provides the moving shape; detail adds fine structure.
+    // Weight heavily toward the advected texture so streaming is clearly visible.
+    float combined = advectedShape * 0.82 + detailNoise * 0.18;
+
+    // Erosion
+    float erosionNoise = RaymarchVapourFBM(
+        warpedP * max(_VapourErosionScale, 0.01),
+        min(octaves + 1, 8), 2.0, 0.5);
+    float erodedNoise = combined - erosionNoise * max(_VapourErosionStrength, 0.0);
+
     float wispyNoise = smoothstep(_VapourCutoff, _VapourCutoff + max(_VapourSoftness, 1e-3), erodedNoise);
     float noise01 = pow(saturate(wispyNoise), max(_DensityPower, 0.01));
 

@@ -14,6 +14,10 @@ public sealed class WaterPhaseDensityPipeline
     private readonly int _normalizeKernel;
     private readonly int _blurDensityKernel;
     private readonly int _bakeNormalsKernel;
+    private readonly int _clearVelocityKernel;
+    private readonly int _splatVelocityKernel;
+    private readonly int _normalizeVelocityKernel;
+    private readonly int _advectVapourNoiseKernel;
     private int _lastBoundResourcesVersion = -1;
     // Cached group counts — only change when volumeDims changes (tied to resource version)
     private int _groupsX, _groupsY, _groupsZ;
@@ -41,6 +45,13 @@ public sealed class WaterPhaseDensityPipeline
     private static readonly int ID_BlurSigma = Shader.PropertyToID("_BlurSigma");
     private static readonly int ID_BlurDetailPreserve = Shader.PropertyToID("_BlurDetailPreserve");
     private static readonly int ID_BlurChannel = Shader.PropertyToID("_BlurChannel");
+    private static readonly int ID_VelocityTexture3D = Shader.PropertyToID("_VelocityTexture3D");
+    private static readonly int ID_VapourNoiseSrc = Shader.PropertyToID("_VapourNoiseSrc");
+    private static readonly int ID_VapourNoiseDst = Shader.PropertyToID("_VapourNoiseDst");
+    private static readonly int ID_DeltaTime = Shader.PropertyToID("_DeltaTime");
+    private static readonly int ID_NoiseAdvectSpeed = Shader.PropertyToID("_NoiseAdvectSpeed");
+    private static readonly int ID_NoiseInjectionRate = Shader.PropertyToID("_NoiseInjectionRate");
+    private static readonly int ID_VapourPresenceThresholdCompute = Shader.PropertyToID("_VapourPresenceThresholdCompute");
 
     public WaterPhaseDensityPipeline(ComputeShader computeShader)
     {
@@ -50,6 +61,15 @@ public sealed class WaterPhaseDensityPipeline
         _normalizeKernel = _computeShader.FindKernel("NormalizeToTexture");
         _blurDensityKernel = _computeShader.FindKernel("BlurDensity");
         _bakeNormalsKernel = _computeShader.FindKernel("BakeNormals");
+        _clearVelocityKernel = _computeShader.FindKernel("ClearVelocityGrid");
+        _splatVelocityKernel = _computeShader.FindKernel("SplatVapourVelocity");
+        _normalizeVelocityKernel = _computeShader.FindKernel("NormalizeVelocityToTexture");
+        _advectVapourNoiseKernel = _computeShader.FindKernel("AdvectVapourNoise");
+
+        // True constants — never change for the lifetime of this pipeline
+        _computeShader.SetFloat(ID_NoiseAdvectSpeed, 6.0f);   // fast enough to see streaming within a second
+        _computeShader.SetFloat(ID_NoiseInjectionRate, 0.5f); // fills the texture in ~5 frames so it dominates quickly
+        _computeShader.SetFloat(ID_VapourPresenceThresholdCompute, 0.005f); // lower threshold catches sparse vapour
 
         // True constants — never change for the lifetime of this pipeline
         _computeShader.SetFloat(ID_ParticleContribution, ParticleContribution);
@@ -78,6 +98,21 @@ public sealed class WaterPhaseDensityPipeline
         DispatchDensityBlurIfEnabled(settings.ActiveBlur, resources, _groupsX, _groupsY, _groupsZ, 0);
         DispatchDensityBlurIfEnabled(settings.ActiveBlur, resources, _groupsX, _groupsY, _groupsZ, 1);
         DispatchNormalBake(resources, _groupsX, _groupsY, _groupsZ);
+
+        _computeShader.Dispatch(_clearVelocityKernel,     _groupsX, _groupsY, _groupsZ);
+        _computeShader.Dispatch(_splatVelocityKernel,     particleGroups, 1, 1);
+        _computeShader.Dispatch(_normalizeVelocityKernel, _groupsX, _groupsY, _groupsZ);
+
+        // Semi-Lagrangian noise advection: back-trace each voxel along the freshly-written
+        // velocity field, trilinear-sample the source texture, inject fresh noise where
+        // vapour particles are present.  Source/destination ping-pong each frame.
+        _computeShader.SetFloat(ID_DeltaTime, Time.deltaTime);
+        _computeShader.SetTexture(_advectVapourNoiseKernel, ID_VapourNoiseSrc, resources.VapourNoiseSrcTex);
+        _computeShader.SetTexture(_advectVapourNoiseKernel, ID_VapourNoiseDst, resources.VapourNoiseDstTex);
+        _computeShader.SetTexture(_advectVapourNoiseKernel, ID_VelocityTexture3D, resources.VapourVelocityTexture);
+        _computeShader.SetTexture(_advectVapourNoiseKernel, "_DensityTexture3D_Read", resources.PhaseDensityTexture);
+        _computeShader.Dispatch(_advectVapourNoiseKernel, _groupsX, _groupsY, _groupsZ);
+        resources.SwapVapourNoisePingPong();
     }
 
     private void BindStaticResourcesIfNeeded(WaterPhaseResources resources)
@@ -94,6 +129,15 @@ public sealed class WaterPhaseDensityPipeline
         _computeShader.SetTexture(_blurDensityKernel, "_DensityTexture3D_RG", resources.PhaseDensityScratchTexture);
         _computeShader.SetTexture(_bakeNormalsKernel, "_DensityTexture3D_Read", resources.PhaseDensityTexture);
         _computeShader.SetTexture(_bakeNormalsKernel, "_NormalTexture3D", resources.SurfaceNormalTexture);
+
+        // Velocity splat kernels
+        _computeShader.SetBuffer(_clearVelocityKernel,     "_VelocityGrid", resources.VelocityGridBuffer);
+        _computeShader.SetBuffer(_splatVelocityKernel,     "_VelocityGrid", resources.VelocityGridBuffer);
+        _computeShader.SetBuffer(_splatVelocityKernel,     "_ParticleBuffer", resources.ParticleOutputBuffer);
+        _computeShader.SetBuffer(_normalizeVelocityKernel, "_VelocityGrid", resources.VelocityGridBuffer);
+        _computeShader.SetTexture(_normalizeVelocityKernel, "_VelocityTexture3D", resources.VapourVelocityTexture);
+        // Advect kernel: static bindings (density read-texture; src/dst bound per-frame in Execute)
+        _computeShader.SetTexture(_advectVapourNoiseKernel, "_DensityTexture3D_Read", resources.PhaseDensityTexture);
 
         // VolumeDims and group counts only change when resources are reallocated
         Vector3Int volumeDims = resources.VolumeDims;

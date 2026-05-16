@@ -142,6 +142,7 @@ public sealed class WaterRaymarchingShaderGUI : ShaderGUI
                 Draw("_NoiseScale");
                 Draw("_NoiseDriftDir");
                 Draw("_NoiseDriftSpeed");
+                Draw("_VelocityInfluence");
                 Draw("_NoiseOctaves");
                 Draw("_DensityPower");
                 Draw("_VapourWarpStrength");

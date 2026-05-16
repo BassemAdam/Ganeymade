@@ -9,12 +9,24 @@ public sealed class WaterPhaseResources : IDisposable
     private RenderTexture _phaseDensityTexture;
     private RenderTexture _phaseDensityScratchTexture;
     private RenderTexture _surfaceNormalTexture;
+    private ComputeBuffer _velocityGridBuffer;
+    private RenderTexture _vapourVelocityTexture;
+    private RenderTexture _vapourNoiseTex_A;
+    private RenderTexture _vapourNoiseTex_B;
+    private int _noisePingPong = 0;
 
     public ComputeBuffer ParticleOutputBuffer => _particleOutputBuffer;
     public ComputeBuffer DensityGridBuffer => _densityGridBuffer;
     public RenderTexture PhaseDensityTexture => _phaseDensityTexture;
     public RenderTexture PhaseDensityScratchTexture => _phaseDensityScratchTexture;
     public RenderTexture SurfaceNormalTexture => _surfaceNormalTexture;
+    public ComputeBuffer VelocityGridBuffer => _velocityGridBuffer;
+    public RenderTexture VapourVelocityTexture => _vapourVelocityTexture;
+    // Ping-pong noise textures for semi-Lagrangian vapour advection.
+    // Src is the last-written texture; Dst is the one to write into this frame.
+    public RenderTexture VapourNoiseSrcTex => _noisePingPong == 0 ? _vapourNoiseTex_A : _vapourNoiseTex_B;
+    public RenderTexture VapourNoiseDstTex => _noisePingPong == 0 ? _vapourNoiseTex_B : _vapourNoiseTex_A;
+    public void SwapVapourNoisePingPong() => _noisePingPong ^= 1;
     public Vector3Int VolumeDims { get; private set; }
     public int Version { get; private set; }
 
@@ -36,6 +48,10 @@ public sealed class WaterPhaseResources : IDisposable
         changed |= EnsureTexture(ref _phaseDensityTexture, VolumeDims, RenderTextureFormat.RGHalf);
         changed |= EnsureTexture(ref _phaseDensityScratchTexture, VolumeDims, RenderTextureFormat.RGHalf);
         changed |= EnsureTexture(ref _surfaceNormalTexture, VolumeDims, RenderTextureFormat.ARGBHalf);
+        changed |= EnsureVelocityGrid(gridCount);
+        changed |= EnsureTexture(ref _vapourVelocityTexture, VolumeDims, RenderTextureFormat.ARGBHalf);
+        changed |= EnsureTexture(ref _vapourNoiseTex_A, VolumeDims, RenderTextureFormat.RHalf);
+        changed |= EnsureTexture(ref _vapourNoiseTex_B, VolumeDims, RenderTextureFormat.RHalf);
 
         if (changed)
             Version++;
@@ -50,6 +66,10 @@ public sealed class WaterPhaseResources : IDisposable
         ReleaseTexture(ref _phaseDensityTexture);
         ReleaseTexture(ref _phaseDensityScratchTexture);
         ReleaseTexture(ref _surfaceNormalTexture);
+        ReleaseBuffer(ref _velocityGridBuffer);
+        ReleaseTexture(ref _vapourVelocityTexture);
+        ReleaseTexture(ref _vapourNoiseTex_A);
+        ReleaseTexture(ref _vapourNoiseTex_B);
     }
 
     public void Dispose()
@@ -75,6 +95,18 @@ public sealed class WaterPhaseResources : IDisposable
 
         ReleaseBuffer(ref _densityGridBuffer);
         _densityGridBuffer = new ComputeBuffer(totalCellCount, sizeof(uint), ComputeBufferType.Structured);
+        return true;
+    }
+
+    private bool EnsureVelocityGrid(int gridCount)
+    {
+        // 4 slabs per voxel: vx_biased, vy_biased, vz_biased, weight
+        int totalCellCount = gridCount * 4;
+        if (_velocityGridBuffer != null && _velocityGridBuffer.count == totalCellCount)
+            return false;
+
+        ReleaseBuffer(ref _velocityGridBuffer);
+        _velocityGridBuffer = new ComputeBuffer(totalCellCount, sizeof(uint), ComputeBufferType.Structured);
         return true;
     }
 

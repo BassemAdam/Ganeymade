@@ -52,6 +52,7 @@ Shader "Custom/WaterRaymarching"
         _NoiseScale ("Noise Scale", Range(0.1, 20.0)) = 2.0
         _NoiseDriftDir ("Drift Direction", Vector) = (0, 1, 0, 0)
         _NoiseDriftSpeed ("Drift Speed", Range(0.0, 5.0)) = 0.3
+        _VelocityInfluence ("Velocity Influence on Drift", Range(0.0, 1.0)) = 0.8
         _NoiseOctaves ("Noise Octaves", Range(1, 8)) = 5
         _DensityPower ("Vapour Density Sharpness", Range(0.1, 5.0)) = 1.5
         _VapourWarpStrength ("Flow Warp Strength", Range(0.0, 2.0)) = 0.65
@@ -161,6 +162,7 @@ Shader "Custom/WaterRaymarching"
                 float  _NoiseScale;
                 float4 _NoiseDriftDir;
                 float  _NoiseDriftSpeed;
+                float  _VelocityInfluence;
                 int    _NoiseOctaves;
                 float  _DensityPower;
                 float  _VapourWarpStrength;
@@ -181,6 +183,7 @@ Shader "Custom/WaterRaymarching"
             float4 _BlueNoiseTex_TexelSize;
             TEXTURE2D(_CameraOpaqueTexture);
             SAMPLER(sampler_CameraOpaqueTexture);
+            // _VapourVelocityTex is declared in RayMarchVapour.hlsl (shared with WaterVapourRendering.shader)
 
             #include "RayMarching Includes/RayMarchDensity.hlsl"
             #include "RayMarching Includes/RayMarchVapour.hlsl"
