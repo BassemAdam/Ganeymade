@@ -274,6 +274,89 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: e89844ade832dcc4cbcf919f266ea97b, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::UseComputePlugin
+--- !u!114 &410600951
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 410600944}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: d2c350eb19ba1cc46a5749f238416ce5, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::BoundsOffsetSequence
+  computePlugin: {fileID: 410600950}
+  targetCamera: {fileID: 918910769}
+  keyframes:
+  - xOffset: 0
+    zOffset: 0
+    travelDuration: 0
+    holdDuration: 5
+    boundsMinOverride: {x: 0, y: 0, z: 0}
+    boundsMaxOverride: {x: 0, y: 0, z: 0}
+    applyBoundsOverride: 0
+    timeScale: 1
+  - xOffset: 0.7
+    zOffset: 0
+    travelDuration: 0.25
+    holdDuration: 2
+    boundsMinOverride: {x: 0, y: 0, z: 0}
+    boundsMaxOverride: {x: 0, y: 0, z: 0}
+    applyBoundsOverride: 0
+    timeScale: 1
+  - xOffset: -0.7
+    zOffset: 0
+    travelDuration: 0.5
+    holdDuration: 2
+    boundsMinOverride: {x: 0, y: 0, z: 0}
+    boundsMaxOverride: {x: 0, y: 0, z: 0}
+    applyBoundsOverride: 0
+    timeScale: 1
+  - xOffset: 0
+    zOffset: -0.7
+    travelDuration: 0.25
+    holdDuration: 2
+    boundsMinOverride: {x: 0, y: 0, z: 0}
+    boundsMaxOverride: {x: 0, y: 0, z: 0}
+    applyBoundsOverride: 0
+    timeScale: 1
+  - xOffset: 1.4
+    zOffset: -0.7
+    travelDuration: 1
+    holdDuration: 2
+    boundsMinOverride: {x: 0, y: 0, z: 0}
+    boundsMaxOverride: {x: 0, y: 0, z: 0}
+    applyBoundsOverride: 0
+    timeScale: 0.3
+  - xOffset: 0.7
+    zOffset: -0.7
+    travelDuration: 1
+    holdDuration: 1
+    boundsMinOverride: {x: 0, y: 0, z: 0}
+    boundsMaxOverride: {x: 0, y: 0, z: 0}
+    applyBoundsOverride: 0
+    timeScale: 0.3
+  - xOffset: 0
+    zOffset: -0.7
+    travelDuration: 1
+    holdDuration: 2
+    boundsMinOverride: {x: 0, y: 0, z: 0}
+    boundsMaxOverride: {x: 0, y: 0, z: 0}
+    applyBoundsOverride: 0
+    timeScale: 1
+  - xOffset: 0
+    zOffset: -0.7
+    travelDuration: 1
+    holdDuration: 2
+    boundsMinOverride: {x: 0, y: 0, z: 0}
+    boundsMaxOverride: {x: 0, y: 0, z: 0}
+    applyBoundsOverride: 0
+    timeScale: 0.3
+  loop: 0
+  easeInOut: 1
+  playOnStart: 1
+  startDelay: 0
 --- !u!1001 &576395937
 PrefabInstance:
   m_ObjectHideFlags: 0
@@ -558,6 +641,9 @@ PrefabInstance:
     - targetCorrespondingSourceObject: {fileID: 1340585115186609873, guid: 18cf1fa5220a198409fde72db8b3e2a5, type: 3}
       insertIndex: -1
       addedObject: {fileID: 410600946}
+    - targetCorrespondingSourceObject: {fileID: 1340585115186609873, guid: 18cf1fa5220a198409fde72db8b3e2a5, type: 3}
+      insertIndex: -1
+      addedObject: {fileID: 410600951}
   m_SourcePrefab: {fileID: 100100000, guid: 18cf1fa5220a198409fde72db8b3e2a5, type: 3}
 --- !u!1 &602633503
 GameObject:
@@ -1035,8 +1121,8 @@ Transform:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 918910762}
   serializedVersion: 2
-  m_LocalRotation: {x: 0.1008714, y: -0.41068897, z: 0.045774426, w: 0.90502167}
-  m_LocalPosition: {x: 8.753113, y: -1.3344972, z: -9.473392}
+  m_LocalRotation: {x: -0.26150945, y: 0.0043429877, z: -0.0011766923, w: -0.9651905}
+  m_LocalPosition: {x: -2.1008625, y: 4.302616, z: -12.531774}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
@@ -1198,13 +1284,13 @@ Transform:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 1696059029}
   serializedVersion: 2
-  m_LocalRotation: {x: 0.40821788, y: -0.23456968, z: 0.10938163, w: 0.8754261}
-  m_LocalPosition: {x: 0, y: 3, z: 0}
+  m_LocalRotation: {x: 0.5447607, y: -0.7829986, z: 0.21841438, w: 0.2060197}
+  m_LocalPosition: {x: -2.6738906, y: 3.6646457, z: -0.18317862}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
   m_Father: {fileID: 0}
-  m_LocalEulerAnglesHint: {x: 50, y: -30, z: 0}
+  m_LocalEulerAnglesHint: {x: 34.506, y: -174.103, z: -67.823}
 --- !u!114 &1696059032
 MonoBehaviour:
   m_ObjectHideFlags: 0

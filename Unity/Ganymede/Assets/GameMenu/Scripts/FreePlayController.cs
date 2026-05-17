@@ -62,6 +62,9 @@ public class FreePlayController : MonoBehaviour
     TMP_Text _simSpeedValueText;
     Toggle _skyboxToggle;
     Material _cachedSkybox;
+    GameObject _panelContent;
+    TMP_Text _minimizeBtnText;
+    bool _minimized;
 
     void Start()
     {
@@ -218,46 +221,102 @@ public class FreePlayController : MonoBehaviour
 
         var panel = CreatePanel(canvasGO.transform, "FreePlayPanel", uiLayer);
 
-        AddTitle(panel.transform, "FREE PLAY", uiLayer);
+        // ── Title bar with minimize button ──────────────────────────────
+        var titleBar = new GameObject("TitleBar");
+        titleBar.layer = uiLayer;
+        titleBar.transform.SetParent(panel.transform, false);
+        titleBar.AddComponent<RectTransform>();
+
+        var titleHlg = titleBar.AddComponent<HorizontalLayoutGroup>();
+        titleHlg.spacing = 6;
+        titleHlg.childAlignment = TextAnchor.MiddleCenter;
+        titleHlg.childControlWidth = true;
+        titleHlg.childControlHeight = true;
+        titleHlg.childForceExpandWidth = true;
+        titleHlg.childForceExpandHeight = false;
+
+        var titleLE = titleBar.AddComponent<LayoutElement>();
+        titleLE.preferredHeight = 36;
+
+        // Title text
+        var titleGO = new GameObject("Title");
+        titleGO.layer = uiLayer;
+        titleGO.transform.SetParent(titleBar.transform, false);
+        titleGO.AddComponent<RectTransform>();
+        titleGO.AddComponent<CanvasRenderer>();
+        var titleTmp = titleGO.AddComponent<TextMeshProUGUI>();
+        titleTmp.text = "FREE PLAY";
+        titleTmp.fontSize = 26;
+        titleTmp.fontStyle = FontStyles.Bold;
+        titleTmp.color = new Color(0.92f, 0.95f, 1f);
+        titleTmp.alignment = TextAlignmentOptions.Center;
+
+        // Minimize button
+        AddMinimizeButton(titleBar.transform, uiLayer);
+
+        // ── Collapsible content container ───────────────────────────────
+        _panelContent = new GameObject("Content");
+        _panelContent.layer = uiLayer;
+        _panelContent.transform.SetParent(panel.transform, false);
+        _panelContent.AddComponent<RectTransform>();
+
+        var contentVlg = _panelContent.AddComponent<VerticalLayoutGroup>();
+        contentVlg.spacing = 6;
+        contentVlg.childAlignment = TextAnchor.UpperLeft;
+        contentVlg.childControlWidth = true;
+        contentVlg.childControlHeight = true;
+        contentVlg.childForceExpandWidth = true;
+        contentVlg.childForceExpandHeight = false;
+
+        var contentFitter = _panelContent.AddComponent<ContentSizeFitter>();
+        contentFitter.verticalFit = ContentSizeFitter.FitMode.PreferredSize;
+
+        var contentParent = _panelContent.transform;
 
         // ── Bounds X control ─────────────────────────────────────────────
-        AddSectionLabel(panel.transform, "AABB Bounds Position", uiLayer);
-        _boundsXValueText = AddLabel(panel.transform, "X Offset:  0.0", uiLayer);
-        _boundsXSlider = AddSlider(panel.transform, "BoundsXSlider", uiLayer, OnBoundsXSliderChanged);
+        AddSectionLabel(contentParent, "AABB Bounds Position", uiLayer);
+        _boundsXValueText = AddLabel(contentParent, "X Offset:  0.0", uiLayer);
+        _boundsXSlider = AddSlider(contentParent, "BoundsXSlider", uiLayer, OnBoundsXSliderChanged);
 
-        AddSpacer(panel.transform, 4f, uiLayer);
+        AddSpacer(contentParent, 4f, uiLayer);
 
         // ── Bounds Z control ─────────────────────────────────────────────
-        _boundsZValueText = AddLabel(panel.transform, "Z Offset:  0.0", uiLayer);
-        _boundsZSlider = AddSlider(panel.transform, "BoundsZSlider", uiLayer, OnBoundsZSliderChanged);
+        _boundsZValueText = AddLabel(contentParent, "Z Offset:  0.0", uiLayer);
+        _boundsZSlider = AddSlider(contentParent, "BoundsZSlider", uiLayer, OnBoundsZSliderChanged);
 
-        AddSpacer(panel.transform, 8f, uiLayer);
+        AddSpacer(contentParent, 8f, uiLayer);
 
         // ── Temperature control ─────────────────────────────────────────
-        AddSectionLabel(panel.transform, "Solid Temperature", uiLayer);
-        _tempValueText = AddLabel(panel.transform, "Temp:  0 °", uiLayer);
-        _tempSlider = AddSlider(panel.transform, "TempSlider", uiLayer, OnTempSliderChanged);
+        AddSectionLabel(contentParent, "Solid Temperature", uiLayer);
+        _tempValueText = AddLabel(contentParent, "Temp:  0 °", uiLayer);
+        _tempSlider = AddSlider(contentParent, "TempSlider", uiLayer, OnTempSliderChanged);
 
-        AddHintLabel(panel.transform,
+        AddHintLabel(contentParent,
             $"{minTemperature:F0} ────── {maxTemperature:F0}", uiLayer);
 
-        AddSpacer(panel.transform, 8f, uiLayer);
+        AddSpacer(contentParent, 8f, uiLayer);
 
         // ── Simulation Speed control ────────────────────────────────────
-        AddSectionLabel(panel.transform, "Simulation Speed", uiLayer);
-        _simSpeedValueText = AddLabel(panel.transform, "Speed:  100%", uiLayer);
-        _simSpeedSlider = AddSlider(panel.transform, "SimSpeedSlider", uiLayer, OnSimSpeedSliderChanged);
+        AddSectionLabel(contentParent, "Simulation Speed", uiLayer);
+        _simSpeedValueText = AddLabel(contentParent, "Speed:  100%", uiLayer);
+        _simSpeedSlider = AddSlider(contentParent, "SimSpeedSlider", uiLayer, OnSimSpeedSliderChanged);
 
-        AddHintLabel(panel.transform,
+        AddHintLabel(contentParent,
             $"{minTimeScale * 100f:F0}% ────── {maxTimeScale * 100f:F0}%", uiLayer);
 
-        AddSpacer(panel.transform, 8f, uiLayer);
+        AddSpacer(contentParent, 8f, uiLayer);
 
         // ── Skybox toggle ───────────────────────────────────────────────
-        AddSectionLabel(panel.transform, "Environment", uiLayer);
+        AddSectionLabel(contentParent, "Environment", uiLayer);
         _cachedSkybox = RenderSettings.skybox;
-        _skyboxToggle = AddToggle(panel.transform, "SkyboxToggle", "Skybox", uiLayer,
+        _skyboxToggle = AddToggle(contentParent, "SkyboxToggle", "Skybox", uiLayer,
             RenderSettings.skybox != null, OnSkyboxToggleChanged);
+
+        // Start minimized
+        _minimized = true;
+        _panelContent.SetActive(false);
+        if (_minimizeBtnText != null)
+            _minimizeBtnText.text = "+";
     }
 
     // ── UI helpers (matching existing minigame style) ────────────────────
@@ -512,6 +571,60 @@ public class FreePlayController : MonoBehaviour
         toggle.onValueChanged.AddListener(onChange);
 
         return toggle;
+    }
+
+    void AddMinimizeButton(Transform parent, int layer)
+    {
+        var btnGO = new GameObject("MinimizeBtn");
+        btnGO.layer = layer;
+        btnGO.transform.SetParent(parent, false);
+
+        var btnImg = btnGO.AddComponent<Image>();
+        btnImg.color = new Color(0.2f, 0.2f, 0.3f, 0.9f);
+
+        var btnLE = btnGO.AddComponent<LayoutElement>();
+        btnLE.preferredWidth = 32;
+        btnLE.preferredHeight = 28;
+        btnLE.flexibleWidth = 0;
+
+        var labelGO = new GameObject("Label");
+        labelGO.layer = layer;
+        labelGO.transform.SetParent(btnGO.transform, false);
+        labelGO.AddComponent<CanvasRenderer>();
+        _minimizeBtnText = labelGO.AddComponent<TextMeshProUGUI>();
+        _minimizeBtnText.text = "—";
+        _minimizeBtnText.fontSize = 22;
+        _minimizeBtnText.fontStyle = FontStyles.Bold;
+        _minimizeBtnText.color = new Color(0.85f, 0.9f, 1f);
+        _minimizeBtnText.alignment = TextAlignmentOptions.Center;
+
+        var labelRT = labelGO.GetComponent<RectTransform>();
+        labelRT.anchorMin = Vector2.zero;
+        labelRT.anchorMax = Vector2.one;
+        labelRT.offsetMin = Vector2.zero;
+        labelRT.offsetMax = Vector2.zero;
+
+        var btn = btnGO.AddComponent<Button>();
+        btn.targetGraphic = btnImg;
+        btn.navigation = new Navigation { mode = Navigation.Mode.None };
+
+        var normalColor = new Color(0.2f, 0.2f, 0.3f, 0.9f);
+        var hoverColor = new Color(0.3f, 0.3f, 0.45f, 1f);
+        var colors = btn.colors;
+        colors.normalColor = normalColor;
+        colors.highlightedColor = hoverColor;
+        colors.pressedColor = new Color(0.15f, 0.15f, 0.25f, 1f);
+        btn.colors = colors;
+
+        btn.onClick.AddListener(OnMinimizeClicked);
+    }
+
+    void OnMinimizeClicked()
+    {
+        _minimized = !_minimized;
+        _panelContent.SetActive(!_minimized);
+        if (_minimizeBtnText != null)
+            _minimizeBtnText.text = _minimized ? "+" : "—";
     }
 
     void AddSpacer(Transform parent, float height, int layer)
