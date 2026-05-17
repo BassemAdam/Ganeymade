@@ -104,6 +104,11 @@ public sealed class VoxelTracerSystem : MonoBehaviour
     public float ActiveVoxelSize => voxelSize;
     public bool IsReady => _fillTex != null && _nx > 0;
 
+    /// Incremented every time VoxelizeFrame writes new data into the fill/material textures.
+    /// ThermalReceiver polls this to detect dynamic-object changes that require a GPU
+    /// mask/diffusivity/heat-source re-upload
+    public int VoxelizeFrameCount { get; private set; }
+
     /// Read-only access to registered heat sources (for external sim module).
     public static IReadOnlyCollection<VoxelHeatSource> HeatSources => _registeredHeatSources;
     /// Read-only access to registered fluid sources (for external sim module).
@@ -154,6 +159,7 @@ public sealed class VoxelTracerSystem : MonoBehaviour
 
     // Material source GPU buffer
     ComputeBuffer _materialSourceBuffer;
+    ComputeBuffer _heatSourceMaterialBuffer;
     readonly List<MaterialSource> _materialSourceList = new List<MaterialSource>(64);
 
     // Grid state
@@ -786,6 +792,9 @@ public sealed class VoxelTracerSystem : MonoBehaviour
         // Stamp heat-source voxels into the dedicated HeatSourceTexture.
         // Must run after StampMaterialProperties so fill is guaranteed written.
         StampHeatSources(gx, gy, gz, regMin, regMax);
+
+        // Signal to external systems (e.g. ThermalReceiver) that texture data changed.
+        VoxelizeFrameCount++;
     }
 
     void SetGridUniforms(int gx, int gy, int gz)
@@ -894,8 +903,10 @@ public sealed class VoxelTracerSystem : MonoBehaviour
                 var mr = vd.GetComponent<MeshRenderer>();
                 if (mr == null || !mr.enabled) continue;
 
+                bool hasMoved = vd.HasMoved();
                 AppendMesh(mf.sharedMesh, mf.transform.localToWorldMatrix, _dynamicTriList);
-                AddDirtyRegionFromBounds(mr.bounds, inv, gridClampMax);
+                if (hasMoved)
+                    AddDirtyRegionFromBounds(mr.bounds, inv, gridClampMax);
             }
         }
 
@@ -1378,6 +1389,7 @@ public sealed class VoxelTracerSystem : MonoBehaviour
         ReleaseTextures();
         ReleaseTriBuffers();
         if (_materialSourceBuffer != null) { _materialSourceBuffer.Release(); _materialSourceBuffer = null; }
+        if (_heatSourceMaterialBuffer != null) { _heatSourceMaterialBuffer.Release(); _heatSourceMaterialBuffer = null; }
         if (_bakedMesh != null) { Destroy(_bakedMesh); _bakedMesh = null; }
     }
 
@@ -1504,9 +1516,7 @@ public sealed class VoxelTracerSystem : MonoBehaviour
     {
         if (_heatSourceTex == null) return;
 
-        _materialSourceList.Clear();
-
-        Vector3 halfVoxelPad = Vector3.one * (voxelSize * 0.5f);
+        var heatSourceEntries = new List<MaterialSource>(8);
 
         // Stamp VoxelSolidMaterial objects flagged as permanent heat sources
         foreach (var sm in _registeredSolidMaterials)
@@ -1517,7 +1527,7 @@ public sealed class VoxelTracerSystem : MonoBehaviour
             var r = sm.GetComponent<Renderer>();
             if (r != null)
             {
-                _materialSourceList.Add(new MaterialSource
+                heatSourceEntries.Add(new MaterialSource
                 {
                     position = r.bounds.center,
                     extents = r.bounds.extents + Vector3.one * voxelSize,
@@ -1529,7 +1539,7 @@ public sealed class VoxelTracerSystem : MonoBehaviour
             }
             else
             {
-                _materialSourceList.Add(new MaterialSource
+                heatSourceEntries.Add(new MaterialSource
                 {
                     position = sm.transform.position,
                     extents = Vector3.one * 0.5f,
@@ -1541,25 +1551,25 @@ public sealed class VoxelTracerSystem : MonoBehaviour
             }
         }
 
-        // FIX: Always ensure the GPU buffer is valid and contains current data,
+        //Always ensure the GPU buffer is valid and contains current data,
         // even when count == 0 (kernel still runs to clear the texture region).
-        int count = _materialSourceList.Count;
-        if (_materialSourceBuffer == null || _materialSourceBuffer.count < Mathf.Max(1, count))
+        int count = heatSourceEntries.Count;
+        if (_heatSourceMaterialBuffer == null || _heatSourceMaterialBuffer.count < Mathf.Max(1, count))
         {
-            _materialSourceBuffer?.Release();
-            _materialSourceBuffer = new ComputeBuffer(Mathf.Max(1, count), Marshal.SizeOf(typeof(MaterialSource)));
+            _heatSourceMaterialBuffer?.Release();
+            _heatSourceMaterialBuffer = new ComputeBuffer(Mathf.Max(1, count), Marshal.SizeOf(typeof(MaterialSource)));
         }
         if (count > 0)
-            _materialSourceBuffer.SetData(_materialSourceList);
+            _heatSourceMaterialBuffer.SetData(heatSourceEntries);
 
         Vector3Int regSize = regMax - regMin + Vector3Int.one;
-        SetRegionMin(regMin.x, regMin.y, regMin.z);
+        SetRegionMin(0, 0, 0);
 
         coreCS.SetInt("_MaterialSourceCount", count);   // correctly 0 when no sources
         coreCS.SetTexture(KWriteHeatSources, "_FillTex", _fillTex);
         coreCS.SetTexture(KWriteHeatSources, "_HeatSourceTex", _heatSourceTex);
-        coreCS.SetBuffer(KWriteHeatSources, "_MaterialSources", _materialSourceBuffer);
-        Dispatch3D(KWriteHeatSources, regSize.x, regSize.y, regSize.z);
+        coreCS.SetBuffer(KWriteHeatSources, "_MaterialSources", _heatSourceMaterialBuffer);
+        Dispatch3D(KWriteHeatSources, gx, gy, gz);
     }
     void BuildMaterialSourceList()
     {
