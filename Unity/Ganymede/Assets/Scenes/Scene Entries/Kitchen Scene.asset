@@ -14,5 +14,5 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::SceneEntry
   displayName: Kitchen
   description: 
-  sceneName: Kitchen
+  sceneName: Kitchen Scene
   enabled: 1

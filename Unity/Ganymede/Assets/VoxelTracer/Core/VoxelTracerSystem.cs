@@ -905,8 +905,7 @@ public sealed class VoxelTracerSystem : MonoBehaviour
 
                 bool hasMoved = vd.HasMoved();
                 AppendMesh(mf.sharedMesh, mf.transform.localToWorldMatrix, _dynamicTriList);
-                if (hasMoved)
-                    AddDirtyRegionFromBounds(mr.bounds, inv, gridClampMax);
+                AddDirtyRegionFromBounds(mr.bounds, inv, gridClampMax);
             }
         }
 
