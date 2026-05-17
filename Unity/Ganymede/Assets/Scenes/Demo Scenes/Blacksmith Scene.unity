@@ -1028,6 +1028,9 @@ MonoBehaviour:
   submergedFraction: 0
   lastBuoyancyForce: {x: 0, y: 0, z: 0}
   lastDragForce: {x: 0, y: 0, z: 0}
+  lastPosition: {x: Infinity, y: Infinity, z: Infinity}
+  lastRotation: {x: 0, y: 0, z: 0, w: 0}
+  lastScale: {x: 0, y: 0, z: 0}
 --- !u!1 &330011347
 GameObject:
   m_ObjectHideFlags: 0
@@ -2826,7 +2829,7 @@ MonoBehaviour:
     m_PreInfinity: 2
     m_PostInfinity: 2
     m_RotationOrder: 4
-  showPreviousButton: 1
+  showPreviousButton: 0
   uiFontSize: 30
   buttonColor: {r: 0.15, g: 0.15, b: 0.15, a: 0.85}
   buttonTextColor: {r: 1, g: 1, b: 1, a: 1}
@@ -5619,6 +5622,52 @@ Transform:
   m_CorrespondingSourceObject: {fileID: 4656551694031222950, guid: 4d2bf4ac657cb4e48b0e2e6e2ef18717, type: 3}
   m_PrefabInstance: {fileID: 1993358315}
   m_PrefabAsset: {fileID: 0}
+--- !u!1 &2012922225
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 2012922227}
+  - component: {fileID: 2012922226}
+  m_Layer: 0
+  m_Name: BackToMenu
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!114 &2012922226
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2012922225}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 898801f169d16464aa491d6e949b3646, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::ReturnToMenu
+  menuSceneName: MainMenu
+  returnKey: 27
+--- !u!4 &2012922227
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2012922225}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1001 &2064036955
 PrefabInstance:
   m_ObjectHideFlags: 0
@@ -6113,3 +6162,4 @@ SceneRoots:
   - {fileID: 428379224}
   - {fileID: 273922619}
   - {fileID: 183804648}
+  - {fileID: 2012922227}
