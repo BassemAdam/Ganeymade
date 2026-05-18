@@ -192,6 +192,17 @@ public class FreePlayController : MonoBehaviour
         obj.transform.localScale = Vector3.one * spawnScale;
         obj.transform.rotation = Random.rotation;
 
+        // Assign URP-compatible material (CreatePrimitive uses Standard which is pink in URP builds)
+        var renderer = obj.GetComponent<MeshRenderer>();
+        if (renderer != null)
+        {
+            var mat = new Material(Shader.Find("Universal Render Pipeline/Lit"));
+            mat.color = density > lowDensity
+                ? new Color(0.6f, 0.25f, 0.2f) // reddish-brown for heavy
+                : new Color(0.3f, 0.7f, 0.4f); // green for light
+            renderer.sharedMaterial = mat;
+        }
+
         // Set layer to SDFBoundary (layer 3)
         obj.layer = LayerMask.NameToLayer("SDFBoundary");
 
