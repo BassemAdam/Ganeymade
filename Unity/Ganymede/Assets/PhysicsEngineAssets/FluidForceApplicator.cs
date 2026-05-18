@@ -37,9 +37,11 @@ public class FluidForceApplicator : MonoBehaviour
     // Internal
     private UseComputePlugin _sim;
     private Particle[] _readbackBuffer;
+    private Particle[] _latestReadback; // double-buffer: force calc uses stable snapshot
     private int _particleCount;
     private int _frameCounter;
     private List<VoxelDynamic> _activeObjects = new List<VoxelDynamic>();
+    private bool _hasValidReadback;
 
     private float fluidDensity => fluidDensityOverride > 0f ? fluidDensityOverride : _sim.restDensity;
 
@@ -48,18 +50,18 @@ public class FluidForceApplicator : MonoBehaviour
         _sim = GetComponent<UseComputePlugin>();
         _particleCount = _sim.particleCount;
         _readbackBuffer = new Particle[_particleCount];
+        _latestReadback = new Particle[_particleCount];
     }
 
     void FixedUpdate()
     {
         _frameCounter++;
-        if (_frameCounter % updateInterval != 0) return;
 
         // Gather all VoxelDynamic objects that want fluid forces
         _activeObjects.Clear();
         foreach (var vd in VoxelTracerSystem.RegisteredDynamics)
         {
-            if (vd == null || !vd.enableFluidForces || vd.rb == null) continue;
+            if (vd == null || vd.rb == null || !vd.enableFluidForces) continue;
             _activeObjects.Add(vd);
         }
         if (_activeObjects.Count == 0) return;
@@ -70,22 +72,31 @@ public class FluidForceApplicator : MonoBehaviour
         {
             _particleCount = currentCount;
             _readbackBuffer = new Particle[_particleCount];
+            _latestReadback = new Particle[_particleCount];
+            _hasValidReadback = false;
         }
 
-        // Readback particle data from GPU
-        GetComputeResult(_readbackBuffer, _particleCount);
-
-        // Refresh bounds for all active objects
-        foreach (var vd in _activeObjects)
-            vd.RefreshBounds();
-
-        // Apply forces based on mode
-        foreach (var vd in _activeObjects)
+        // Readback on interval — single sync call to native plugin
+        if (_frameCounter % updateInterval == 0)
         {
-            if (vd.buoyancyMode == VoxelDynamic.BuoyancyMode.Analytical)
-                ApplyAnalyticalBuoyancy(vd);
-            else
-                ApplyGPUParticleSumForces(vd);
+            GetComputeResult(_readbackBuffer, _particleCount);
+            var tmp = _latestReadback;
+            _latestReadback = _readbackBuffer;
+            _readbackBuffer = tmp;
+            _hasValidReadback = true;
+        }
+
+        // Apply forces every fixed frame using latest available readback
+        if (_hasValidReadback)
+        {
+            foreach (var vd in _activeObjects)
+            {
+                vd.RefreshBounds();
+                if (vd.buoyancyMode == VoxelDynamic.BuoyancyMode.Analytical)
+                    ApplyAnalyticalBuoyancy(vd);
+                else
+                    ApplyGPUParticleSumForces(vd);
+            }
         }
     }
 
@@ -108,7 +119,7 @@ public class FluidForceApplicator : MonoBehaviour
 
         for (int i = 0; i < _particleCount; i++)
         {
-            Particle p = _readbackBuffer[i];
+            Particle p = _latestReadback[i];
             if (p.phase != 0) continue; // only liquid
 
             Vector3 pos = p.position;
@@ -139,23 +150,27 @@ public class FluidForceApplicator : MonoBehaviour
         }
 
         // Archimedes: buoyancy = fluidDensity * g * submergedVolume
-        // Scale so equilibrium occurs at submergedFraction == sinkFactor:
-        //   F_b = mass * g * (submergedFraction / sinkFactor)
-        float sink = Mathf.Max(vd.sinkFactor, 0.01f);
-        float buoyancyMagnitude = vd.rb.mass * Mathf.Abs(Physics.gravity.y) *
-                                  (submergedFraction / sink);
+        // Weight = objectDensity * g * totalVolume
+        // Object floats when fluidDensity > objectDensity, sinks otherwise.
+        float g = Mathf.Abs(Physics.gravity.y);
+        float submergedVolume = objectVolume * submergedFraction;
+        float buoyancyMagnitude = fluidDensity * g * submergedVolume;
         Vector3 buoyancyForce = Vector3.up * buoyancyMagnitude;
 
         // The Rigidbody already has gravity, so we just add buoyancy
         vd.lastBuoyancyForce = buoyancyForce;
         vd.rb.AddForce(buoyancyForce, ForceMode.Force);
 
-        // Waterline damping: strongly damp vertical velocity when partially submerged
-        // to prevent endless bobbing oscillation. Maximum at 50% submerged (waterline).
-        float waterlineFactor = 1.0f - Mathf.Abs(submergedFraction - 0.5f) * 2.0f; // peaks at 0.5
-        float verticalVel = vd.rb.linearVelocity.y;
-        float waterlineDamping = waterlineFactor * vd.dragCoefficient * 2.0f * vd.rb.mass;
-        vd.rb.AddForce(Vector3.down * verticalVel * waterlineDamping, ForceMode.Force);
+        // Waterline damping: damp vertical velocity when near equilibrium (floating objects only)
+        // Skip for sinking objects (objectDensity > fluidDensity) to let them sink freely
+        bool shouldFloat = vd.objectDensity < fluidDensity;
+        if (shouldFloat)
+        {
+            float waterlineFactor = 1.0f - Mathf.Abs(submergedFraction - 0.5f) * 2.0f;
+            float verticalVel = vd.rb.linearVelocity.y;
+            float waterlineDamping = waterlineFactor * vd.dragCoefficient * 2.0f * vd.rb.mass;
+            vd.rb.AddForce(Vector3.down * verticalVel * waterlineDamping, ForceMode.Force);
+        }
 
         // Drag: resist motion relative to fluid
         Vector3 relativeVelocity = vd.rb.linearVelocity - avgFluidVelocity;
@@ -191,7 +206,7 @@ public class FluidForceApplicator : MonoBehaviour
 
         for (int i = 0; i < _particleCount; i++)
         {
-            Particle p = _readbackBuffer[i];
+            Particle p = _latestReadback[i];
             if (p.phase != 0) continue;
 
             Vector3 pos = p.position;
@@ -244,10 +259,10 @@ public class FluidForceApplicator : MonoBehaviour
         vd.lastBuoyancyForce = forceSum;
         vd.rb.AddForce(forceSum, ForceMode.Force);
 
-        // Additional Archimedes correction scaled by sink factor
-        float sink = Mathf.Max(vd.sinkFactor, 0.01f);
-        float archimedesBoost = vd.rb.mass * Mathf.Abs(Physics.gravity.y) *
-                                (vd.submergedFraction / sink) * 0.5f;
+        // Additional Archimedes correction: fluidDensity * g * submergedVolume
+        float g = Mathf.Abs(Physics.gravity.y);
+        float submergedVolume = objectVolume * vd.submergedFraction;
+        float archimedesBoost = fluidDensity * g * submergedVolume * 0.5f;
         Vector3 archForce = Vector3.up * archimedesBoost;
         vd.rb.AddForce(archForce, ForceMode.Force);
         vd.lastBuoyancyForce += archForce;

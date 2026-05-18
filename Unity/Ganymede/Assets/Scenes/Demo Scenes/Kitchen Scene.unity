@@ -330,16 +330,22 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::VoxelDynamic
   enableFluidForces: 1
-  buoyancyMode: 1
-  objectDensity: 15
+  buoyancyMode: 0
+  objectDensity: 10
   dragCoefficient: 7
   angularDragCoefficient: 5
   sinkFactor: 0.05
   stayUpright: 1
+  constrainToBounds: 1
+  boundsBounce: 0.3
+  simReference: {fileID: 681215791}
   autoSetMass: 1
   submergedFraction: 0
   lastBuoyancyForce: {x: 0, y: 0, z: 0}
   lastDragForce: {x: 0, y: 0, z: 0}
+  lastPosition: {x: Infinity, y: Infinity, z: Infinity}
+  lastRotation: {x: 0, y: 0, z: 0, w: 0}
+  lastScale: {x: 0, y: 0, z: 0}
 --- !u!114 &475137614
 MonoBehaviour:
   m_ObjectHideFlags: 0

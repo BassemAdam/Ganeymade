@@ -89,6 +89,9 @@ public class ThermalReceiver : MonoBehaviour
     {
         yield return new WaitUntil(() => voxelTracer != null && voxelTracer.IsReady);
 
+        // Wait for at least one voxelization pass so textures have valid data
+        yield return new WaitUntil(() => voxelTracer.VoxelizeFrameCount > 0);
+
         gridWidth = voxelTracer.Nx;
         gridHeight = voxelTracer.Ny;
         gridDepth = voxelTracer.Nz;

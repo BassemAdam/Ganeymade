@@ -207,7 +207,7 @@ public class UseComputePlugin : MonoBehaviour
     public bool autoInitialize = true;
 
     [Tooltip("Print debug logs")]
-    public bool verbose = true;
+    public bool verbose = false;
 
     [Header("SDF Collision")]
     [Tooltip("Enable SDF-based collision")]
@@ -288,6 +288,7 @@ public class UseComputePlugin : MonoBehaviour
     /// <summary>
     /// Reads back particle data from the GPU and computes average temperature
     /// of active (non-dormant) fluid particles. Returns ambient if no data available.
+    /// WARNING: Causes a synchronous GPU→CPU readback stall. Do not call every frame.
     /// </summary>
     public float GetAverageFluidTemperature()
     {
@@ -353,18 +354,6 @@ public class UseComputePlugin : MonoBehaviour
         // Upload to native plugin once
         SetComputeData(particles, particles.Length);
 
-        // TEMP DEBUG
-        GetBoundsWS(out Vector3 dbgMin, out Vector3 dbgMax);
-        /*
-        Debug.Log($"[DEBUG Init] transform.position={transform.position}, boundsMin={boundsMin}, boundsMax={boundsMax}");
-        Debug.Log($"[DEBUG Init] GetBoundsWS → min={dbgMin}, max={dbgMax}");
-        Debug.Log($"[DEBUG Init] First 4 particles: " +
-            $"p[0]={particles[0].position} " +
-            $"p[1]={particles[1].position} " +
-            $"p[2]={particles[2].position} " +
-            $"p[3]={particles[3].position}");
-        */
-
         // Configure plugin
         SetPerfTestMode(perfTestMode);
         SetSubStepCount(subStepCount);
@@ -387,19 +376,6 @@ public class UseComputePlugin : MonoBehaviour
         timeAccumulator = 0f;
 
         initialized = true;
-
-        if (verbose)
-        {
-            // Debug.Log($"[UseComputePlugin] Initialized. count={particleCount}, ParticleStride={particleStride} bytes, renderEventFunc=0x{renderEventFunc.ToInt64():X}");
-        }
-
-        // Helpful hint: this plugin only runs when Unity is using Vulkan.
-        // (On other graphics APIs it will early-out and appear frozen.)
-        if (verbose && SystemInfo.graphicsDeviceType != UnityEngine.Rendering.GraphicsDeviceType.Vulkan)
-        {
-            // Debug.LogWarning("[UseComputePlugin] Graphics API is not Vulkan. The native compute dispatch will no-op. " +
-            //                 "Enable Vulkan in Project Settings > Player > Other Settings > Graphics APIs.");
-        }
     }
     //
     private void Update()
@@ -499,45 +475,20 @@ public class UseComputePlugin : MonoBehaviour
         {
 #if UNITY_EDITOR
             GetComputeResult(readbackData, particleCount);
-            // Debug.Log($"[ComputePlugin] Frame {frameCount} GPU state: {FormatParticles(readbackData, 4)}");
 
-            // Use cached heat sources instead of FindObjectsByType
             if (_cachedSources != null && _cachedSources.Length > 0 && _cachedSources[0] != null)
             {
-                Vector3 sourcePos = _cachedSources[0].transform.position;
-                Collider col = _cachedSourceColliders != null && _cachedSourceColliders.Length > 0 ? _cachedSourceColliders[0] : null;
-                float sourceRadius = col != null ? col.bounds.extents.magnitude
-                                    : _cachedSources[0].transform.lossyScale.magnitude * 0.5f;
-                float maxTemp = 0f;
                 float avgTemp = 0f;
-                int nearCount = 0;
-                int hotCount = 0;   // particles actually receiving heat
-                for (int i = 0; i < particleCount; i++)
-                {
-                    avgTemp += readbackData[i].temperature;
-                    if (readbackData[i].temperature > ambientTemperature + 1f)
-                        hotCount++;
-                    float dist = Vector3.Distance(readbackData[i].position, sourcePos);
-                    if (dist < sourceRadius * 2f)  // check twice the radius for spreading
-                    {
-                        nearCount++;
-                        maxTemp = Mathf.Max(maxTemp, readbackData[i].temperature);
-                    }
-                }
-                avgTemp /= particleCount;
-
                 int phaseLiquid = 0, phaseGas = 0, phaseDrained = 0;
                 for (int i = 0; i < particleCount; i++)
                 {
+                    avgTemp += readbackData[i].temperature;
                     if (readbackData[i].phase == 0) phaseLiquid++;
                     else if (readbackData[i].phase == 1) phaseGas++;
                     else phaseDrained++;
                 }
+                avgTemp /= particleCount;
                 Debug.Log($"[Frame {frameCount}] Phase: liquid={phaseLiquid} gas={phaseGas} drained={phaseDrained} | Avg temp: {avgTemp:F2}°");
-            }
-            else
-            {
-                // Debug.Log($"[Frame {frameCount}] GPU state: {FormatParticles(readbackData, 4)}");
             }
 #endif
         }
@@ -882,7 +833,9 @@ public class UseComputePlugin : MonoBehaviour
     void UpdateHeatSources()
     {
         // Re-cache if sources were destroyed or new ones added
-        int currentFlaggedCount = VoxelTracerSystem.SolidMaterials.Count(sm => sm != null);
+        int currentFlaggedCount = 0;
+        foreach (var sm in VoxelTracerSystem.SolidMaterials)
+            if (sm != null) currentFlaggedCount++;
         if (_cachedSources == null || _cachedSources.Length != currentFlaggedCount)
         {
             CacheHeatSources();

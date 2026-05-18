@@ -45,11 +45,22 @@ public class FreePlayController : MonoBehaviour
     [Tooltip("Maximum temperature on the slider.")]
     public float maxTemperature = 1000f;
 
+    [Header("Dynamic Object Spawning")]
+    [Tooltip("Density for 'high density' spawned objects (should be > fluid restDensity to sink).")]
+    public float highDensity = 200f;
+
+    [Tooltip("Density for 'low density' spawned objects (should be < fluid restDensity to float).")]
+    public float lowDensity = 95f;
+
+    [Tooltip("Scale range for spawned primitives.")]
+    public float spawnScale = 1f;
+
     // Internal state
     float _startX;
     float _startZ;
     float _currentOffsetX;
     float _currentOffsetZ;
+    System.Collections.Generic.List<GameObject> _spawnedObjects = new System.Collections.Generic.List<GameObject>();
 
     // UI references
     Slider _boundsXSlider;
@@ -152,6 +163,78 @@ public class FreePlayController : MonoBehaviour
             RenderSettings.skybox = null;
         }
         DynamicGI.UpdateEnvironment();
+    }
+
+    // ── Dynamic Object Spawning ─────────────────────────────────────────
+
+    void SpawnDynamicObject(float density)
+    {
+        if (computePlugin == null) return;
+        if (_spawnedObjects.Count >= 5) return;
+
+        computePlugin.GetBoundsWS(out Vector3 bMin, out Vector3 bMax);
+
+        // Spawn in upper-middle region (60%-85% height) to avoid ceiling
+        float spawnYMin = Mathf.Lerp(bMin.y, bMax.y, 0.6f);
+        float spawnYMax = Mathf.Lerp(bMin.y, bMax.y, 0.85f);
+        Vector3 spawnPos = new Vector3(
+            Random.Range(bMin.x + spawnScale, bMax.x - spawnScale),
+            Random.Range(spawnYMin, spawnYMax),
+            Random.Range(bMin.z + spawnScale, bMax.z - spawnScale));
+
+        // Random primitive type
+        PrimitiveType[] types = { PrimitiveType.Sphere, PrimitiveType.Capsule, PrimitiveType.Cube };
+        PrimitiveType chosen = types[Random.Range(0, types.Length)];
+
+        GameObject obj = GameObject.CreatePrimitive(chosen);
+        obj.name = $"Spawned_{chosen}_{(density > lowDensity ? "Heavy" : "Light")}";
+        obj.transform.position = spawnPos;
+        obj.transform.localScale = Vector3.one * spawnScale;
+        obj.transform.rotation = Random.rotation;
+
+        // Assign URP-compatible material (CreatePrimitive uses Standard which is pink in URP builds)
+        var renderer = obj.GetComponent<MeshRenderer>();
+        if (renderer != null)
+        {
+            var mat = new Material(Shader.Find("Universal Render Pipeline/Lit"));
+            mat.color = density > lowDensity
+                ? new Color(0.6f, 0.25f, 0.2f) // reddish-brown for heavy
+                : new Color(0.3f, 0.7f, 0.4f); // green for light
+            renderer.sharedMaterial = mat;
+        }
+
+        // Set layer to SDFBoundary (layer 3)
+        obj.layer = LayerMask.NameToLayer("SDFBoundary");
+
+        // Add Rigidbody
+        var rb = obj.AddComponent<Rigidbody>();
+        rb.interpolation = RigidbodyInterpolation.Interpolate;
+
+        // Add VoxelDynamic
+        var vd = obj.AddComponent<VoxelDynamic>();
+        vd.enableFluidForces = true;
+        vd.buoyancyMode = VoxelDynamic.BuoyancyMode.Analytical;
+        vd.objectDensity = density;
+        vd.dragCoefficient = 1f;
+        vd.angularDragCoefficient = 0.5f;
+        vd.sinkFactor = 0.5f;
+        vd.stayUpright = false;
+        vd.constrainToBounds = true;
+        vd.boundsBounce = 0.3f;
+        vd.simReference = computePlugin;
+        vd.autoSetMass = true;
+
+        _spawnedObjects.Add(obj);
+    }
+
+    void DestroyAllSpawned()
+    {
+        foreach (var obj in _spawnedObjects)
+        {
+            if (obj != null)
+                Destroy(obj);
+        }
+        _spawnedObjects.Clear();
     }
 
     void SyncSlidersFromState()
@@ -311,6 +394,19 @@ public class FreePlayController : MonoBehaviour
         _cachedSkybox = RenderSettings.skybox;
         _skyboxToggle = AddToggle(contentParent, "SkyboxToggle", "Skybox", uiLayer,
             RenderSettings.skybox != null, OnSkyboxToggleChanged);
+
+        AddSpacer(contentParent, 8f, uiLayer);
+
+        // ── Dynamic Object Spawning ────────────────────────────────────
+        AddSectionLabel(contentParent, "Spawn Objects", uiLayer);
+        AddButton(contentParent, "SpawnHeavy", "Spawn Heavy Object", uiLayer,
+            new Color(0.7f, 0.3f, 0.3f, 1f), () => SpawnDynamicObject(highDensity));
+        AddSpacer(contentParent, 4f, uiLayer);
+        AddButton(contentParent, "SpawnLight", "Spawn Light Object", uiLayer,
+            new Color(0.3f, 0.6f, 0.4f, 1f), () => SpawnDynamicObject(lowDensity));
+        AddSpacer(contentParent, 4f, uiLayer);
+        AddButton(contentParent, "DestroyAll", "Destroy All Spawned", uiLayer,
+            new Color(0.5f, 0.2f, 0.2f, 1f), DestroyAllSpawned);
 
         // Start minimized
         _minimized = true;
@@ -571,6 +667,52 @@ public class FreePlayController : MonoBehaviour
         toggle.onValueChanged.AddListener(onChange);
 
         return toggle;
+    }
+
+    Button AddButton(Transform parent, string name, string label, int layer,
+        Color btnColor, UnityEngine.Events.UnityAction onClick)
+    {
+        var go = new GameObject(name);
+        go.layer = layer;
+        go.transform.SetParent(parent, false);
+        go.AddComponent<RectTransform>();
+
+        var le = go.AddComponent<LayoutElement>();
+        le.preferredHeight = 34;
+
+        var btnImg = go.AddComponent<Image>();
+        btnImg.color = btnColor;
+
+        var btn = go.AddComponent<Button>();
+        btn.targetGraphic = btnImg;
+        btn.navigation = new Navigation { mode = Navigation.Mode.None };
+
+        var colors = btn.colors;
+        colors.normalColor = btnColor;
+        colors.highlightedColor = btnColor * 1.2f;
+        colors.pressedColor = btnColor * 0.7f;
+        btn.colors = colors;
+
+        // Label text
+        var labelGO = new GameObject("Label");
+        labelGO.layer = layer;
+        labelGO.transform.SetParent(go.transform, false);
+        labelGO.AddComponent<CanvasRenderer>();
+        var tmp = labelGO.AddComponent<TextMeshProUGUI>();
+        tmp.text = label;
+        tmp.fontSize = 17;
+        tmp.fontStyle = FontStyles.Bold;
+        tmp.color = Color.white;
+        tmp.alignment = TextAlignmentOptions.Center;
+
+        var labelRT = labelGO.GetComponent<RectTransform>();
+        labelRT.anchorMin = Vector2.zero;
+        labelRT.anchorMax = Vector2.one;
+        labelRT.offsetMin = Vector2.zero;
+        labelRT.offsetMax = Vector2.zero;
+
+        btn.onClick.AddListener(onClick);
+        return btn;
     }
 
     void AddMinimizeButton(Transform parent, int layer)
