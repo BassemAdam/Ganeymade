@@ -281,7 +281,7 @@ MonoBehaviour:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 410600944}
-  m_Enabled: 1
+  m_Enabled: 0
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: d2c350eb19ba1cc46a5749f238416ce5, type: 3}
   m_Name: 
@@ -357,6 +357,21 @@ MonoBehaviour:
   easeInOut: 1
   playOnStart: 1
   startDelay: 0
+--- !u!114 &410600952
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 410600944}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: bf34992a279fdfe4894c88e7082d22dd, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::FluidForceApplicator
+  updateInterval: 2
+  fluidDensityOverride: 0
+  debugDraw: 0
 --- !u!1001 &576395937
 PrefabInstance:
   m_ObjectHideFlags: 0
@@ -644,6 +659,9 @@ PrefabInstance:
     - targetCorrespondingSourceObject: {fileID: 1340585115186609873, guid: 18cf1fa5220a198409fde72db8b3e2a5, type: 3}
       insertIndex: -1
       addedObject: {fileID: 410600951}
+    - targetCorrespondingSourceObject: {fileID: 1340585115186609873, guid: 18cf1fa5220a198409fde72db8b3e2a5, type: 3}
+      insertIndex: -1
+      addedObject: {fileID: 410600952}
   m_SourcePrefab: {fileID: 100100000, guid: 18cf1fa5220a198409fde72db8b3e2a5, type: 3}
 --- !u!1 &602633503
 GameObject:
@@ -712,7 +730,7 @@ BoxCollider:
     m_Bits: 0
   m_ExcludeLayers:
     serializedVersion: 2
-    m_Bits: 0
+    m_Bits: 8
   m_LayerOverridePriority: 0
   m_IsTrigger: 0
   m_ProvidesContacts: 0
@@ -817,6 +835,9 @@ MonoBehaviour:
   maxTimeScale: 1
   minTemperature: 0
   maxTemperature: 1000
+  highDensity: 200
+  lowDensity: 95
+  spawnScale: 0.7
 --- !u!114 &628065772
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -914,7 +935,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 1
+  m_IsActive: 0
 --- !u!136 &823531601
 CapsuleCollider:
   m_ObjectHideFlags: 0
@@ -1260,7 +1281,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 1
+  m_IsActive: 0
 --- !u!65 &1255659867
 BoxCollider:
   m_ObjectHideFlags: 0
@@ -1564,7 +1585,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 1
+  m_IsActive: 0
 --- !u!136 &2145499725
 CapsuleCollider:
   m_ObjectHideFlags: 0

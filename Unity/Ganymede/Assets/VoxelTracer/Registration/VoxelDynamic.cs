@@ -41,6 +41,16 @@ public sealed class VoxelDynamic : MonoBehaviour
     [Tooltip("Keep the object upright (no pitch/roll). Yaw rotation is preserved.")]
     public bool stayUpright = false;
 
+    [Tooltip("Constrain this rigidbody inside the simulation AABB bounds (same as fluid particles).")]
+    public bool constrainToBounds = true;
+
+    [Tooltip("Bounciness when hitting the AABB walls (0 = stop, 1 = full reflect).")]
+    [Range(0f, 1f)]
+    public float boundsBounce = 0.3f;
+
+    [Tooltip("Reference to the UseComputePlugin whose bounds constrain this object. Auto-finds if empty.")]
+    public UseComputePlugin simReference;
+
     [Tooltip("Auto-set Rigidbody mass from objectDensity * approximateVolume on Start.")]
     public bool autoSetMass = true;
 
@@ -55,11 +65,17 @@ public sealed class VoxelDynamic : MonoBehaviour
     // Cached references
     [System.NonSerialized] public Rigidbody rb;
     [System.NonSerialized] public Bounds worldBounds;
+    private MeshRenderer _cachedRenderer;
+    private Collider _cachedCollider;
+    private bool _boundsCacheInit;
+    private UseComputePlugin _simRef;
+    private bool _simSearched;
 
     void OnEnable()
     {
         VoxelTracerSystem.RegisterDynamic(this);
         rb = GetComponent<Rigidbody>();
+        CacheBoundsSource();
     }
 
     void Start()
@@ -71,24 +87,79 @@ public sealed class VoxelDynamic : MonoBehaviour
         }
     }
 
+    void FixedUpdate()
+    {
+        if (!constrainToBounds || rb == null) return;
+
+        // Find sim reference once
+        if (!_simSearched)
+        {
+            if (simReference != null)
+                _simRef = simReference;
+            else
+                _simRef = Object.FindAnyObjectByType<UseComputePlugin>();
+            _simSearched = true;
+        }
+        if (_simRef == null) return;
+
+        _simRef.GetBoundsWS(out Vector3 bMin, out Vector3 bMax);
+        RefreshBounds();
+        Vector3 extents = worldBounds.extents;
+        Vector3 pos = rb.position;
+        Vector3 vel = rb.linearVelocity;
+        bool clamped = false;
+
+        for (int axis = 0; axis < 3; axis++)
+        {
+            float lo = bMin[axis] + extents[axis];
+            float hi = bMax[axis] - extents[axis];
+            if (lo >= hi) continue;
+
+            if (pos[axis] < lo)
+            {
+                pos[axis] = lo;
+                if (vel[axis] < 0f) vel[axis] = -vel[axis] * boundsBounce;
+                clamped = true;
+            }
+            else if (pos[axis] > hi)
+            {
+                pos[axis] = hi;
+                if (vel[axis] > 0f) vel[axis] = -vel[axis] * boundsBounce;
+                clamped = true;
+            }
+        }
+
+        if (clamped)
+        {
+            rb.MovePosition(pos);
+            rb.linearVelocity = vel;
+        }
+    }
+
     void OnDisable() => VoxelTracerSystem.UnregisterDynamic(this);
+
+    private void CacheBoundsSource()
+    {
+        if (_boundsCacheInit) return;
+        _cachedRenderer = GetComponent<MeshRenderer>();
+        if (_cachedRenderer == null)
+            _cachedCollider = GetComponent<Collider>();
+        _boundsCacheInit = true;
+    }
 
     /// <summary>
     /// Refresh cached world bounds from renderer or collider.
     /// </summary>
     public void RefreshBounds()
     {
-        var mr = GetComponent<MeshRenderer>();
-        if (mr != null)
-            worldBounds = mr.bounds;
+        if (!_boundsCacheInit) CacheBoundsSource();
+
+        if (_cachedRenderer != null)
+            worldBounds = _cachedRenderer.bounds;
+        else if (_cachedCollider != null)
+            worldBounds = _cachedCollider.bounds;
         else
-        {
-            var col = GetComponent<Collider>();
-            if (col != null)
-                worldBounds = col.bounds;
-            else
-                worldBounds = new Bounds(transform.position, Vector3.one);
-        }
+            worldBounds = new Bounds(transform.position, Vector3.one);
     }
 
     /// <summary>
@@ -111,5 +182,17 @@ public sealed class VoxelDynamic : MonoBehaviour
         lastRotation = t.rotation;
         lastScale = t.localScale;
         return true;
+    }
+
+    void OnDrawGizmosSelected()
+    {
+        if (!constrainToBounds) return;
+        var sim = _simRef != null ? _simRef : Object.FindAnyObjectByType<UseComputePlugin>();
+        if (sim == null) return;
+        sim.GetBoundsWS(out Vector3 mn, out Vector3 mx);
+        Gizmos.color = new Color(1f, 0.5f, 0f, 0.5f);
+        Vector3 center = (mn + mx) * 0.5f;
+        Vector3 size = mx - mn;
+        Gizmos.DrawWireCube(center, size);
     }
 }
