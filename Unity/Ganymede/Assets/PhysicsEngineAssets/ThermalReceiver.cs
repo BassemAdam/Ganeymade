@@ -53,7 +53,7 @@ public class ThermalReceiver : MonoBehaviour
     public VoxelTracerCamera voxelTracerCamera;
 
 
-    // ─── Private state ──────────────────────────────────────────────────
+    // --------------- private variables ----------
 
     private float[] gridData;
     private uint[] maskData;
@@ -62,11 +62,6 @@ public class ThermalReceiver : MonoBehaviour
     private float[] heatSourceData;
     private int frameCount = 0;
     private bool initialized = false;
-
-    /// <summary>Live diffused temperature array (read-only). Null until initialised.</summary>
-    public float[] LiveTemperatureData => initialized ? readbackData : null;
-    public bool IsInitialized => initialized;
-
     private Texture3D _tempTexture;
 
     // For diffusion-change detection
@@ -83,7 +78,16 @@ public class ThermalReceiver : MonoBehaviour
     // Tracks the VoxelTracerSystem voxelize-frame counter so any dynamic-object
     // re-voxelization also triggers a GPU refresh
     private int _lastVoxelizeFrameCount = -1;
-    // ─── Lifecycle ──────────────────────────────────────────────────────
+
+    // ------------------- public variables -------------------------
+
+    // live diffused temperature array (read-only)
+    // Null until initialised.
+    public float[] LiveTemperatureData => initialized ? readbackData : null;
+    public bool IsInitialized => initialized;
+    public Texture3D tempTexture => _tempTexture;
+
+    // --------- Lifecycle ---------------------------------------
 
     IEnumerator Start()
     {
@@ -140,7 +144,18 @@ public class ThermalReceiver : MonoBehaviour
             return;
         }
         // Re-read HeatSourceTexture whenever sources appear, disappear, move, or change temperature.  
-        bool voxelFrameChanged = voxelTracer.VoxelizeFrameCount != _lastVoxelizeFrameCount;
+        bool voxelFrameChanged = false;
+        if (voxelTracer.VoxelizeFrameCount != _lastVoxelizeFrameCount)
+        {
+            foreach (var vd in VoxelTracerSystem.DynamicObjects)
+            {
+                if (vd != null && vd.HasMoved())
+                {
+                    voxelFrameChanged = true;
+                    break;
+                }
+            }
+        }
         if ((HeatSourcesChanged() || voxelFrameChanged) && !_refreshingHeatSources)
         {
             if (verbose)
@@ -161,7 +176,7 @@ public class ThermalReceiver : MonoBehaviour
         if (frameCount % visualizationInterval == 0)
             UpdateVisualization();
 
-        // ── Periodic diffusion health log ────────────────────────────────
+        // Periodic diffusion health log 
         if (debugLogInterval > 0 && frameCount % debugLogInterval == 0)
             LogDiffusionStats(dt);
     }
@@ -173,7 +188,7 @@ public class ThermalReceiver : MonoBehaviour
         int gz = voxelTracer.Nz;
         int sliceSize = gx * gy;
 
-        // ── Fill texture to mask (single async 3D request, no per-slice stalls) ──
+        // read fill texture to mask data
         {
             var req = AsyncGPUReadback.Request(voxelTracer.FillTexture);
             yield return new WaitUntil(() => req.done);
@@ -195,7 +210,7 @@ public class ThermalReceiver : MonoBehaviour
             }
         }
 
-        // ── Temperature texture to gridData ─────────────────────────────────
+        // read emperature texture to grid data
         {
             var req = AsyncGPUReadback.Request(voxelTracer.TemperatureTexture);
             yield return new WaitUntil(() => req.done);
@@ -217,7 +232,7 @@ public class ThermalReceiver : MonoBehaviour
             }
         }
 
-        // ── Diffusivity texture tp diffusivityData ──────────────────────────
+        // read diffusivity texture tp diffusivity data 
         {
             var req = AsyncGPUReadback.Request(voxelTracer.DiffusivityTexture);
             yield return new WaitUntil(() => req.done);
@@ -239,7 +254,7 @@ public class ThermalReceiver : MonoBehaviour
             }
         }
 
-        // ── HeatSourceTexture to heatSourceData ─────────────────────────────
+        // read HeatSourceTexture to heatSource data
         if (voxelTracer.HeatSourceTexture != null)
         {
             var req = AsyncGPUReadback.Request(voxelTracer.HeatSourceTexture);

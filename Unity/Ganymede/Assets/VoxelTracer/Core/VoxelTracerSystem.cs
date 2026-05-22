@@ -119,6 +119,8 @@ public sealed class VoxelTracerSystem : MonoBehaviour
     public static IReadOnlyCollection<VoxelSolidMaterial> SolidMaterials => _registeredSolidMaterials;
     /// Read-only access to registered fluid material properties (for external sim module).
     public static IReadOnlyCollection<VoxelFluidMaterial> FluidMaterials => _registeredFluidMaterials;
+    /// Read-only access to registered dynamic objects (for external sim module).
+    public static IReadOnlyCollection<VoxelDynamic> DynamicObjects => _registeredDynamics;
 
     // ================================================================
     // Private state
