@@ -345,6 +345,7 @@ public class ThermalReceiver : MonoBehaviour
         }
 
         // Re-read heat source texture to heatSourceData
+        System.Array.Clear(heatSourceData, 0, heatSourceData.Length);
         if (voxelTracer.HeatSourceTexture != null)
         {
             var hsReq = AsyncGPUReadback.Request(voxelTracer.HeatSourceTexture);
