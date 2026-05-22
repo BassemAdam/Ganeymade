@@ -78,6 +78,7 @@ public class ThermalReceiver : MonoBehaviour
     // Tracks the VoxelTracerSystem voxelize-frame counter so any dynamic-object
     // re-voxelization also triggers a GPU refresh
     private int _lastVoxelizeFrameCount = -1;
+    private int _settleFramesRemaining = 0;
 
     // ------------------- public variables -------------------------
 
@@ -147,15 +148,25 @@ public class ThermalReceiver : MonoBehaviour
         bool voxelFrameChanged = false;
         if (voxelTracer.VoxelizeFrameCount != _lastVoxelizeFrameCount)
         {
-            foreach (var vd in VoxelTracerSystem.DynamicObjects)
+            foreach (var dv in VoxelTracerSystem.DynamicObjects)
             {
-                if (vd != null && vd.HasMoved())
+                if (dv != null && dv.HasMoved())
                 {
                     voxelFrameChanged = true;
+                    _settleFramesRemaining = 3; // refresh for 3 extra frames after movement stops
                     break;
                 }
             }
         }
+
+        // Drain the settling counter even when nothing is moving anymore
+        if (!voxelFrameChanged && _settleFramesRemaining > 0)
+        {
+            _settleFramesRemaining--;
+            voxelFrameChanged = true;
+            if (verbose) Debug.Log($"[ThermalReceiver] Post-move settle refresh — {_settleFramesRemaining} remaining.");
+        }
+
         if ((HeatSourcesChanged() || voxelFrameChanged) && !_refreshingHeatSources)
         {
             if (verbose)
@@ -356,8 +367,8 @@ public class ThermalReceiver : MonoBehaviour
         foreach (float v in heatSourceData) 
             if (v > 0f) 
                 pinnedAfterReadback++;
-        if (verbose)
-            Debug.Log($"[ThermalReceiver] [STAGE 1] After HeatSourceTexture GPU readback — pinnedVoxels={pinnedAfterReadback}");
+        // if (verbose)
+        //     Debug.Log($"[ThermalReceiver] [STAGE 1] After HeatSourceTexture GPU readback — pinnedVoxels={pinnedAfterReadback}");
 
         //preserve the existing temps for fixed solid voxels, seed new solid voxels at ambient
         GetSolidComputeResult(readbackData, total);
@@ -373,8 +384,8 @@ public class ThermalReceiver : MonoBehaviour
         foreach (float v in heatSourceData) 
             if (v > 0f) 
                 pinnedBeforeUpload++;
-        if (verbose)
-            Debug.Log($"[ThermalReceiver] [STAGE 2] About to call SetHeatSourceData — pinnedVoxels={pinnedBeforeUpload}");
+        // if (verbose)
+        //     Debug.Log($"[ThermalReceiver] [STAGE 2] About to call SetHeatSourceData — pinnedVoxels={pinnedBeforeUpload}");
 
         SetHeatSourceData(heatSourceData, total);
 
@@ -414,7 +425,7 @@ public class ThermalReceiver : MonoBehaviour
 
         if ( verbose && count != _trackedSourceSnapshots.Count) 
         {
-            Debug.Log($"[ThermalReceiver] [CHANGED] Source count changed: tracked={_trackedSourceSnapshots.Count} current={count}");
+            //Debug.Log($"[ThermalReceiver] [CHANGED] Source count changed: tracked={_trackedSourceSnapshots.Count} current={count}");
             return true;
         }
 
@@ -447,7 +458,7 @@ public class ThermalReceiver : MonoBehaviour
             Vector3 currentCenter = r != null ? r.bounds.center : sm.transform.position;
             if ((snap.boundsCenter - currentCenter).sqrMagnitude > 1e-6f) 
                {
-                    Debug.Log($"[ThermalReceiver] [CHANGED] Position changed on {sm.name}: {snap.boundsCenter} to {currentCenter}");
+                    //Debug.Log($"[ThermalReceiver] [CHANGED] Position changed on {sm.name}: {snap.boundsCenter} to {currentCenter}");
                     return true;
                 }
         }
@@ -569,8 +580,8 @@ public class ThermalReceiver : MonoBehaviour
         foreach (float v in heatSourceData) 
             if (v > 0f) 
                 pinnedAtLogTime++;
-        if (verbose)
-            Debug.Log($"[ThermalReceiver] [STAGE 3] heatSourceData at log time — pinnedVoxels={pinnedAtLogTime}");
+        // if (verbose)
+        //     Debug.Log($"[ThermalReceiver] [STAGE 3] heatSourceData at log time — pinnedVoxels={pinnedAtLogTime}");
 
         float minT = float.MaxValue;
         float maxT = float.MinValue;
