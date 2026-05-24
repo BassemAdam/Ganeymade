@@ -48,17 +48,17 @@ void computeMain(uint3 threadId: SV_DispatchThreadID, uint3 localId: SV_GroupThr
       {
          // Direction is based on global index and stage k
          bool ascending = ((gid & k) == 0);
-         uint keyA = sharedKeys[lid];
-         uint keyB = sharedKeys[partner];
+         uint keyI = sharedKeys[lid];
+         uint keyP = sharedKeys[partner];
 
-         if ((keyA > keyB) == ascending)
+         if ((keyI > keyP) == ascending)
          {
-            sharedKeys[lid] = keyB;
-            sharedKeys[partner] = keyA;
-            uint idxA = sharedIdxs[lid];
-            uint idxB = sharedIdxs[partner];
-            sharedIdxs[lid] = idxB;
-            sharedIdxs[partner] = idxA;
+            sharedKeys[lid] = keyP;
+            sharedKeys[partner] = keyI;
+            uint idxI = sharedIdxs[lid];
+            uint idxP = sharedIdxs[partner];
+            sharedIdxs[lid] = idxP;
+            sharedIdxs[partner] = idxI;
          }
       }
       GroupMemoryBarrierWithGroupSync();
