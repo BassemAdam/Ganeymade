@@ -178,7 +178,7 @@ void computeMain(uint3 threadId: SV_DispatchThreadID)
                float visc = (p.phase == 1) ? params.gasViscosity : params.viscosity;
                fViscosity += params.particleMass * visc * (pj.velocity - p.velocity) / pj.density * viscLap;
 
-               // Cohesion: liquid-liquid only — attracts particles toward each other at mid-range
+               // Cohesion: liquid-liquid only. attracts particles toward each other at mid-range
                if (p.phase == 0 && pj.phase == 0 && params.cohesionStrength > 0.0)
                {
                   float ck = cohesionKernel(r, h);
@@ -200,10 +200,10 @@ void computeMain(uint3 threadId: SV_DispatchThreadID)
        buoyancy = float3(0.0, params.gasBuoyancy, 0.0);
    }
 
-   // ── Boundary repulsion: compensates for SPH kernel truncation at walls ──
+   // Boundary repulsion: compensates for SPH kernel truncation at walls
    // Without this, wall-adjacent particles lose ~half their kernel support,
    // underestimating density and producing a pressure gradient that pushes
-   // particles INTO the wall instead of away from it.
+   // particles into the wall instead of away from it.
    float3 boundaryForce = float3(0.0);
    float boundaryStiff = params.gasStiffness / h;
    float3 dLo = p.position - params.boundsMin;
@@ -234,7 +234,7 @@ void computeMain(uint3 threadId: SV_DispatchThreadID)
    float damp = (p.phase == 1) ? min(params.damping + 0.001, 1.0) : params.damping;
    p.velocity *= damp;
 
-   // Velocity magnitude clamp BEFORE position update — otherwise an unclamped
+   // Velocity magnitude clamp before position update. otherwise an unclamped
    // velocity moves the particle too far in a single frame.
    float maxVel = 30.0;
    float vel2 = dot(p.velocity, p.velocity);
@@ -287,7 +287,7 @@ void computeMain(uint3 threadId: SV_DispatchThreadID)
       }
    }
 
-   // ── Drain zones: deactivate particles inside any active drain ────
+   // ──── DISABLED ──── Drain zones: deactivate particles inside any active drain ────
    for (uint d = 0; d < 16; d++)
    {
       if (drains[d].active == 0) continue;
