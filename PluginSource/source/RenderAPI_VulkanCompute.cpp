@@ -85,19 +85,6 @@ static void LoadComputeVulkanFunctions(PFN_vkGetInstanceProcAddr getInstanceProc
 #undef LOAD_FUNC
 }
 
-// ─── SPIR-V compiled from multiply.slang (Slang shader language) ────────────
-// Source (shaders/multiply.slang):
-//   struct SimParams { float dt; float multiplier; float externalForce; uint elementCount; };
-//   [[vk::push_constant]] ConstantBuffer<SimParams> params;
-//   StructuredBuffer<float> inputData;       // binding=0, set=0
-//   RWStructuredBuffer<float> outputData;    // binding=1, set=0
-//   [shader("compute")]  [numthreads(256, 1, 1)]
-//   void computeMain(uint3 threadId : SV_DispatchThreadID) {
-//       if (threadId.x >= params.elementCount) return;
-//       outputData[threadId.x] = inputData[threadId.x] * params.multiplier
-//                              + params.externalForce * params.dt;
-//   }
-// Compiled with: slangc multiply.slang -target spirv -entry computeMain -o multiply.spv
 // Push constant data — updated from C# every frame
 struct SimParams
 {
@@ -4609,17 +4596,13 @@ void VulkanComputePlugin::CreatePipeline()
         return;
 
     VkDescriptorSetLayoutBinding tempBindings[6] = {};
-    for (int b = 0; b < 5; b++)
+    for (int b = 0; b < 6; b++)
     {
         tempBindings[b].binding= b;
         tempBindings[b].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
         tempBindings[b].descriptorCount = 1;
         tempBindings[b].stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
     }
-    tempBindings[5].binding = 5;
-    tempBindings[5].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-    tempBindings[5].descriptorCount = 1;
-    tempBindings[5].stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
 
     VkDescriptorSetLayoutCreateInfo tempLayoutCI = {};
     tempLayoutCI.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
@@ -4898,7 +4881,7 @@ void VulkanComputePlugin::UpdateDescriptorSets()
             writes[b].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
             writes[b].pBufferInfo = &bufInfos[b];
         }
-        for (int b = 0; b < 5; b++)
+        for (int b = 0; b < 6; b++)
         {
             tempWrites[b].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
             tempWrites[b].dstSet = m_TempDescSets[pp];
@@ -4907,12 +4890,6 @@ void VulkanComputePlugin::UpdateDescriptorSets()
             tempWrites[b].descriptorType= VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
             tempWrites[b].pBufferInfo = &tempBufInfos[b];
         }
-        tempWrites[5].sType           = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        tempWrites[5].dstSet          = m_TempDescSets[pp];
-        tempWrites[5].dstBinding      = 5;
-        tempWrites[5].descriptorCount = 1;
-        tempWrites[5].descriptorType  = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-        tempWrites[5].pBufferInfo     = &tempBufInfos[5];
         vkUpdateDescriptorSets(m_Instance.device, 7, writes, 0, nullptr);
         vkUpdateDescriptorSets(m_Instance.device, 6, tempWrites, 0, nullptr);
     }
