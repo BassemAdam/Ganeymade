@@ -1024,6 +1024,9 @@ MonoBehaviour:
   angularDragCoefficient: 0.5
   sinkFactor: 0.3
   stayUpright: 0
+  constrainToBounds: 1
+  boundsBounce: 0.3
+  simReference: {fileID: 0}
   autoSetMass: 1
   submergedFraction: 0
   lastBuoyancyForce: {x: 0, y: 0, z: 0}
@@ -2263,7 +2266,7 @@ PrefabInstance:
     m_AddedGameObjects: []
     m_AddedComponents:
     - targetCorrespondingSourceObject: {fileID: 2900417176552770229, guid: 140c529aa58847b4f9743f295c55363b, type: 3}
-      insertIndex: 2
+      insertIndex: -1
       addedObject: {fileID: 2083772695}
     - targetCorrespondingSourceObject: {fileID: 4155332954393550686, guid: 140c529aa58847b4f9743f295c55363b, type: 3}
       insertIndex: -1
@@ -2411,10 +2414,7 @@ PrefabInstance:
     m_AddedGameObjects: []
     m_AddedComponents:
     - targetCorrespondingSourceObject: {fileID: 7670083043565362168, guid: 9a8f0a018495bfd4494c9119773d7e47, type: 3}
-      insertIndex: 1
-      addedObject: {fileID: 1451956704}
-    - targetCorrespondingSourceObject: {fileID: 7670083043565362168, guid: 9a8f0a018495bfd4494c9119773d7e47, type: 3}
-      insertIndex: 2
+      insertIndex: -1
       addedObject: {fileID: 1451956706}
     - targetCorrespondingSourceObject: {fileID: 3250730126449415513, guid: 9a8f0a018495bfd4494c9119773d7e47, type: 3}
       insertIndex: -1
@@ -3719,6 +3719,14 @@ PrefabInstance:
       propertyPath: m_Name
       value: Silver Ingot
       objectReference: {fileID: 0}
+    - target: {fileID: 3860623040974644431, guid: add5fe32bdc4ba042b54f87f027c9a70, type: 3}
+      propertyPath: simReference
+      value: 
+      objectReference: {fileID: 0}
+    - target: {fileID: 3860623040974644431, guid: add5fe32bdc4ba042b54f87f027c9a70, type: 3}
+      propertyPath: enableFluidForces
+      value: 1
+      objectReference: {fileID: 0}
     - target: {fileID: 7996721677560995664, guid: add5fe32bdc4ba042b54f87f027c9a70, type: 3}
       propertyPath: m_LocalScale.y
       value: 2
@@ -3768,7 +3776,7 @@ PrefabInstance:
     m_AddedGameObjects: []
     m_AddedComponents:
     - targetCorrespondingSourceObject: {fileID: 2972654419316622882, guid: add5fe32bdc4ba042b54f87f027c9a70, type: 3}
-      insertIndex: 2
+      insertIndex: -1
       addedObject: {fileID: 1298700405}
     - targetCorrespondingSourceObject: {fileID: 4456956549798128277, guid: add5fe32bdc4ba042b54f87f027c9a70, type: 3}
       insertIndex: -1
@@ -4139,25 +4147,6 @@ GameObject:
   m_CorrespondingSourceObject: {fileID: 7670083043565362168, guid: 9a8f0a018495bfd4494c9119773d7e47, type: 3}
   m_PrefabInstance: {fileID: 898028514}
   m_PrefabAsset: {fileID: 0}
---- !u!114 &1451956704
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1451956702}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 7193c26c385088b48869367ff217e876, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: Assembly-CSharp::VoxelSolidMaterial
-  temperature: 25
-  thermalDiffusivity: 23
-  coolingRate: 0.01
-  isContinuousHeatSource: 0
-  density: 2500
-  mass: 0
-  phase: 0
 --- !u!114 &1451956706
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -4660,7 +4649,7 @@ PrefabInstance:
     m_AddedGameObjects: []
     m_AddedComponents:
     - targetCorrespondingSourceObject: {fileID: 1434464227692993030, guid: 86686d9ba4426da47bfdbf13f5dbad1c, type: 3}
-      insertIndex: 2
+      insertIndex: -1
       addedObject: {fileID: 1805879697}
     - targetCorrespondingSourceObject: {fileID: 5505863110056808531, guid: 86686d9ba4426da47bfdbf13f5dbad1c, type: 3}
       insertIndex: -1
@@ -4971,6 +4960,10 @@ PrefabInstance:
     - target: {fileID: 2808379889608592249, guid: 6035624ae6d4140428324a34f4cc763d, type: 3}
       propertyPath: m_LocalEulerAnglesHint.z
       value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 3729240123349117850, guid: 6035624ae6d4140428324a34f4cc763d, type: 3}
+      propertyPath: m_Size.z
+      value: 0.07
       objectReference: {fileID: 0}
     - target: {fileID: 7016159323307550333, guid: 6035624ae6d4140428324a34f4cc763d, type: 3}
       propertyPath: m_Name
@@ -5872,7 +5865,7 @@ PrefabInstance:
     m_AddedGameObjects: []
     m_AddedComponents:
     - targetCorrespondingSourceObject: {fileID: 6151417752116538257, guid: 4ac9c3e6889e9b74da5c2c16df229fc9, type: 3}
-      insertIndex: 2
+      insertIndex: -1
       addedObject: {fileID: 2103177137}
     - targetCorrespondingSourceObject: {fileID: 6502320135818244322, guid: 4ac9c3e6889e9b74da5c2c16df229fc9, type: 3}
       insertIndex: -1
@@ -6020,7 +6013,7 @@ PrefabInstance:
     m_AddedGameObjects: []
     m_AddedComponents:
     - targetCorrespondingSourceObject: {fileID: 4466782673903253282, guid: 81ee63f83c0f2174ea42d19ba986f2f3, type: 3}
-      insertIndex: 2
+      insertIndex: -1
       addedObject: {fileID: 790007053}
     - targetCorrespondingSourceObject: {fileID: 541890916937499118, guid: 81ee63f83c0f2174ea42d19ba986f2f3, type: 3}
       insertIndex: -1
