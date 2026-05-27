@@ -115,8 +115,24 @@ float2 CalculateRefractedSceneUV(
     if (distanceToExit <= 1e-5)
         return viewData.screenUV;
 
-    float3 refractedExitPositionWS = refractOriginWS + refractDir * distanceToExit;
-    float2 physicallyRefractedUV = ProjectWorldPositionToScreenUV(refractedExitPositionWS);
+    // Perform screen-space refraction raymarching
+    WaterRefractionTraceResult traceResult = TraceWaterScreenSpaceRefraction(
+        surfaceHit,
+        viewData.screenUV,
+        distanceToExit
+    );
+
+    float2 physicallyRefractedUV;
+    if (traceResult.hit)
+    {
+        physicallyRefractedUV = traceResult.hitUV;
+    }
+    else
+    {
+        // Fallback to bounding box exit projection
+        float3 refractedExitPositionWS = refractOriginWS + refractDir * distanceToExit;
+        physicallyRefractedUV = ProjectWorldPositionToScreenUV(refractedExitPositionWS);
+    }
 
     // Depth guard: the scene object at the refracted UV must sit behind the water surface.
     // Without this, an above-water object that overlaps the refracted UV in screen-space
