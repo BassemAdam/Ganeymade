@@ -1,35 +1,28 @@
-// Marching Cubes on a density grid (Texture3D<float>).
-// ALL lookup data comes from runtime StructuredBuffers — zero large static const
-// arrays, guaranteed Vulkan/SPIR-V compatibility.
-
 #pragma kernel MarchDensity
 #pragma kernel ClearArgs
 
-// Tiny arrays (24 ints total) — well within Vulkan constant limits
 static const int cornerA[12] = {0, 1, 2, 3, 4, 5, 6, 7, 0, 1, 2, 3};
 static const int cornerB[12] = {1, 2, 3, 0, 5, 6, 7, 4, 4, 5, 6, 7};
 
 struct Vertex
 {
-    float4 position;   // xyz = world pos, w = 1
-    float4 normal;     // xyz = normal,    w = 0
+    float4 position;
+    float4 normal;
 };
 
-// ---- Inputs ----
-Texture3D<float2> DensityTexture3D;   // R = liquid density, G = vapour (ignored here)
+Texture3D<float2> DensityTexture3D;
 SamplerState samplerDensityTexture3D;
-Texture3D<float4>  NormalTexture3D;     // pre-baked outward surface normals (xyz), w = 0
+Texture3D<float4>  NormalTexture3D;
 SamplerState       samplerNormalTexture3D;
-StructuredBuffer<int>  lut;        // flat triangle edge indices
-StructuredBuffer<int>  offsets;    // offset into lut for each of 256 configs
-StructuredBuffer<int>  lengths;    // number of indices per config
+StructuredBuffer<int>  lut;
+StructuredBuffer<int>  offsets;
+StructuredBuffer<int>  lengths;
 
 int3   GridSize;
 float3 VoxelSize;
 float3 BoundsMinWS;
 float  isoLevel;
 
-// ---- Output ----
 RWStructuredBuffer<Vertex> vertices;
 RWStructuredBuffer<uint> drawArgs;
 
@@ -42,7 +35,6 @@ void ClearArgs(uint3 id : SV_DispatchThreadID)
     drawArgs[3] = 0;
 }
 
-// ---- Helpers ----
 float SampleDensity(int3 pos)
 {
     bool isEdge = any(pos <= 0) || any(pos >= GridSize - 1);
@@ -67,15 +59,11 @@ Vertex MakeVertex(int3 ca, int3 cb)
 
     float t = (abs(dB - dA) < 0.00001) ? 0.0 : (isoLevel - dA) / (dB - dA);
 
-    // Sample the pre-baked normal texture at the interpolated vertex position.
     float3 vertexPosWS  = posA + t * (posB - posA);
     float3 volumeSizeWS = max((float3)GridSize * VoxelSize, 1e-5);
     float3 uvw          = (vertexPosWS - BoundsMinWS) / volumeSizeWS;
     float3 n    = NormalTexture3D.SampleLevel(samplerNormalTexture3D, uvw, 0).xyz;
     float  nLen = length(n);
-    // Zero normal: gradient below threshold at this position. Store as-is — the
-    // surface shader will receive zero and produce no specular/diffuse contribution,
-    // which is the correct physical response for an indeterminate surface orientation.
 
     Vertex v;
     v.position = float4(vertexPosWS, 1.0);
@@ -83,7 +71,6 @@ Vertex MakeVertex(int3 ca, int3 cb)
     return v;
 }
 
-// ---- Kernel ----
 [numthreads(8, 8, 8)]
 void MarchDensity(int3 id : SV_DispatchThreadID)
 {
@@ -115,7 +102,6 @@ void MarchDensity(int3 id : SV_DispatchThreadID)
         int e1 = lut[off + t + 1];
         int e2 = lut[off + t + 2];
 
-        // Swapped e2, e1, e0 back to e0, e1, e2 to fix winding order
         vertices[startIdx + t]     = MakeVertex(c[cornerA[e0]], c[cornerB[e0]]);
         vertices[startIdx + t + 1] = MakeVertex(c[cornerA[e1]], c[cornerB[e1]]);
         vertices[startIdx + t + 2] = MakeVertex(c[cornerA[e2]], c[cornerB[e2]]);
