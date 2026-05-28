@@ -43,7 +43,7 @@ Material:
     - _BlurRadius: 0.08
     - _FresnelPower: 7.93
     - _MinAlpha: 1
-    - _ReflectionStrength: 0.5
+    - _ReflectionStrength: 1
     - _RefractionStrength: 0.05
     - _Smoothness: 0.853
     - _SpecularStrength: 1.5
