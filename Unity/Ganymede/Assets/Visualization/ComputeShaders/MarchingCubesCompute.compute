@@ -1,5 +1,8 @@
+// Declaring entry points by telling compiler compile this function as a GPU entry point
+// this allows us to link it to c# scripts and find it in the scripts
 #pragma kernel MarchDensity
 #pragma kernel ClearArgs
+
 
 static const int cornerA[12] = {0, 1, 2, 3, 4, 5, 6, 7, 0, 1, 2, 3};
 static const int cornerB[12] = {1, 2, 3, 0, 5, 6, 7, 4, 4, 5, 6, 7};
@@ -29,10 +32,14 @@ RWStructuredBuffer<uint> drawArgs;
 [numthreads(1,1,1)]
 void ClearArgs(uint3 id : SV_DispatchThreadID)
 {
-    drawArgs[0] = 0;
-    drawArgs[1] = 1;
-    drawArgs[2] = 0;
-    drawArgs[3] = 0;
+    // drawArgs is read by DrawProceduralIndirect to know how to render the mesh
+    // It never goes back to the CPU — the GPU reads it directly for rendering
+
+    drawArgs[0] = 0; // vertex count: reset to 0, MarchDensity fills this up via InterlockedAdd
+    drawArgs[1] = 1; // instance count: always 1 — we draw the fluid mesh once, not multiple copies
+                     // (instancing = draw same mesh N times, e.g. 1000 trees. We dont need that here)
+    drawArgs[2] = 0; // start vertex: begin reading vertices from slot 0
+    drawArgs[3] = 0; // start instance: begin at instance 0 (irrelevant since instance count = 1)
 }
 
 float SampleDensity(int3 pos)
@@ -86,14 +93,24 @@ void MarchDensity(int3 id : SV_DispatchThreadID)
     int cfg = 0;
     for (int i = 0; i < 8; i++)
         if (SampleDensity(c[i]) < isoLevel)
-            cfg |= (1 << i);
+            cfg |= (1 << i); // shift left by i bits then or it with cfg
 
     if (cfg == 0 || cfg == 255) return;
 
+    // by using lengths and offsets arrays that i asked llm to generate it for me 
+    // LUT is now much more compacted 512 bytes instead of 4kb
+    // becase traditional patted format is 256 x 16 every config gets 16 slots event if it only needs 3 or 6 
+    // 256 x 16 x 4 bytes (int) = 16,000 bytes 
+    // new format : 2460 ints = 9,840 bytes plus 256 x 2 x 4 bytes = 11888 bytes
     int numIdx = lengths[cfg];
     int off    = offsets[cfg];
 
     uint startIdx;
+    // each thread wants to write its traingles somewhere in sahred verticies buffer 
+    // atomic add steps
+    // 1- first it reads drawArgs[0] which contains number of traingles written so far 
+    // 2- it add numIdx to drawArgs[0] to reserve space for its traingles
+    // 3- return the old value before the add in startIdx so each thread gets a unique starting index
     InterlockedAdd(drawArgs[0], numIdx, startIdx);
 
     for (int t = 0; t < numIdx; t += 3)
@@ -105,5 +122,9 @@ void MarchDensity(int3 id : SV_DispatchThreadID)
         vertices[startIdx + t]     = MakeVertex(c[cornerA[e0]], c[cornerB[e0]]);
         vertices[startIdx + t + 1] = MakeVertex(c[cornerA[e1]], c[cornerB[e1]]);
         vertices[startIdx + t + 2] = MakeVertex(c[cornerA[e2]], c[cornerB[e2]]);
+        
+        // Example to understand the mappinig
+        // e0 = 3 which is cornerA = 2, cornerB = 3 which is (1,0,1) and (0,0,1) 
+        // after that we give to make vertex (1,0,1) and (0,0,1) to get interpolated vertex positon and normal 
     }
 }
