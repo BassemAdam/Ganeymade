@@ -28,8 +28,11 @@ struct Particle
 
 StructuredBuffer<Particle>  _ParticleBuffer;
 RWStructuredBuffer<uint>    _DensityGrid;
+// note we allocate two textures for the same thing
+// becuase in blurDensity we will need to read from the texture and write to it and this is undefined behaviour
+// as there might be other threads that is writing to the same thing that it is reading from at the same CLOCK cycle 
 RWTexture3D<float2>         _DensityTexture3D_RG;
-Texture3D<float2>           _DensityTexture3D_Read;
+Texture3D<float2>           _DensityTexture3D_Read; 
 RWTexture3D<float4>         _NormalTexture3D;
 
 int3   _VolumeDims;
@@ -54,6 +57,13 @@ int    _BlurChannel;
 
 uint GridIndex(int3 v)
 {
+    // turn 3d index to 1d index
+    // equation: index = x + dimX * (y + dimY * z)
+    // example: v=(2,1,3), dims=(4,4,4)
+    //   = 2 + 4 * (1 + 4 * 3)
+    //   = 2 + 4 * 13
+    //   = 54
+    // i can easily explain it to anyone if we expanded it from 2d to 1d and then again from 2d t 1d
     return (uint)(v.x + _VolumeDims.x * (v.y + _VolumeDims.y * v.z));
 }
 
@@ -71,7 +81,7 @@ float SampleLiquidOrAir(int3 p)
 }
 
 [numthreads(8, 8, 8)]
-void ClearGrid(uint3 id : SV_DispatchThreadID)
+void ClearGrid(uint3 id : SV_DispatchThreadID) // : is just used for symatnics SV stands for system value
 {
     if (id.x >= (uint)_VolumeDims.x || id.y >= (uint)_VolumeDims.y || id.z >= (uint)_VolumeDims.z)
         return;
@@ -79,7 +89,7 @@ void ClearGrid(uint3 id : SV_DispatchThreadID)
     uint N   = (uint)(_VolumeDims.x * _VolumeDims.y * _VolumeDims.z);
     uint idx = (uint)(id.x + (uint)_VolumeDims.x * (id.y + (uint)_VolumeDims.y * id.z));
     _DensityGrid[idx] = 0;
-    _DensityGrid[N + idx] = 0;
+    _DensityGrid[N + idx] = 0; // this is for vapour 
 }
 
 void AtomicAddDensity(int3 v, uint slabOffset, uint amount)
@@ -203,6 +213,19 @@ void BlurDensity(uint3 id : SV_DispatchThreadID)
 {
     if (id.x >= (uint)_VolumeDims.x || id.y >= (uint)_VolumeDims.y || id.z >= (uint)_VolumeDims.z)
         return;
+
+    // --- Gaussian Blur and Detail Preservation Equations ---
+    // 1. Gaussian Weight:
+    //    W(x, y, z) = exp(-dist^2 / (2 * sigma^2))
+    //    where dist^2 = dx^2 + dy^2 + dz^2
+    //    and invTwoSig2 = 1.0 / (2 * sigma^2)
+    //
+    // 2. Normalization:
+    //    blurred = sum(W * sampleValue) / sum(W)
+    //
+    // 3. Detail Preservation:
+    //    finalValue = blurred + detailPreserve * original
+    // --------------------------------------------------------
 
     int3 sampleId = (int3)id;
     int3 dims = _VolumeDims;
