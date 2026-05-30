@@ -127,12 +127,12 @@ public class WaterPhaseDensityBlurSettings
     [FormerlySerializedAs("blurLiquidDensity")]
     public bool liquidBlurEnabled = false;
 
-    [Tooltip("Kernel half-size in voxels for the LIQUID channel in this render mode (1=3^3 taps, 2=5^3 taps, 3=7^3 taps). Larger = smoother but heavier.")]
-    [Range(1, 4)]
+    [Tooltip("Kernel half-size in voxels for the LIQUID channel (separable 1-D: cost is 3×(2r+1) taps). Values up to 16 are practical.")]
+    [Range(1, 16)]
     public int liquidBlurRadius = 1;
 
-    [Tooltip("Gaussian sigma in voxels for the LIQUID channel in this render mode. Small values give tight, localized blur; large values spread widely.")]
-    [Range(0.1f, 4.0f)]
+    [Tooltip("Gaussian sigma in voxels for the LIQUID channel. Small values give tight, localized blur; large values spread widely.")]
+    [Range(0.1f, 8.0f)]
     public float liquidBlurSigma = 1.0f;
 
     [Tooltip("0 = pure smooth liquid, 1 = original liquid high-frequency detail fully added back on top of the blur for this render mode.")]
@@ -145,14 +145,14 @@ public class WaterPhaseDensityBlurSettings
     [FormerlySerializedAs("enabled")]
     public bool vapourBlurEnabled = true;
 
-    [Tooltip("Kernel half-size in voxels for the VAPOUR channel in this render mode (1=3^3 taps, 2=5^3 taps, 3=7^3 taps). Larger = smoother but heavier.")]
-    [Range(1, 4)]
+    [Tooltip("Kernel half-size in voxels for the VAPOUR channel (separable 1-D: cost is 3×(2r+1) taps). Values up to 16 are practical.")]
+    [Range(1, 16)]
     [FormerlySerializedAs("blurRadius")]
     [FormerlySerializedAs("radius")]
     public int vapourBlurRadius = 1;
 
-    [Tooltip("Gaussian sigma in voxels for the VAPOUR channel in this render mode. Small values give tight, localized blur; large values spread widely.")]
-    [Range(0.1f, 4.0f)]
+    [Tooltip("Gaussian sigma in voxels for the VAPOUR channel. Small values give tight, localized blur; large values spread widely.")]
+    [Range(0.1f, 8.0f)]
     [FormerlySerializedAs("blurSigma")]
     [FormerlySerializedAs("sigma")]
     public float vapourBlurSigma = 1.0f;
@@ -185,12 +185,12 @@ public class WaterPhaseDensityBlurSettings
 
     public void Clamp()
     {
-        liquidBlurRadius = Mathf.Clamp(liquidBlurRadius, 1, 4);
-        liquidBlurSigma = Mathf.Clamp(liquidBlurSigma, 0.1f, 4.0f);
+        liquidBlurRadius = Mathf.Clamp(liquidBlurRadius, 1, 16);
+        liquidBlurSigma = Mathf.Clamp(liquidBlurSigma, 0.1f, 8.0f);
         liquidBlurDetailPreserve = Mathf.Clamp01(liquidBlurDetailPreserve);
 
-        vapourBlurRadius = Mathf.Clamp(vapourBlurRadius, 1, 4);
-        vapourBlurSigma = Mathf.Clamp(vapourBlurSigma, 0.1f, 4.0f);
+        vapourBlurRadius = Mathf.Clamp(vapourBlurRadius, 1, 16);
+        vapourBlurSigma = Mathf.Clamp(vapourBlurSigma, 0.1f, 8.0f);
         vapourBlurDetailPreserve = Mathf.Clamp01(vapourBlurDetailPreserve);
     }
 }

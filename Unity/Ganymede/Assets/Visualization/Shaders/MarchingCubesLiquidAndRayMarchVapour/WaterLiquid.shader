@@ -42,7 +42,6 @@ Shader "Custom/WaterLiquid"
             #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Core.hlsl"
             #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Lighting.hlsl"
             #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/DeclareOpaqueTexture.hlsl"
-            #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/DeclareDepthTexture.hlsl"
             #include "WaterPhase/WaterHelpers.hlsl"
 
             // ---- Mesh input (Procedural path) ----
@@ -54,13 +53,11 @@ Shader "Custom/WaterLiquid"
             struct Interpolators
             {
                 float4 positionHCS : SV_POSITION;
-                float2 uv : TEXCOORD0;
-                float3 normalWS : TEXCOORD1;
-                float3 positionWS  : TEXCOORD2;
-                float4 screenPos : TEXCOORD3;
+                float3 normalWS : TEXCOORD0;
+                float3 positionWS  : TEXCOORD1;
+                float4 screenPos : TEXCOORD2;
             };
 
-            SAMPLER(sampler_BaseMap);
             TEXTURE2D(_WaterThicknessMap);
             SAMPLER(sampler_WaterThicknessMap);
 
@@ -97,7 +94,6 @@ Shader "Custom/WaterLiquid"
                 MCVertex v = _MCVertices[IN.vertexID];
                 OUT.positionWS = v.position.xyz;
                 OUT.normalWS   = normalize(v.normal.xyz);
-                OUT.uv = float2(0.0, 0.0);
                 OUT.positionHCS = TransformWorldToHClip(OUT.positionWS);
                 OUT.screenPos = ComputeScreenPos(OUT.positionHCS);
 

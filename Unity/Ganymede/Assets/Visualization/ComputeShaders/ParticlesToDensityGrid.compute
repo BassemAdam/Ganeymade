@@ -54,6 +54,7 @@ int    _BlurRadius;
 float  _BlurSigma;
 float  _BlurDetailPreserve;
 int    _BlurChannel;
+int    _BlurAxis;          // 0 = X,  1 = Y,  2 = Z  (separable 1-D pass)
 
 uint GridIndex(int3 v)
 {
@@ -208,24 +209,17 @@ void NormalizeToTexture(uint3 id : SV_DispatchThreadID)
     _DensityTexture3D_RG[id] = float2(saturate(liquidNorm), saturate(vapourNorm));
 }
 
+// --- Separable 1-D Gaussian Blur ---
+// A 3-D Gaussian is mathematically separable:  G(x,y,z) = G(x) · G(y) · G(z).
+// Instead of one (2r+1)^3 cubic kernel we run three (2r+1) 1-D passes
+// (one per axis), giving the identical result at O(r) instead of O(r^3).
+// _BlurAxis selects which axis this pass operates on (0=X, 1=Y, 2=Z).
+// Detail preservation is applied only on the final axis pass (controlled from C#).
 [numthreads(8, 8, 8)]
 void BlurDensity(uint3 id : SV_DispatchThreadID)
 {
     if (id.x >= (uint)_VolumeDims.x || id.y >= (uint)_VolumeDims.y || id.z >= (uint)_VolumeDims.z)
         return;
-
-    // --- Gaussian Blur and Detail Preservation Equations ---
-    // 1. Gaussian Weight:
-    //    W(x, y, z) = exp(-dist^2 / (2 * sigma^2))
-    //    where dist^2 = dx^2 + dy^2 + dz^2
-    //    and invTwoSig2 = 1.0 / (2 * sigma^2)
-    //
-    // 2. Normalization:
-    //    blurred = sum(W * sampleValue) / sum(W)
-    //
-    // 3. Detail Preservation:
-    //    finalValue = blurred + detailPreserve * original
-    // --------------------------------------------------------
 
     int3 sampleId = (int3)id;
     int3 dims = _VolumeDims;
@@ -235,25 +229,20 @@ void BlurDensity(uint3 id : SV_DispatchThreadID)
     float valueSum = 0.0;
     float weightSum = 0.0;
     float invTwoSig2 = 1.0 / max(2.0 * _BlurSigma * _BlurSigma, 1e-6);
-    int r = clamp(_BlurRadius, 1, 4);
+    int r = clamp(_BlurRadius, 1, 16);
+
+    // Unit vector along the current blur axis
+    int3 axis = int3(_BlurAxis == 0, _BlurAxis == 1, _BlurAxis == 2);
 
     [loop]
-    for (int dz = -r; dz <= r; dz++)
+    for (int d = -r; d <= r; d++)
     {
-        [loop]
-        for (int dy = -r; dy <= r; dy++)
-        {
-            [loop]
-            for (int dx = -r; dx <= r; dx++)
-            {
-                float dist2 = (float)(dx * dx + dy * dy + dz * dz);
-                float w = exp(-dist2 * invTwoSig2);
-                int3 coord = clamp(sampleId + int3(dx, dy, dz), int3(0, 0, 0), dims - 1);
-                float2 sampleValue = _DensityTexture3D_Read[coord];
-                valueSum += w * ((_BlurChannel == 0) ? sampleValue.r : sampleValue.g);
-                weightSum += w;
-            }
-        }
+        float dist2 = (float)(d * d);
+        float w = exp(-dist2 * invTwoSig2);
+        int3 coord = clamp(sampleId + axis * d, int3(0, 0, 0), dims - 1);
+        float2 sampleValue = _DensityTexture3D_Read[coord];
+        valueSum += w * ((_BlurChannel == 0) ? sampleValue.r : sampleValue.g);
+        weightSum += w;
     }
 
     float blurred = valueSum / max(weightSum, 1e-6);
