@@ -568,60 +568,6 @@ Transform:
   m_Children: []
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
---- !u!1 &281062055
-GameObject:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  serializedVersion: 6
-  m_Component:
-  - component: {fileID: 281062058}
-  - component: {fileID: 281062056}
-  m_Layer: 0
-  m_Name: water source
-  m_TagString: Untagged
-  m_Icon: {fileID: 0}
-  m_NavMeshLayer: 0
-  m_StaticEditorFlags: 0
-  m_IsActive: 1
---- !u!114 &281062056
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 281062055}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: ccc445b9f904c1446bcac3f66c2b47db, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: Assembly-CSharp::WaterSource
-  spawnMode: 0
-  tapExhausted: 0
-  emissionRate: 100
-  emissionDirection: {x: 0, y: -1, z: 0}
-  emissionSpeed: 100
-  emissionRadius: 0.15
-  initialTemperature: 25
-  isActive: 1
-  latticeSpacing: 0
-  latticeSize: {x: 1, y: 1, z: 1}
---- !u!4 &281062058
-Transform:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 281062055}
-  serializedVersion: 2
-  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: -1.056, y: 3.63779, z: -0.62775}
-  m_LocalScale: {x: 1, y: 1, z: 1}
-  m_ConstrainProportionsScale: 0
-  m_Children: []
-  m_Father: {fileID: 0}
-  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &308150037
 GameObject:
   m_ObjectHideFlags: 0
@@ -2585,6 +2531,7 @@ MonoBehaviour:
       volumeDims: {x: 128, y: 128, z: 128}
       vapourSmoothingRadiusWS: 0.1
       maxKernelRadiusVoxels: 2
+      neighborCountMax: 20
     raymarchBlur:
       liquidBlurEnabled: 1
       liquidBlurRadius: 2
@@ -3944,7 +3891,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 4161998456328252244, guid: 18cf1fa5220a198409fde72db8b3e2a5, type: 3}
       propertyPath: spawnPoolReserve
-      value: 32768
+      value: 0
       objectReference: {fileID: 0}
     - target: {fileID: 4161998456328252244, guid: 18cf1fa5220a198409fde72db8b3e2a5, type: 3}
       propertyPath: thermalDiffusivity
@@ -4039,5 +3986,4 @@ SceneRoots:
   - {fileID: 1724334553}
   - {fileID: 1268717250}
   - {fileID: 671089471}
-  - {fileID: 281062058}
   - {fileID: 1170001649}
