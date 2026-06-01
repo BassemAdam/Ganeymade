@@ -1462,7 +1462,7 @@ MonoBehaviour:
     m_ColorSpace: -1
     m_NumColorKeys: 4
     m_NumAlphaKeys: 2
-  minValue: 175
+  minValue: 0
   maxValue: 300
   computePlugin: {fileID: 1188592651}
   lastValidatedField: 2
@@ -2529,13 +2529,12 @@ MonoBehaviour:
       marchingCubesLUT: {fileID: 4900000, guid: 711f0eebef002a84e95e6dc230c006be, type: 3}
     densityGrid:
       volumeDims: {x: 128, y: 128, z: 128}
-      vapourSmoothingRadiusWS: 0.1
-      maxKernelRadiusVoxels: 2
-      neighborCountMax: 20
+      vapourSmoothingRadiusWS: 1
+      maxKernelRadiusVoxels: 3
     raymarchBlur:
       liquidBlurEnabled: 1
-      liquidBlurRadius: 2
-      liquidBlurSigma: 7
+      liquidBlurRadius: 16
+      liquidBlurSigma: 2
       liquidBlurDetailPreserve: 0
       vapourBlurEnabled: 1
       vapourBlurRadius: 4
@@ -2551,11 +2550,11 @@ MonoBehaviour:
       vapourBlurSigma: 0.1
       vapourBlurDetailPreserve: 0
     raymarchSmoothing:
-      liquidSmoothingRadiusWS: 0.1
+      liquidSmoothingRadiusWS: 1
       adaptiveRadiusEnabled: 0
       liquidBulkSmoothingRadiusWS: 1
-      adaptiveDensitySurface: 100
-      adaptiveDensityBulk: 300
+      adaptiveDensitySurface: 195.9
+      adaptiveDensityBulk: 198.1
       adaptiveDensityCurve: 1
     marchingCubesSmoothing:
       liquidSmoothingRadiusWS: 0
