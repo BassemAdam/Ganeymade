@@ -1,11 +1,10 @@
 using UnityEngine;
 
-/// <summary>
 /// Marker component: attach to any GameObject with a MeshRenderer to flag it
 /// as a boundary collision object for the SPH solver.
 /// Only meshes with this component will generate fixed boundary particles.
 /// Self-registers with VoxelTracerSystem for efficient per-frame lookup.
-/// </summary>
+
 public sealed class VoxelBoundaryCollider : MonoBehaviour
 {
     [Header("Normal Filter")]

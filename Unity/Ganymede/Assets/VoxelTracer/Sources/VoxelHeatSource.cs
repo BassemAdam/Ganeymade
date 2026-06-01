@@ -1,10 +1,9 @@
 using UnityEngine;
 
-/// <summary>
-/// Marker component: attach to any GameObject to mark it as a heat source.
-/// The voxelizer writes temperature values into voxels overlapping this object's bounds.
-/// Self-registers with VoxelTracerSystem.
-/// </summary>
+//Marker component: attach to any GameObject to mark it as a heat source.
+//he voxelizer writes temperature values into voxels overlapping this object's bounds.
+//Self-registers with VoxelTracerSystem.
+
 public sealed class VoxelHeatSource : MonoBehaviour
 {
     [Tooltip("Temperature value written into overlapping voxels (Kelvin or arbitrary units)")]

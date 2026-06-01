@@ -1,14 +1,14 @@
 using UnityEngine;
 
-/// <summary>
-/// Full-screen slice viewer of the voxel fill volume.
-/// Press a key to toggle the overlay on/off.
-/// Scrub slices with scroll wheel while overlay is visible.
-/// Press Tab to cycle display modes: Fill → SDF → HeatMap → Diffusivity → Fill…
-/// In SDF mode, hover the mouse to see the SDF value at that voxel.
-/// In HeatMap mode, hover to see the temperature value.
-/// In Diffusivity mode, hover to see the thermal diffusivity value.
-/// </summary>
+
+//Full-screen slice viewer of the voxel fill volume.
+//Press a key to toggle the overlay on/off.
+//Scrub slices with scroll wheel while overlay is visible.
+//Press Tab to cycle display modes: Fill -> SDF -> HeatMap -> Diffusivity -> Fill…
+//In SDF mode, hover the mouse to see the SDF value at that voxel.
+//In HeatMap mode, hover to see the temperature value.
+//In Diffusivity mode, hover to see the thermal diffusivity value.
+
 [RequireComponent(typeof(Camera))]
 [DefaultExecutionOrder(200)]
 public class VoxelSliceViewer : MonoBehaviour
@@ -106,7 +106,7 @@ public class VoxelSliceViewer : MonoBehaviour
         if (Input.GetKeyDown(KeyCode.Alpha2)) axis = SliceAxis.Y;
         if (Input.GetKeyDown(KeyCode.Alpha3)) axis = SliceAxis.Z;
 
-        // Tab cycles display mode: Fill → SDF → HeatMap → Diffusivity → Fill…
+        // Tab cycles display mode: Fill -> SDF -> HeatMap -> Diffusivity -> Fill…
         if (Input.GetKeyDown(KeyCode.Tab))
         {
             _displayMode = _displayMode switch
@@ -383,7 +383,7 @@ public class VoxelSliceViewer : MonoBehaviour
         _sliceTex.Apply(false);
     }
 
-    /// <summary>Map SDF value to a color: blue (inside/negative) → black (zero/surface) → red/yellow (outside/positive)</summary>
+    //Map SDF value to a color: blue (inside/negative) -> black (zero/surface) -> red/yellow (outside/positive)
     Color SDFToColor(float sdf)
     {
         float range = Mathf.Max(sdfDisplayRange, 0.001f);
@@ -402,62 +402,62 @@ public class VoxelSliceViewer : MonoBehaviour
         }
         else
         {
-            // Outside geometry: red → yellow (far = bright yellow, near surface = dark red)
+            // Outside geometry: red -> yellow (far = bright yellow, near surface = dark red)
             float a = t; // 0..1
             return new Color(a, a * 0.5f, 0f, 1f);
         }
     }
 
-    /// <summary>Map temperature to a cold-to-hot gradient: blue → cyan → green → yellow → red</summary>
+    //Map temperature to a cold-to-hot gradient: blue -> cyan -> green -> yellow -> red
     Color TemperatureToColor(float temp)
     {
         float range = Mathf.Max(heatMapMax - heatMapMin, 0.001f);
         float t = Mathf.Clamp01((temp - heatMapMin) / range);
 
-        // 5-stop gradient: blue(0) → cyan(0.25) → green(0.5) → yellow(0.75) → red(1)
+        // 5-stop gradient: blue(0) -> cyan(0.25) -> green(0.5) -> yellow(0.75) -> red(1)
         if (t < 0.25f)
         {
             float s = t / 0.25f;
-            return new Color(0f, s, 1f, 1f); // blue → cyan
+            return new Color(0f, s, 1f, 1f); // blue -> cyan
         }
         else if (t < 0.5f)
         {
             float s = (t - 0.25f) / 0.25f;
-            return new Color(0f, 1f, 1f - s, 1f); // cyan → green
+            return new Color(0f, 1f, 1f - s, 1f); // cyan -> green
         }
         else if (t < 0.75f)
         {
             float s = (t - 0.5f) / 0.25f;
-            return new Color(s, 1f, 0f, 1f); // green → yellow
+            return new Color(s, 1f, 0f, 1f); // green -> yellow
         }
         else
         {
             float s = (t - 0.75f) / 0.25f;
-            return new Color(1f, 1f - s, 0f, 1f); // yellow → red
+            return new Color(1f, 1f - s, 0f, 1f); // yellow -> red
         }
     }
 
-    /// <summary>Map diffusivity to a dark-to-bright purple gradient: black → indigo → violet → magenta → white</summary>
+    //Map diffusivity to a dark-to-bright purple gradient: black -> indigo -> violet -> magenta -> white
     Color DiffusivityToColor(float diff)
     {
         float range = Mathf.Max(diffusivityMax, 0.001f);
         float t = Mathf.Clamp01(diff / range);
 
-        // 4-stop gradient: dark purple(0) → purple(0.33) → magenta(0.66) → white(1)
+        // 4-stop gradient: dark purple(0) -> purple(0.33) -> magenta(0.66) -> white(1)
         if (t < 0.33f)
         {
             float s = t / 0.33f;
-            return new Color(0.15f * s, 0f, 0.4f * s, 1f); // black → dark purple
+            return new Color(0.15f * s, 0f, 0.4f * s, 1f); // black -> dark purple
         }
         else if (t < 0.66f)
         {
             float s = (t - 0.33f) / 0.33f;
-            return new Color(0.15f + 0.85f * s, 0f, 0.4f + 0.2f * s, 1f); // dark purple → magenta
+            return new Color(0.15f + 0.85f * s, 0f, 0.4f + 0.2f * s, 1f); // dark purple -> magenta
         }
         else
         {
             float s = (t - 0.66f) / 0.34f;
-            return new Color(1f, s, 0.6f + 0.4f * s, 1f); // magenta → white
+            return new Color(1f, s, 0.6f + 0.4f * s, 1f); // magenta -> white
         }
     }
 

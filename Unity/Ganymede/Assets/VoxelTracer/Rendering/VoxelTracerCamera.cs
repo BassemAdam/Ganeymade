@@ -1,20 +1,16 @@
 using UnityEngine;
 using UnityEngine.Rendering;
 
-/// <summary>
+
 /// Attach to a Camera to visualise the voxel volume produced by
 /// <see cref="VoxelTracerSystem"/> via DDA ray marching.
 /// Composites voxels on top of the normal scene rendering.
 /// Normals are derived from DDA face-crossing direction.
-///
 /// Requires <see cref="VoxelCompositeFeature"/> added to the active URP Renderer.
-/// </summary>
 [RequireComponent(typeof(Camera))]
 public sealed class VoxelTracerCamera : MonoBehaviour
 {
-    // ================================================================
     // Inspector
-    // ================================================================
 
     [Header("References")]
     public VoxelTracerSystem voxelSystem;
@@ -33,15 +29,13 @@ public sealed class VoxelTracerCamera : MonoBehaviour
     [Range(256, 4096)] public int maxSteps = 1024;
 
     [Header("Temperature Visualisation")]
-    public Texture3D tempTexture;      
+    public Texture3D tempTexture;
     public float minDisplayTemp = 0f;
     public float maxDisplayTemp = 100f;
 
     public enum VisMode { Lit = 0, Normals = 1 }
 
-    // ================================================================
     // Private state
-    // ================================================================
 
     Camera _cam;
     int _kernel;
@@ -50,9 +44,7 @@ public sealed class VoxelTracerCamera : MonoBehaviour
 
     static readonly int _VoxTex = Shader.PropertyToID("_VoxTex");
 
-    // ================================================================
     // Public accessors (used by VoxelCompositeFeature)
-    // ================================================================
 
     public bool IsReadyToRender => enabled && voxelSystem != null && voxelSystem.IsReady
                                    && rayMarchCS != null && _compositeMat != null
@@ -60,9 +52,7 @@ public sealed class VoxelTracerCamera : MonoBehaviour
     public Material CompositeMaterial => _compositeMat;
     public RenderTexture ColorRT => _colorRT;
 
-    // ================================================================
     // Lifecycle
-    // ================================================================
 
     void OnEnable()
     {
@@ -90,14 +80,12 @@ public sealed class VoxelTracerCamera : MonoBehaviour
         if (_compositeMat != null) { Destroy(_compositeMat); _compositeMat = null; }
     }
 
-    // ================================================================
     // Public API for VoxelCompositeFeature
-    // ================================================================
 
-    /// <summary>
-    /// Ensure the colour render target exists at the given resolution.
-    /// Called by VoxelCompositeFeature before recording render graph passes.
-    /// </summary>
+
+    //Ensure the colour render target exists at the given resolution.
+    //Called by VoxelCompositeFeature before recording render graph passes.
+
     public void EnsureColorRT(int w, int h)
     {
         if (_colorRT != null && _colorRT.width == w && _colorRT.height == h)
@@ -114,10 +102,8 @@ public sealed class VoxelTracerCamera : MonoBehaviour
         _colorRT.Create();
     }
 
-    /// <summary>
     /// Record compute-shader dispatch commands into the given CommandBuffer.
     /// Called by VoxelCompositeFeature inside a render graph unsafe pass.
-    /// </summary>
     public void DispatchRayMarch(CommandBuffer cmd, int w, int h)
     {
         if (!IsReadyToRender || _colorRT == null) return;
@@ -154,7 +140,7 @@ public sealed class VoxelTracerCamera : MonoBehaviour
         cmd.SetComputeTextureParam(rayMarchCS, _kernel, "_ColorOut", _colorRT);
 
         if (tempTexture != null)
-        cmd.SetComputeTextureParam(rayMarchCS, _kernel, "_TempTex", tempTexture);
+            cmd.SetComputeTextureParam(rayMarchCS, _kernel, "_TempTex", tempTexture);
         cmd.SetComputeFloatParam(rayMarchCS, "_MinTemp", minDisplayTemp);
         cmd.SetComputeFloatParam(rayMarchCS, "_MaxTemp", maxDisplayTemp);
 
@@ -162,9 +148,7 @@ public sealed class VoxelTracerCamera : MonoBehaviour
         cmd.DispatchCompute(rayMarchCS, _kernel, Mathf.CeilToInt(w / 8f), Mathf.CeilToInt(h / 8f), 1);
     }
 
-    // ================================================================
     // RT management
-    // ================================================================
 
     void ReleaseRTs()
     {
