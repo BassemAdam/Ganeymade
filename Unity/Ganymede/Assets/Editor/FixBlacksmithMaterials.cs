@@ -6,7 +6,6 @@ using System.Collections.Generic;
 
 // One-shot editor tool: converts all Blacksmith Pack materials to URP Lit with explicit texture mapping 
 // Run via menu: Tools -> Fix Blacksmith Materials.
-// Delete this script after use.
 
 public static class FixBlacksmithMaterials
 {
@@ -225,7 +224,7 @@ public static class FixBlacksmithMaterials
             if (hasAny) 
                 matched++;
 
-            string log = $"[Fix] {mat.name} (texBase={texBase}, smoothness={smoothness}):";
+            string log = $"Fix {mat.name} (texBase={texBase}, smoothness={smoothness}):";
             if (diffuse) 
                 log += $" diffuse={diffuse.name}";
             if (normal) 
@@ -239,7 +238,7 @@ public static class FixBlacksmithMaterials
             Debug.Log(log);
         }
 
-        Debug.Log($"[FixBlacksmithMaterials] Done: {count} materials processed, {matched} had textures, {count - matched} unmatched.");
+        Debug.Log($"FixBlacksmithMaterials Done: {count} materials processed, {matched} had textures, {count - matched} unmatched.");
 
         RestoreBlackGap();
 

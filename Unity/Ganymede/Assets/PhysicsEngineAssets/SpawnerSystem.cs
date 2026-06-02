@@ -3,9 +3,8 @@ using System.Collections.Generic;
 using System.Runtime.InteropServices;
 using UnityEngine;
 
-/// <summary>
-/// Manages fluid particle spawning from WaterSource components.
-/// </summary>
+// Manages fluid particle spawning from WaterSource components.
+
 [DefaultExecutionOrder(110)]
 [RequireComponent(typeof(UseComputePlugin))]
 public class SpawnManager : MonoBehaviour
@@ -16,7 +15,7 @@ public class SpawnManager : MonoBehaviour
     private const string PluginName = "RenderingPlugin";
 #endif
 
-    // ── Native entry-points ──────────────────────────────────────────────
+    // Native entry-points 
 
     [DllImport(PluginName)]
     private static extern void PatchParticles([In] int[] indices, [In] Particle[] data, int count);
@@ -26,7 +25,7 @@ public class SpawnManager : MonoBehaviour
     [DllImport(PluginName)]
     private static extern void ResetAllParticles([In] Particle[] data, int count);
 
-    // ── Inspector ────────────────────────────────────────────────────────
+    // Inspector fields 
 
     [Header("Pool")]
     [Tooltip("Maximum particles that can be spawned in a single frame across all sources.")]
@@ -48,8 +47,7 @@ public class SpawnManager : MonoBehaviour
     [Header("Debug")]
     public bool verbose = false;
 
-    // ── Internal state ───────────────────────────────────────────────────
-
+    //  Private variables
     private UseComputePlugin _sim;
     private WaterSource[] _sources;
     private int _scanCounter;
@@ -61,10 +59,10 @@ public class SpawnManager : MonoBehaviour
     private Particle[] _cpuParticles;
     private int _particleCount;
 
-    // Cached sim bounds — refreshed every frame (bounds can be dynamic)
+    // Cached sim bounds, refreshed every frame (bounds can be dynamic)
     private Vector3 _boundsMin, _boundsMax;
 
-    // Ring-buffer head for the slot search (avoids O(n) scan from 0 every frame)
+    // Ring-buffer head for the slot search 
     private int _searchHead;
     private int _tapSearchHead = 0;
 
@@ -80,8 +78,7 @@ public class SpawnManager : MonoBehaviour
     private int _skipReadbackFrames = 3;
     private bool _bulkSpawnDone = false;
 
-    // ── Unity lifecycle ──────────────────────────────────────────────────
-
+    // Unity lifecycle
     private void Start()
     {
         _sim = GetComponent<UseComputePlugin>();
@@ -106,14 +103,14 @@ public class SpawnManager : MonoBehaviour
         }
         ScanSources();
 
-        // Bulk-spawn: if all particles are dormant (full spawn pool), activate them
+        // bulk-spawn: if all particles are dormant , activate them
         // in one shot rather than trickling through PatchParticles frame-by-frame.
         if (TryBulkSpawn())
         {
             ResetAllParticles(_cpuParticles, _particleCount);
             _bulkSpawnDone = true;
             if (verbose)
-                Debug.Log($"[SpawnManager] Bulk-spawned all dormant particles in one shot.");
+                Debug.Log($"SpawnManager: Bulk-spawned all dormant particles in one shot.");
         }
         else
         {
@@ -121,14 +118,14 @@ public class SpawnManager : MonoBehaviour
         }
 
         if (verbose)
-            Debug.Log($"[SpawnManager] Initialized. pool={_particleCount}, sources={(_sources?.Length ?? 0)}");
+            Debug.Log($"SpawnManager: Initialized. pool={_particleCount}, sources={(_sources?.Length ?? 0)}");
     }
 
     private void Update()
     {
         if (_sources == null) return;
 
-        // Keep bounds current (supports moving/resizing containers)
+        // Keep bounds current  to supports moving or resizing containers
         _sim.GetBoundsWS(out _boundsMin, out _boundsMax);
 
         // Optionally re-scan for newly added / removed WaterSources
@@ -189,7 +186,7 @@ public class SpawnManager : MonoBehaviour
                     {
                         src.tapExhausted = true;
                         if (verbose)
-                            Debug.Log($"[SpawnManager] Tap '{src.name}' pool exhausted.");
+                            Debug.Log($"SpawnManager: Tap '{src.name}' pool exhausted.");
                     }
                     break;
                 }
@@ -244,9 +241,6 @@ public class SpawnManager : MonoBehaviour
         if (_patchCount > 0)
         {
             PatchParticles(_patchIndices, _patchData, _patchCount);
-
-            // if (verbose)
-            //     Debug.Log($"[SpawnManager] Spawned {_patchCount} particles this frame.");
         }
 
         // Refresh the CPU mirror so FindReclaimableSlot stays accurate.
@@ -276,12 +270,11 @@ public class SpawnManager : MonoBehaviour
         }
     }
 
-    // ── Slot reclamation ─────────────────────────────────────────────────
+    // Slot reclamation 
 
-    /// <summary>
-    /// Finds the next reclaimable particle slot using a ring-buffer search.
-    /// A slot is reclaimable when phase == -1 or the particle has left the simulation bounds by outOfBoundsMargin,
-    /// </summary>
+    // Finds the next reclaimable particle slot using a ring-buffer search.
+    // a slot is reclaimable when phase == -1 or the particle has left the simulation bounds by outOfBoundsMargin,
+
     private int FindReclaimableSlot()
     {
         for (int attempts = 0; attempts < _particleCount; attempts++)
@@ -297,25 +290,31 @@ public class SpawnManager : MonoBehaviour
 
     private bool IsReclaimable(ref Particle p, int index)
     {
-        if (_tapReservedSlots.Contains(index)) return false; // never recycle tap slots
+        if (_tapReservedSlots.Contains(index)) 
+            return false; // never recycle tap slots
 
-        if (p.phase == -1) return true;
+        if (p.phase == -1) 
+            return true;
 
         float m = outOfBoundsMargin;
         float reclaimMargin = m + 0.1f;
-        if (p.position.x < _boundsMin.x - reclaimMargin || p.position.x > _boundsMax.x + reclaimMargin) return true;
-        if (p.position.y < _boundsMin.y - reclaimMargin || p.position.y > _boundsMax.y + reclaimMargin) return true;
-        if (p.position.z < _boundsMin.z - reclaimMargin || p.position.z > _boundsMax.z + reclaimMargin) return true;
+        if (p.position.x < _boundsMin.x - reclaimMargin || p.position.x > _boundsMax.x + reclaimMargin) 
+            return true;
+        if (p.position.y < _boundsMin.y - reclaimMargin || p.position.y > _boundsMax.y + reclaimMargin) 
+            return true;
+        if (p.position.z < _boundsMin.z - reclaimMargin || p.position.z > _boundsMax.z + reclaimMargin) 
+            return true;
 
         return false;
     }
 
-    /// Finds the next slot that is explicitly dormant (phase == -1).
-    /// Used by tap sources — never reclaims escaped/out-of-bounds particles.
+    // Finds the next slot that is explicitly dormant (phase == -1).
+    // Used by tap sources , never reclaims escaped/out-of-bounds particles.
     private int FindDormantSlot()
     {
         int count = _tapSlotList.Count;
-        if (count == 0) return -1;
+        if (count == 0) 
+            return -1;
 
         for (int attempts = 0; attempts < count; attempts++)
         {
@@ -328,7 +327,7 @@ public class SpawnManager : MonoBehaviour
         return -1;
     }
 
-    // ── Scene scanning ───────────────────────────────────────────────────
+    // Scene scanning 
 
     private void ScanSources()
     {
@@ -340,25 +339,27 @@ public class SpawnManager : MonoBehaviour
             Array.Copy(prev, _emitAccumulators, Mathf.Min(prev.Length, _emitAccumulators.Length));
 
         if (verbose)
-            Debug.Log($"[SpawnManager] Found {_sources.Length} WaterSource(s).");
+            Debug.Log($"SpawnManager: Found {_sources.Length} WaterSource(s).");
     }
 
-    // ── Bulk spawn ───────────────────────────────────────────────────────
+    // Bulk spawn 
 
-    /// <summary>
-    /// If all non-tap particles are dormant (full spawn pool), activate them all
-    /// at their source positions in one shot. Returns true if bulk spawn was performed.
-    /// </summary>
+    // If all non-tap particles are dormant (full spawn pool), activate them all
+    // at their source positions in one shot. Returns true if bulk spawn was performed.
+
     private bool TryBulkSpawn()
     {
-        if (_sources == null || _sources.Length == 0) return false;
+        if (_sources == null || _sources.Length == 0) 
+            return false;
 
         // Count dormant non-tap slots
         int dormantCount = 0;
         for (int i = 0; i < _particleCount; i++)
         {
-            if (_tapReservedSlots.Contains(i)) continue;
-            if (_cpuParticles[i].phase == -1) dormantCount++;
+            if (_tapReservedSlots.Contains(i)) 
+                continue;
+            if (_cpuParticles[i].phase == -1) 
+                dormantCount++;
         }
 
         // Only bulk-spawn if majority of particles are dormant (spawn pool is full)
@@ -369,24 +370,28 @@ public class SpawnManager : MonoBehaviour
         var sphereSources = new List<WaterSource>();
         foreach (var src in _sources)
         {
-            if (src == null || !src.isActive) continue;
+            if (src == null || !src.isActive) 
+                continue;
             if (src.spawnMode == WaterSource.SpawnMode.Lattice)
                 latticeSources.Add(src);
             else if (src.spawnMode == WaterSource.SpawnMode.Sphere)
                 sphereSources.Add(src);
         }
-        if (sphereSources.Count == 0 && latticeSources.Count == 0) return false;
+        if (sphereSources.Count == 0 && latticeSources.Count == 0) 
+            return false;
 
         // Build a queue of dormant slot indices
         var dormantSlots = new List<int>(dormantCount);
         for (int i = 0; i < _particleCount; i++)
         {
-            if (_tapReservedSlots.Contains(i)) continue;
-            if (_cpuParticles[i].phase == -1) dormantSlots.Add(i);
+            if (_tapReservedSlots.Contains(i)) 
+                continue;
+            if (_cpuParticles[i].phase == -1) 
+                dormantSlots.Add(i);
         }
         int slotHead = 0;
 
-        // --- Lattice sources: place particles at exact grid positions ---
+        // Lattice sources: place particles at exact grid positions 
         var latticePositions = new List<Vector3>();
         foreach (var src in latticeSources)
         {
@@ -409,10 +414,10 @@ public class SpawnManager : MonoBehaviour
             }
 
             if (verbose)
-                Debug.Log($"[SpawnManager] Lattice '{src.name}': placed {Mathf.Min(latticePositions.Count, slotHead)} particles.");
+                Debug.Log($"SpawnManager : Lattice '{src.name}': placed {Mathf.Min(latticePositions.Count, slotHead)} particles.");
         }
 
-        // --- Sphere sources: distribute remaining dormant slots ---
+        // Sphere sources: distribute remaining dormant slots 
         if (sphereSources.Count > 0)
         {
             int remaining = dormantSlots.Count - slotHead;

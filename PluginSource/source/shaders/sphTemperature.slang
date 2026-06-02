@@ -40,9 +40,9 @@ void computeMain(uint3 threadId: SV_DispatchThreadID)
         return;
     }
 
-    float h  = params.smoothingRadius;
+    float h = params.smoothingRadius;
     float h2 = h * h;
-    uint  n  = params.particleCount;
+    uint  n = params.particleCount;
 
     int3 myCell = getCellCoord(p.position, params.gridOrigin, h);
 
@@ -51,24 +51,25 @@ void computeMain(uint3 threadId: SV_DispatchThreadID)
     float weightSum = 0.0;
 
     // Check if this particle is inside any heat source
-    // Heat sources act as temperature boundary conditions in both directions:
-    // they heat cold particles AND cool hot particles toward the source temperature.
+    // heat sources act as temperature boundary conditions in both directions:
+    // they heat cold particles and cool hot particles toward the source temperature.
     bool insideHeatSource = false;
-    bool nearHeatSource   = false;
+    bool nearHeatSource = false;
     for (int s = 0; s < 16; s++)
     {
-        if (heatSources[s].active == 0u) continue;
-        float3 hsPos  = float3(heatSources[s].position[0], heatSources[s].position[1], heatSources[s].position[2]);
-        float3 diff   = p.position - hsPos;
-        float  dist2  = dot(diff, diff);
-        float  r2     = heatSources[s].radius * heatSources[s].radius;
+        if (heatSources[s].active == 0u) 
+            continue;
+        float3 heatSourcePos = float3(heatSources[s].position[0], heatSources[s].position[1], heatSources[s].position[2]);
+        float3 diff = p.position - heatSourcePos;
+        float dist2 = dot(diff, diff);
+        float r2 = heatSources[s].radius * heatSources[s].radius;
         if (dist2 <= r2)
         {
-            // Bidirectional: lerp toward source temperature each frame for smooth response
+            // bidirectional: lerp toward source temperature each frame for smooth response
             float rate = clamp(params.thermalDiffusivity * params.dt * 10.0, 0.0, 1.0);
             p.temperature = lerp(p.temperature, heatSources[s].temperature, rate);
             insideHeatSource = true;
-            nearHeatSource   = true;
+            nearHeatSource = true;
             break;
         }
         if (dist2 <= r2 * 4.0)
@@ -81,81 +82,85 @@ void computeMain(uint3 threadId: SV_DispatchThreadID)
     if (!insideHeatSource)
     {
         for (int dz = -1; dz <= 1; dz++)
-        for (int dy = -1; dy <= 1; dy++)
-        for (int dx = -1; dx <= 1; dx++)
         {
-            uint key = hashCell(myCell + int3(dx, dy, dz), n);
-            uint idx = startIndices[key];
-            if (idx == 0xFFFFFFFF) continue;
-
-            while (idx < n && hashKeys[idx] == key)
+            for (int dy = -1; dy <= 1; dy++)
             {
-                uint j = indices[idx];
-                if (j != i)
+                for (int dx = -1; dx <= 1; dx++)
                 {
-                    Particle pj = particlesIn[j];
-                    float3 diff = p.position - pj.position;
-                    float r2 = dot(diff, diff);
+                    uint key = hashCell(myCell + int3(dx, dy, dz), n);
+                    uint idx = startIndices[key];
+                    if (idx == 0xFFFFFFFF) 
+                        continue;
 
-                    if (r2 < h2 && r2 > 1e-12)
+                    while (idx < n && hashKeys[idx] == key)
                     {
-                        float w = heatKernel(r2, h2);
-                        dT += w * (pj.temperature - p.temperature) / pj.density;
-                        weightSum += w;
+                        uint j = indices[idx];
+                        if (j != i)
+                        {
+                            Particle pj = particlesIn[j];
+                            float3 diff = p.position - pj.position;
+                            float r2 = dot(diff, diff);
 
-                        // Count liquid neighbors above (for surface detection)
-                        if (pj.phase == 0 && pj.position.y > p.position.y + h * 0.2)
-                            liquidAbove++;
+                            if (r2 < h2 && r2 > 1e-12)
+                            {
+                                float w = heatKernel(r2, h2);
+                                dT += w * (pj.temperature - p.temperature) / pj.density;
+                                weightSum += w;
+
+                                // Count liquid neighbors above (for surface detection)
+                                if (pj.phase == 0 && pj.position.y > p.position.y + h * 0.2)
+                                    liquidAbove++;
+                            }
+                        }
+                        idx++;
                     }
                 }
-                idx++;
             }
         }
 
-        // Apply conduction
+        // apply conduction
         float conduction = params.thermalDiffusivity * params.particleMass * params.poly6Const * dT * params.dt;
 
-        // Apply ambient cooling (Newton's law of cooling)
+        // apply ambient cooling (Newton's law of cooling)
         float cooling = params.coolingRate * (p.temperature - params.ambientTemperature) * params.dt;
 
         deltaT = conduction - cooling;
     }
 
     // Latent heat model: absorb/release energy at boiling point
-    // Per-particle random factor for condensation variation (stable per particle index)
+
+    // random factor per particle for condensation variation (stable per particle index)
     float randHash = frac(sin(float(i) * 12.9898 + 78.233) * 43758.5453);
     float randScale = 0.5 + randHash; // range [0.5, 1.5]
 
-    // Effective boiling point rises with local pressure (Clausius-Clapeyron approximation):
+    // effective boiling point rises with local pressure (Clausius-Clapeyron approximation):
     // deep/high-pressure particles are harder to boil than surface/low-pressure particles.
-    float effectiveBoilingTemp = params.boilingTemperature
-                               + max(p.pressure, 0.0) * params.pressureBoilingScale;
+    float effectiveBoilingTemp = params.boilingTemperature + max(p.pressure, 0.0) * params.pressureBoilingScale;
 
     if (p.phase == 0 && p.temperature + deltaT > effectiveBoilingTemp)
     {
         if (liquidAbove > 0)
         {
-            // Buried particle: clamp at effective boiling, no evaporation.
+            // buried particle hence clamp at effective boiling, no evaporation.
             p.temperature = effectiveBoilingTemp;
         }
         else
         {
-            // Surface particle: stochastic nucleation driven by superheat.
+            // surface particle: apply stochastic nucleation driven by superheat.
             float superheat = (p.temperature + deltaT) - effectiveBoilingTemp;
 
-            // Nucleation probability scales with superheat relative to boiling temp.
-            // A particle far above boiling snaps to gas quickly; one just at the threshold waits.
-            float nucleationChance = clamp(superheat / max(effectiveBoilingTemp, 1e-6), 0.0, 1.0)
-                                   * params.dt * 10.0;
+            // nucleation probability scales with superheat relative to boiling temp
+            // A particle far above boiling snaps to gas quickly while one just at the threshold waits.
+            float nucleationChance = clamp(superheat / max(effectiveBoilingTemp, 1e-6), 0.0, 1.0) * params.dt * 10.0;
 
-            // Time-varying per-particle random seed for stochastic nucleation
+            // time-varying random seed for stochastic nucleation
             float seed = float(i) * 12.9898 + params.dt * float(i % 256u) * 43.758 + 1.618;
             float randNuc = frac(sin(seed) * 43758.5453);
 
             p.temperature = effectiveBoilingTemp;
             p.latentHeatAccum += superheat;
 
-            // Nucleation fires when: random roll passes AND at least half the latent heat is stored.
+            // nucleation fires when random roll passes and more than half the latent heat is stored.
             if (randNuc < nucleationChance && p.latentHeatAccum >= params.latentHeat * 0.5)
             {
                 p.phase = 1;
@@ -163,7 +168,7 @@ void computeMain(uint3 threadId: SV_DispatchThreadID)
             }
             else if (p.latentHeatAccum >= params.latentHeat)
             {
-                // Deterministic fallback: always evaporate once fully charged.
+                // deterministic fallback: always evaporate once fully charged.
                 p.phase = 1;
                 p.latentHeatAccum = params.latentHeat;
             }
@@ -176,10 +181,7 @@ void computeMain(uint3 threadId: SV_DispatchThreadID)
             p.temperature += deltaT;
 
         // Base drain from ambient cooling
-        float coolingDrain = params.coolingRate
-                           * (effectiveBoilingTemp - params.ambientTemperature)
-                           * params.dt
-                           * randScale;
+        float coolingDrain = params.coolingRate * (effectiveBoilingTemp - params.ambientTemperature) * params.dt * randScale;
 
         // Cold source accelerates condensation proportional to how far below boiling it pulls the particle
         if (insideHeatSource && p.temperature < effectiveBoilingTemp)
@@ -188,7 +190,7 @@ void computeMain(uint3 threadId: SV_DispatchThreadID)
             coolingDrain += coldDelta * params.dt * 5.0; // fast drain when actively chilled
         }
 
-        // Drain latent heat. Only clamp temperature when NOT being actively chilled by a source.
+        // Drain latent heat. Only clamp temperature when not being actively chilled by a source.
         if (p.temperature <= effectiveBoilingTemp)
         {
             p.latentHeatAccum -= coolingDrain;

@@ -3,17 +3,13 @@ using UnityEngine;
 using UnityEngine.UI;
 using TMPro;
 
-/// <summary>
-/// Moves a plain Camera through a sequence of waypoint stations using a quadratic Bezier curve for smooth animated transitions.
-/// Creates its own Next/Previous UI buttons at runtime 
-///
-/// How to use:
-/// 1) Attach this script to the Camera GameObject
-/// 2) Populate the Stations array with the waypoint GameObjects in order 
-/// </summary>
+// Moves a plain Camera through a sequence of waypoint stations using a quadratic Bezier curve for smooth animated transitions.
+// Creates its own Next/Previous UI buttons at runtime 
+
+
 public class BlacksmithMinigame : MonoBehaviour
 {
-    // --- Station Definition -------------------------------
+    // Station Definition 
 
     [System.Serializable]
     public class Station
@@ -29,7 +25,7 @@ public class BlacksmithMinigame : MonoBehaviour
         public Vector3 controlPointOffset = new Vector3(0f, 1.5f, 0f);
     }
 
-    // ---- Inspector Fields ------------------------------------
+    // Inspector Fields 
 
     [Header("Stations (fill in order)")]
     public Station[] stations;
@@ -62,31 +58,31 @@ public class BlacksmithMinigame : MonoBehaviour
              "methods on arrival and locks the Next button until each stage is ready.")]
     public IngotInteraction ingotInteraction;
 
-    // ------- Runtime State ----------------------------
+    // Runtime State 
 
     [Header("State (read-only in Play)")]
     [SerializeField] private int  currentStationIndex = 0;
     [SerializeField] private bool isMoving  = false;
 
-    // ------- Events ------------------------------
+    //  Events 
 
     public event System.Action<int, Station> OnStationReached;
     public event System.Action<int, int> OnTravelStarted;
 
-    // --------- Private UI References -----------------------
+    // Private variables
 
     private Canvas _canvas;
     private Button _nextButton;
     private Button _prevButton;
     private TMP_Text _stationLabel;   // falls back to Text if TMP unavailable
 
-    // --- Unity Lifecycle --------------------------
+    // Unity Lifecycle 
 
     private void Start()
     {
         if (stations == null || stations.Length == 0)
         {
-            Debug.LogError("[StationNavigator] No stations assigned in the Inspector.");
+            Debug.LogError("StationNavigator: No stations assigned in the Inspector.");
             return;
         }
 
@@ -120,7 +116,7 @@ public class BlacksmithMinigame : MonoBehaviour
             GoToPreviousStation();
     }
 
-    // --- Public functions -----------------------
+    //  Public functions 
 
     public void GoToNextStation()
     {
@@ -151,7 +147,7 @@ public class BlacksmithMinigame : MonoBehaviour
     public int CurrentStationIndex => currentStationIndex;
     public string CurrentStationLabel => stations[currentStationIndex].label;
 
-    // --- UI building --------------------
+    //  UI building 
 
     private void BuildUI()
     {
@@ -176,15 +172,15 @@ public class BlacksmithMinigame : MonoBehaviour
 
         canvasGO.AddComponent<GraphicRaycaster>();
 
-        // --- Station label (top-center) -----------------
+        // Station label (top-center) 
         _stationLabel = CreateLabel(canvasGO,"StationLabel","", new Vector2(0.5f, 1f), new Vector2(0f, -40f),new Vector2(400f, 50f),
             uiFontSize + 2, stationLabelColor);
 
-        // --- Next button (bottom-right) -----------------
+        // Next button (bottom-right) 
         _nextButton = CreateButton(canvasGO,"NextButton", "Next ->",new Vector2(1f, 0f),new Vector2(-160f, 60f),new Vector2(140f, 50f));
         _nextButton.onClick.AddListener(GoToNextStation);
 
-        // ---- Previous button (bottom-left) -----------------
+        // Previous button (bottom-left)
         if (showPreviousButton)
         {
             _prevButton = CreateButton(canvasGO,"PrevButton","<-  Back",new Vector2(0f, 0f),new Vector2(160f, 60f), new Vector2(140f, 50f));
@@ -266,7 +262,7 @@ public class BlacksmithMinigame : MonoBehaviour
         return btn;
     }
 
-    // --- UI Refresh -----------------------
+    //  UI Refresh 
     private void RefreshUI()
     {
         if (_stationLabel != null)
@@ -332,7 +328,7 @@ public class BlacksmithMinigame : MonoBehaviour
         }
     }
 
-    // --- Movement ------------------------------
+    //  Movement 
 
     private void TravelToStation(int targetIndex)
     {
@@ -379,7 +375,7 @@ public class BlacksmithMinigame : MonoBehaviour
         OnStationReached?.Invoke(toIndex, stations[toIndex]);
     }
 
-    /// Called immediately after the camera arrives at a station.
+    // Called immediately after the camera arrives at a station.
     private void HandleIngotPlacement(int stationIndex)
     {
         if (ingotInteraction == null) return;
@@ -399,14 +395,14 @@ public class BlacksmithMinigame : MonoBehaviour
     {
         if (stations[index].waypoint == null)
         {
-            Debug.LogWarning($"[StationNavigator] Waypoint for '{stations[index].label}' is null.");
+            Debug.LogWarning($"StationNavigator: Waypoint for '{stations[index].label}' is null.");
             return;
         }
         transform.position = stations[index].waypoint.position;
         transform.rotation = stations[index].waypoint.rotation;
     }
 
-    // --- Scene Gizmos ---------------------
+    //  Scene Gizmos
 
     private void OnDrawGizmos()
     {

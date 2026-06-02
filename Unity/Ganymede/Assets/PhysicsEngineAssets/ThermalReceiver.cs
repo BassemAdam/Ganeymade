@@ -8,7 +8,7 @@ using System.Collections.Generic;
 
 public class ThermalReceiver : MonoBehaviour
 {
-    // ─── Native plugin imports ──────────────────────────────────────────
+    // Native plugin imports 
 
     [DllImport("RenderingPlugin")]
     private static extern void SetSolidComputeData(float[] data, int count);
@@ -31,7 +31,7 @@ public class ThermalReceiver : MonoBehaviour
     [DllImport("RenderingPlugin")]
     private static extern void SetHeatSourceData(float[] pinTemperatures, int count);
 
-    // ─── Configuration ──────────────────────────────────────────────────
+    // Inspector fields 
 
     [Header("Temperature Visualization")]
     public float maxDisplayTemp = 300f;
@@ -53,7 +53,7 @@ public class ThermalReceiver : MonoBehaviour
     public VoxelTracerCamera voxelTracerCamera;
 
 
-    // --------------- private variables ----------
+    // private variables 
 
     private float[] gridData;
     private uint[] maskData;
@@ -80,7 +80,7 @@ public class ThermalReceiver : MonoBehaviour
     private int _lastVoxelizeFrameCount = -1;
     private int _settleFramesRemaining = 0;
 
-    // ------------------- public variables -------------------------
+    // public variables 
 
     // live diffused temperature array (read-only)
     // Null until initialised.
@@ -88,7 +88,7 @@ public class ThermalReceiver : MonoBehaviour
     public bool IsInitialized => initialized;
     public Texture3D tempTexture => _tempTexture;
 
-    // --------- Lifecycle ---------------------------------------
+    //  Unity Lifecycle 
 
     IEnumerator Start()
     {
@@ -140,7 +140,8 @@ public class ThermalReceiver : MonoBehaviour
         // Check if the grid size changed 
         if (voxelTracer.Nx != gridWidth || voxelTracer.Ny != gridHeight || voxelTracer.Nz != gridDepth)
         {
-            if (verbose) Debug.Log("[ThermalReceiver] Voxel grid changed — reinitializing diffusion.");
+            if (verbose) 
+                Debug.Log("ThermalReceiver Voxel grid changed, reinitializing diffusion.");
             StartCoroutine(Reinitialize());
             return;
         }
@@ -164,7 +165,7 @@ public class ThermalReceiver : MonoBehaviour
         {
             _settleFramesRemaining--;
             voxelFrameChanged = true;
-            if (verbose) Debug.Log($"[ThermalReceiver] Post-move settle refresh — {_settleFramesRemaining} remaining.");
+            if (verbose) Debug.Log($"ThermalReceiver: Post-move settle refresh , {_settleFramesRemaining} remaining.");
         }
 
         if ((HeatSourcesChanged() || voxelFrameChanged) && !_refreshingHeatSources)
@@ -172,9 +173,9 @@ public class ThermalReceiver : MonoBehaviour
             if (verbose)
             {
                 if (voxelFrameChanged)
-                    Debug.Log("[ThermalReceiver] Voxel grid updated (dynamic objects) — refreshing GPU data.");
+                    Debug.Log("ThermalReceiver: Voxel grid updated (dynamic objects), refreshing GPU data.");
                 else
-                    Debug.Log("[ThermalReceiver] start heat source refresh");
+                    Debug.Log("ThermalReceiver: start heat source refresh");
             }
             StartCoroutine(RefreshSolidData());
         }
@@ -205,7 +206,7 @@ public class ThermalReceiver : MonoBehaviour
             yield return new WaitUntil(() => req.done);
             if (req.hasError)
             {
-                Debug.LogError("[ThermalReceiver] FillTexture readback error");
+                Debug.LogError("ThermalReceiver: FillTexture readback error");
             }
             else
             {
@@ -227,7 +228,7 @@ public class ThermalReceiver : MonoBehaviour
             yield return new WaitUntil(() => req.done);
             if (req.hasError)
             {
-                Debug.LogError("[ThermalReceiver] TemperatureTexture readback error");
+                Debug.LogError("ThermalReceiver: TemperatureTexture readback error");
             }
             else
             {
@@ -249,7 +250,7 @@ public class ThermalReceiver : MonoBehaviour
             yield return new WaitUntil(() => req.done);
             if (req.hasError)
             {
-                Debug.LogError("[ThermalReceiver] DiffusivityTexture readback error");
+                Debug.LogError("ThermalReceiver: DiffusivityTexture readback error");
             }
             else
             {
@@ -272,7 +273,7 @@ public class ThermalReceiver : MonoBehaviour
             yield return new WaitUntil(() => req.done);
             if (req.hasError)
             {
-                Debug.LogError("[ThermalReceiver] HeatSourceTexture readback error");
+                Debug.LogError("ThermalReceiver: HeatSourceTexture readback error");
             }
             else
             {
@@ -289,13 +290,14 @@ public class ThermalReceiver : MonoBehaviour
         }
         else
         {
-            if (verbose) Debug.LogWarning("[ThermalReceiver] HeatSourceTexture is null — " +
-                             "no heat sources will be pinned.  " +
-                             "Apply the VoxelTracerSystem patch to generate this texture.");
+            if (verbose) 
+                Debug.LogWarning("ThermalReceiver: HeatSourceTexture is null, no heat sources are pinned" +
+                    "Apply the VoxelTracerSystem patch to generate this texture.");
             Array.Clear(heatSourceData, 0, heatSourceData.Length);
         }
 
-        if (verbose) Debug.Log("[ThermalReceiver] Texture readback complete. Uploading data to diffusion shader.");
+        if (verbose)   
+            Debug.Log("ThermalReceiver: Texture readback complete. Uploading data to diffusion shader.");
 
         SetDiffusivityData(diffusivityData, gx * gy * gz);
     }
@@ -368,9 +370,7 @@ public class ThermalReceiver : MonoBehaviour
         foreach (float v in heatSourceData) 
             if (v > 0f) 
                 pinnedAfterReadback++;
-        // if (verbose)
-        //     Debug.Log($"[ThermalReceiver] [STAGE 1] After HeatSourceTexture GPU readback — pinnedVoxels={pinnedAfterReadback}");
-
+        
         //preserve the existing temps for fixed solid voxels, seed new solid voxels at ambient
         GetSolidComputeResult(readbackData, total);
         for (int i = 0; i < total; i++)
@@ -385,9 +385,7 @@ public class ThermalReceiver : MonoBehaviour
         foreach (float v in heatSourceData) 
             if (v > 0f) 
                 pinnedBeforeUpload++;
-        // if (verbose)
-        //     Debug.Log($"[ThermalReceiver] [STAGE 2] About to call SetHeatSourceData — pinnedVoxels={pinnedBeforeUpload}");
-
+        
         SetHeatSourceData(heatSourceData, total);
 
         SnapshotCurrentSources();
@@ -404,16 +402,14 @@ public class ThermalReceiver : MonoBehaviour
             foreach (uint v in maskData) 
                 if (v > 0u) 
                     solidCount++;
-            Debug.Log($"[ThermalReceiver] Solid data refreshed — solidVoxels={solidCount}  pinnedVoxels={pinnedCount}");
+            Debug.Log($"ThermalReceiver: Solid data refreshed : solidVoxels={solidCount}  pinnedVoxels={pinnedCount}");
         }
     }
 
-    // ─── Change detection ────────────────────────────────────────────────
+    //  Change detection 
 
-    /// <summary>
-    /// Returns true if the registered heat sources differ from the last snapshot.
-    /// Checks: count, instance IDs, temperatures, active state, positions, radii.
-    /// </summary>
+    // Returns true if the registered heat sources differ from the last snapshot.
+    // Checks count, instance IDs, temperatures, active state, positions and radii.
     private bool HeatSourcesChanged()
     {
         var sources = VoxelTracerSystem.SolidMaterials;
@@ -426,7 +422,6 @@ public class ThermalReceiver : MonoBehaviour
 
         if ( verbose && count != _trackedSourceSnapshots.Count) 
         {
-            //Debug.Log($"[ThermalReceiver] [CHANGED] Source count changed: tracked={_trackedSourceSnapshots.Count} current={count}");
             return true;
         }
 
@@ -440,17 +435,17 @@ public class ThermalReceiver : MonoBehaviour
                 continue;
             if (!snapshotMap.TryGetValue(sm.GetInstanceID(), out var snap)) 
                 {
-                    if (verbose) Debug.Log($"[ThermalReceiver] [CHANGED] New untracked source: {sm.name}");
+                    if (verbose) Debug.Log($"ThermalReceiver: CHANGED New untracked source: {sm.name}");
                     return true;
                 }
             if (snap.isContinuousHeatSource != sm.isContinuousHeatSource) 
                 {
-                    if (verbose) Debug.Log($"[ThermalReceiver] [CHANGED] isContinuousHeatSource toggled on {sm.name}");
+                    if (verbose) Debug.Log($"ThermalReceiver: CHANGED isContinuousHeatSource toggled on {sm.name}");
                     return true;
                 }
             if (!Mathf.Approximately(snap.temperature, sm.temperature)) 
                 {
-                    if (verbose) Debug.Log($"[ThermalReceiver] [CHANGED] Temperature changed on {sm.name}: {snap.temperature} to {sm.temperature}");
+                    if (verbose) Debug.Log($"ThermalReceiver: CHANGED Temperature changed on {sm.name}: {snap.temperature} to {sm.temperature}");
                     return true;
                 }
 
@@ -458,10 +453,9 @@ public class ThermalReceiver : MonoBehaviour
             var r = sm.GetComponent<Renderer>();
             Vector3 currentCenter = r != null ? r.bounds.center : sm.transform.position;
             if ((snap.boundsCenter - currentCenter).sqrMagnitude > 1e-6f) 
-               {
-                    //Debug.Log($"[ThermalReceiver] [CHANGED] Position changed on {sm.name}: {snap.boundsCenter} to {currentCenter}");
-                    return true;
-                }
+            {
+                return true;
+            }
         }
         return false;
     }
@@ -489,7 +483,7 @@ public class ThermalReceiver : MonoBehaviour
     {
         initialized = false;
 
-        //save  the current temperatures before wiping arrays to read back whatever the GPU has to reseed after resize.
+        //save the current temperatures before wiping arrays to read back whatever the GPU has to reseed after resize.
         float[] oldReadback = null;
         int oldTotal = gridWidth * gridHeight * gridDepth;
         if (readbackData != null && oldTotal > 0)
@@ -550,7 +544,6 @@ public class ThermalReceiver : MonoBehaviour
             for (int i = 0; i < totalCells; i++)
                 gridData[i] = maskData[i] == 1u ? defaultAmbientTemp : 0f;
         }
-        // ────────────────────────────────────────────────────────────────────
 
         SetSolidComputeData(gridData, totalCells);
         SetMaskData(maskData, totalCells);
@@ -565,14 +558,10 @@ public class ThermalReceiver : MonoBehaviour
         initialized = true;
     }
 
-    // ─── Diffusion health logging ────────────────────────────────────────
+    //  Diffusion health logging
 
-    /// <summary>
-    /// Reads back the current temperature buffer and logs min / max / avg
-    /// so you can confirm heat is spreading frame-over-frame.
-    /// Also warns if the buffer is all-zero (upload never reached the GPU)
-    /// or completely static (diffusion is stalled / shader not running).
-    /// </summary>
+    // Reads back the current temperature buffer and logs min / max / avg
+
     private void LogDiffusionStats(float dt)
     {
         GetSolidComputeResult(readbackData, readbackData.Length);
@@ -581,9 +570,7 @@ public class ThermalReceiver : MonoBehaviour
         foreach (float v in heatSourceData) 
             if (v > 0f) 
                 pinnedAtLogTime++;
-        // if (verbose)
-        //     Debug.Log($"[ThermalReceiver] [STAGE 3] heatSourceData at log time — pinnedVoxels={pinnedAtLogTime}");
-
+        
         float minT = float.MaxValue;
         float maxT = float.MinValue;
         double sumT = 0;
@@ -592,13 +579,17 @@ public class ThermalReceiver : MonoBehaviour
 
         for (int i = 0; i < readbackData.Length; i++)
         {
-            if (maskData[i] == 0) continue;
+            if (maskData[i] == 0) 
+                continue;
             float t = readbackData[i];
-            if (t < minT) minT = t;
-            if (t > maxT) maxT = t;
+            if (t < minT) 
+                minT = t;
+            if (t > maxT) 
+                maxT = t;
             sumT += t;
             solidCount++;
-            if (heatSourceData[i] > 0f) pinnedCount++;
+            if (heatSourceData[i] > 0f) 
+                pinnedCount++;
         }
 
         float avgT = solidCount > 0 ? (float)(sumT / solidCount) : 0f;
@@ -607,7 +598,7 @@ public class ThermalReceiver : MonoBehaviour
         var sources = VoxelTracerSystem.SolidMaterials;
         var sb = new System.Text.StringBuilder();
 
-        sb.AppendLine($"[ThermalReceiver] Frame {frameCount}  dt={dt:F4}  " +
+        sb.AppendLine($"ThermalReceiver: Frame {frameCount}  dt={dt:F4}  " +
                     $"min={minT:F2}  max={maxT:F2}  avg={avgT:F4}  " +
                     $"solidCells={solidCount}/{readbackData.Length}  pinnedVoxels={pinnedCount}");
 
@@ -644,9 +635,10 @@ public class ThermalReceiver : MonoBehaviour
                     for (int x = 0; x < gridWidth; x++)
                     {
                         int i = z * gridWidth * gridHeight + y * gridWidth + x;
-                        if (maskData[i] == 0) continue;
+                        if (maskData[i] == 0) 
+                            continue;
 
-                        // World position of voxel centre — mirrors the kernel's worldPos calculation
+                        // World position of voxel centre , mirrors the kernel's worldPos calculation
                         Vector3 worldPos = voxelTracer.ActiveGridMin +
                                         (new Vector3(x, y, z) + Vector3.one * 0.5f) * voxelTracer.ActiveVoxelSize;
 
@@ -669,7 +661,7 @@ public class ThermalReceiver : MonoBehaviour
 
                         pinnedBySource++;
 
-                        // Neighbouring solid voxels that aren't pinned — these show diffusion effect
+                        // Neighbouring solid voxels that aren't pinned , these show diffusion effect
                         float t = readbackData[i];
                         srcSumT += t;
                         srcSolidCount++;
@@ -690,8 +682,10 @@ public class ThermalReceiver : MonoBehaviour
                     for (int x = 0; x < gridWidth; x++)
                     {
                         int i = z * gridWidth * gridHeight + y * gridWidth + x;
-                        if (maskData[i] == 0) continue;
-                        if (heatSourceData[i] > 0f) continue;  // skip pinned voxels
+                        if (maskData[i] == 0) 
+                            continue;
+                        if (heatSourceData[i] > 0f) 
+                            continue;  // skip pinned voxels
 
                         float t = readbackData[i];
                         if (pinnedBySource == 0)
@@ -709,16 +703,16 @@ public class ThermalReceiver : MonoBehaviour
                         for (int n = 0; n < 6; n++)
                         {
                             int nx = x + dx[n], ny = y + dy[n], nz = z + dz[n];
-                            if (nx < 0 || nx >= gridWidth ||
-                                ny < 0 || ny >= gridHeight ||
-                                nz < 0 || nz >= gridDepth) continue;
+                            if (nx < 0 || nx >= gridWidth || ny < 0 || ny >= gridHeight || nz < 0 || nz >= gridDepth) 
+                                continue;
 
                             int ni = nz * gridWidth * gridHeight + ny * gridWidth + nx;
-                            if (heatSourceData[ni] <= 0f) continue;
+                            if (heatSourceData[ni] <= 0f) 
+                                continue;
 
                             // Check if that neighbour belongs to this source
                             Vector3 nWorldPos = voxelTracer.ActiveGridMin +
-                                                (new Vector3(nx, ny, nz) + Vector3.one * 0.5f) * voxelTracer.ActiveVoxelSize;
+                                (new Vector3(nx, ny, nz) + Vector3.one * 0.5f) * voxelTracer.ActiveVoxelSize;
                             bool nInside;
                             if (isSphere)
                             {
@@ -733,10 +727,15 @@ public class ThermalReceiver : MonoBehaviour
                                     Mathf.Abs(nWorldPos.z - srcPos.z) - srcExtents.z);
                                 nInside = d.x <= 0f && d.y <= 0f && d.z <= 0f;
                             }
-                            if (nInside) { adjacentToSource = true; break; }
+                            if (nInside) 
+                            { 
+                                adjacentToSource = true; 
+                                break; 
+                            }
                         }
 
-                        if (!adjacentToSource) continue;
+                        if (!adjacentToSource) 
+                            continue;
                         diffusedNeighbours++;
                         diffusedSum += t;
                     }
@@ -748,21 +747,26 @@ public class ThermalReceiver : MonoBehaviour
             for (int x = 0; x < gridWidth; x++)
             {
                 int i = z * gridWidth * gridHeight + y * gridWidth + x;
-                if (heatSourceData[i] <= 0f) continue;          // not a pinned voxel
+                if (heatSourceData[i] <= 0f) 
+                    continue;  // not a pinned voxel
                 int[] dx = { -1,1,0,0,0,0 };
                 int[] dy = { 0,0,-1,1,0,0 };
                 int[] dz = { 0,0,0,0,-1,1 };
                 for (int n = 0; n < 6; n++)
                 {
                     int nx = x+dx[n], ny = y+dy[n], nz = z+dz[n];
-                    if (nx<0||nx>=gridWidth||ny<0||ny>=gridHeight||nz<0||nz>=gridDepth) continue;
+                    if (nx<0||nx>=gridWidth||ny<0||ny>=gridHeight||nz<0||nz>=gridDepth) 
+                        continue;
                     int ni = nz*gridWidth*gridHeight + ny*gridWidth + nx;
-                    if (heatSourceData[ni] > 0f) continue;      // skip other pinned voxels
-                    if (maskData[ni] == 1u) solidAdjacentToSource++;
-                    else nonSolidAdjacentToSource++;
+                    if (heatSourceData[ni] > 0f) 
+                        continue;      // skip other pinned voxels
+                    if (maskData[ni] == 1u) 
+                        solidAdjacentToSource++;
+                    else 
+                        nonSolidAdjacentToSource++;
                 }
             }
-            Debug.Log($"[ThermalReceiver] [ADJACENCY] Voxels neighbouring any pinned cell — solid(mask=1)={solidAdjacentToSource}  air(mask=0)={nonSolidAdjacentToSource}");
+            Debug.Log($"ThermalReceiver: ADJACENCY: Voxels neighbouring any pinned cell , solid(mask=1)={solidAdjacentToSource}  air(mask=0)={nonSolidAdjacentToSource}");
             diffusedAvg = diffusedNeighbours > 0 ? (float)(diffusedSum / diffusedNeighbours) : 0f;
             sb.AppendLine($"  └ {sm.name} ({(isSphere ? "sphere" : "AABB")})  " +
                         $"pinTemp={sm.temperature:F1}°  pinnedVoxels={pinnedBySource}  " +
@@ -796,69 +800,78 @@ public class ThermalReceiver : MonoBehaviour
             float temp = gridData[i];
             float pin = heatSourceData[i];
 
-            if (diff < minDiff) minDiff = diff;
-            if (diff > maxDiff) maxDiff = diff;
+            if (diff < minDiff) 
+                minDiff = diff;
+            if (diff > maxDiff) 
+                maxDiff = diff;
             sumDiff += diff;
 
             if (maskData[i] == 1u)
             {
                 filledVoxels++;
-                if (pin > 0f) sourceVoxels++;
-
+                if (pin > 0f) 
+                    sourceVoxels++;
                 if (temp > 0f)
                 {
                     filledWithNonZeroTemp++;
-                    if (temp < minTempFilled) minTempFilled = temp;
-                    if (temp > maxTempFilled) maxTempFilled = temp;
+                    if (temp < minTempFilled) 
+                        minTempFilled = temp;
+                    if (temp > maxTempFilled)  
+                        maxTempFilled = temp;
                 }
-                else { filledWithZeroTemp++; }
+                else 
+                    filledWithZeroTemp++; 
 
                 if (diff > 0f)
                 {
                     filledWithNonZeroDiff++;
-                    if (diff < minDiffFilled) minDiffFilled = diff;
-                    if (diff > maxDiffFilled) maxDiffFilled = diff;
+                    if (diff < minDiffFilled) 
+                        minDiffFilled = diff;
+                    if (diff > maxDiffFilled) 
+                        maxDiffFilled = diff;
                 }
-                else { filledWithZeroDiff++; }
+                else 
+                    filledWithZeroDiff++; 
             }
         }
 
         float avgDiff = sumDiff / totalCells;
 
-        if (!verbose) return;
+        if (!verbose) 
+            return;
 
-        Debug.Log($"[ThermalReceiver] === Texture Readback Debug ===");
-        Debug.Log($"[ThermalReceiver] Grid: {gridWidth}x{gridHeight}x{gridDepth} = {totalCells} total cells");
-        Debug.Log($"[ThermalReceiver] Mask  — filled: {filledVoxels}/{totalCells} " +
+        Debug.Log($"ThermalReceiver: === Texture Readback Debug ===");
+        Debug.Log($"ThermalReceiver: Grid: {gridWidth}x{gridHeight}x{gridDepth} = {totalCells} total cells");
+        Debug.Log($"ThermalReceiver: Mask  ,  filled: {filledVoxels}/{totalCells} " +
                   $"({100f * filledVoxels / totalCells:F1}%)  " +
                   $"of which are pinned sources: {sourceVoxels}");
-        Debug.Log($"[ThermalReceiver] Diff  — all cells:   min={minDiff:F4}  max={maxDiff:F4}  avg={avgDiff:F4}");
+        Debug.Log($"ThermalReceiver: Diff , all cells:   min={minDiff:F4}  max={maxDiff:F4}  avg={avgDiff:F4}");
 
         if (filledVoxels > 0)
         {
-            Debug.Log($"[ThermalReceiver] Diff  — filled only: " +
+            Debug.Log($"ThermalReceiver: Diff, filled only: " +
                       $"nonZero={filledWithNonZeroDiff}/{filledVoxels}, " +
                       $"zero={filledWithZeroDiff}/{filledVoxels}, " +
                       $"min={minDiffFilled:F4}  max={maxDiffFilled:F4}");
-            Debug.Log($"[ThermalReceiver] Temp  — filled only: " +
+            Debug.Log($"ThermalReceiver: Temp , filled only: " +
                       $"nonZero={filledWithNonZeroTemp}/{filledVoxels}, " +
                       $"zero={filledWithZeroTemp}/{filledVoxels}, " +
                       $"min={minTempFilled:F4}  max={maxTempFilled:F4}");
         }
         else
         {
-            Debug.LogWarning("[ThermalReceiver] ⚠ No filled voxels found — mask is all zero.");
+            Debug.LogWarning("ThermalReceiver:  No filled voxels found , mask is all zero.");
         }
 
         if (sourceVoxels == 0)
-            Debug.LogWarning("[ThermalReceiver] ⚠ No pinned source voxels found. " +
-                             "Either no VoxelSolidMaterial has isContinuousHeatSource enabled " +
-                             "or the HeatSourceTexture has not been stamped.");
+            Debug.LogWarning("ThermalReceiver:  No pinned source voxels found. " +
+                "Either no VoxelSolidMaterial has isContinuousHeatSource enabled " +
+                "or the HeatSourceTexture has not been stamped.");
 
         if (maxDiff == 0f)
-            Debug.LogWarning("[ThermalReceiver] ⚠ Diffusivity buffer is entirely zero.");
+            Debug.LogWarning("ThermalReceiver: Diffusivity buffer is entirely zero.");
     }
-    // ─── Visualization ───────────────────────────────────────────────────
+    //  Visualization
 
     private void InitVisualization()
     {
@@ -889,7 +902,7 @@ public class ThermalReceiver : MonoBehaviour
         }
     }
 
-    // ─── Structs ────────────────────────────────────────────────────────
+    //  Structs
     private struct HeatSourceSnapshot
     {
         public int instanceID;

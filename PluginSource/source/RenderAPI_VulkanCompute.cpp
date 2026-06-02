@@ -3837,11 +3837,12 @@ static bool g_DrainNeedsUpload = false;
 static std::vector<int> g_PatchIndices;
 static bool g_FullUploadNeeded = false;
 
+// solid data
 static float* g_SolidTempInput = nullptr;
 static float* g_SolidTempOutput = nullptr;
 static uint32_t* g_SolidMask = nullptr;
-static float* g_SolidDiffusivity = nullptr; // per-voxel diffusivity
-static float* g_HeatSourcePins = nullptr;  // per-voxel pinned temperature (0 = free)
+static float* g_SolidDiffusivity = nullptr; 
+static float* g_HeatSourcePins = nullptr;  
 static int g_SolidCellCount = 0;
 static bool g_SolidNeedsUpload = false;
 static bool g_SolidMaskNeedsUpload = false;
@@ -3956,18 +3957,14 @@ SetSimParams(SimParams params)
     g_SimParams = params;
 }
 
-// Upload heat source array to the native plugin.
-// The C++ side copies it into the staging buffer and transfers to device-local
-// buffer before the temperature shader dispatch.
 extern "C" void UNITY_INTERFACE_EXPORT UNITY_INTERFACE_API
 SetFluidHeatSources(HeatSource *sources, int count)
 {
-    if (sources == nullptr || count < 0) return;
-    
-    // Clamp to maximum allowed heat sources
+    if (sources == nullptr || count < 0) 
+        return;
+
     int clampedCount = (count > MAX_HEAT_SOURCES) ? MAX_HEAT_SOURCES : count;
     
-    // Copy heat sources into global array
     if (clampedCount > 0)
     {
         memcpy(g_HeatSources, sources, clampedCount * sizeof(HeatSource));
@@ -4019,15 +4016,14 @@ SetDrainZones(DrainZone* zones, int count)
 extern "C" void UNITY_INTERFACE_EXPORT UNITY_INTERFACE_API
 SetSolidComputeData(float* data, int count)
 {
-    if (count <= 0 || data == nullptr) return;
+    if (count <= 0 || data == nullptr) 
+        return;
     std::lock_guard<std::mutex> lock(g_DataMutex); 
     delete[] g_SolidTempInput;
     delete[] g_SolidTempOutput;
-
     g_SolidCellCount = count;
     g_SolidTempInput = new float[count]();
     g_SolidTempOutput = new float[count]();
-
     memcpy(g_SolidTempInput, data, count * sizeof(float));
     g_SolidNeedsUpload = true;
     g_SolidReady = false;
@@ -4036,7 +4032,8 @@ SetSolidComputeData(float* data, int count)
 extern "C" void UNITY_INTERFACE_EXPORT UNITY_INTERFACE_API
 SetMaskData(uint32_t* mask, int count)
 {
-    if (count <= 0 || mask == nullptr) return;
+    if (count <= 0 || mask == nullptr) 
+        return;
     std::lock_guard<std::mutex> lock(g_DataMutex); 
     delete[] g_SolidMask;
     g_SolidMask = new uint32_t[count]();
@@ -4056,7 +4053,8 @@ SetSolidSimParams(float dt, uint32_t gridWidth, uint32_t gridHeight, uint32_t gr
 extern "C" void UNITY_INTERFACE_EXPORT UNITY_INTERFACE_API
 SetDiffusivityData(float* data, int count)
 {
-    if (count <= 0 || data == nullptr) return;
+    if (count <= 0 || data == nullptr) 
+        return;
     std::lock_guard<std::mutex> lock(g_DataMutex); 
     delete[] g_SolidDiffusivity;
     g_SolidDiffusivity = new float[count]();
@@ -4067,7 +4065,8 @@ SetDiffusivityData(float* data, int count)
 extern "C" void UNITY_INTERFACE_EXPORT UNITY_INTERFACE_API
 SetHeatSourceData(float* pinTemperatures, int count)
 {
-    if (count <= 0 || pinTemperatures == nullptr) return;
+    if (count <= 0 || pinTemperatures == nullptr) 
+        return;
     std::lock_guard<std::mutex> lock(g_DataMutex); 
     delete[] g_HeatSourcePins;
     g_HeatSourcePins = new float[count]();
@@ -4170,13 +4169,13 @@ private:
     void DestroyBuffers();
     void UpdateDescriptorSets();
 
-    UnityVulkanInstance  m_Instance = {};
+    UnityVulkanInstance m_Instance = {};
     VkCommandPool m_CommandPool = VK_NULL_HANDLE;
 
-    // Shader + pipeline
-    VkShaderModule  m_ShaderModule= VK_NULL_HANDLE;
+    // Shader and pipeline
+    VkShaderModule m_ShaderModule= VK_NULL_HANDLE;
     VkDescriptorSetLayout m_DescLayout = VK_NULL_HANDLE;
-    VkPipelineLayout m_PipeLayout  = VK_NULL_HANDLE;
+    VkPipelineLayout m_PipeLayout = VK_NULL_HANDLE;
     VkPipeline m_Pipeline = VK_NULL_HANDLE;
 
     // Descriptor pool + ping-pong sets
@@ -4186,7 +4185,7 @@ private:
     // GPU buffers: [0] and [1] ping-pong temp, [2] mask (read-only)
     ComputeBuffer m_TempBuffers[2];
     ComputeBuffer m_MaskBuffer;
-    ComputeBuffer m_StagingBuffer;     // HOST_VISIBLE, for upload + readback
+    ComputeBuffer m_StagingBuffer;     // HOST_VISIBLE, for upload and readback
     ComputeBuffer m_MaskStagingBuffer; // HOST_VISIBLE, for mask upload
     ComputeBuffer m_ReadbackBuffer;
     ComputeBuffer m_DiffusivityBuffer;        // device-local
@@ -4219,46 +4218,46 @@ void VulkanSolidThermalPlugin::CreatePipelineAndLayouts()
     VkDescriptorSetLayoutBinding bindings[5] = {};
     for (int b = 0; b < 5; b++)
     {
-        bindings[b].binding         = b;
-        bindings[b].descriptorType  = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+        bindings[b].binding = b;
+        bindings[b].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
         bindings[b].descriptorCount = 1;
-        bindings[b].stageFlags      = VK_SHADER_STAGE_COMPUTE_BIT;
+        bindings[b].stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
     }
     VkDescriptorSetLayoutCreateInfo layoutCI = {};
-    layoutCI.sType        = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+    layoutCI.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
     layoutCI.bindingCount = 5;
-    layoutCI.pBindings    = bindings;
+    layoutCI.pBindings = bindings;
     if (vkCreateDescriptorSetLayout(device, &layoutCI, nullptr, &m_DescLayout) != VK_SUCCESS)
         return;
 
     VkPushConstantRange pushRange = {};
     pushRange.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
-    pushRange.offset     = 0;
-    pushRange.size       = sizeof(SolidSimParams);
+    pushRange.offset= 0;
+    pushRange.size = sizeof(SolidSimParams);
 
     VkPipelineLayoutCreateInfo pipeLayoutCI = {};
-    pipeLayoutCI.sType                  = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-    pipeLayoutCI.setLayoutCount         = 1;
-    pipeLayoutCI.pSetLayouts            = &m_DescLayout;
+    pipeLayoutCI.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+    pipeLayoutCI.setLayoutCount = 1;
+    pipeLayoutCI.pSetLayouts = &m_DescLayout;
     pipeLayoutCI.pushConstantRangeCount = 1;
-    pipeLayoutCI.pPushConstantRanges    = &pushRange;
+    pipeLayoutCI.pPushConstantRanges = &pushRange;
     if (vkCreatePipelineLayout(device, &pipeLayoutCI, nullptr, &m_PipeLayout) != VK_SUCCESS)
         return;
 
     VkShaderModuleCreateInfo shaderCI = {};
-    shaderCI.sType    = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
+    shaderCI.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
     shaderCI.codeSize = sizeof(kSolidTempDiffusion);
-    shaderCI.pCode    = kSolidTempDiffusion;
+    shaderCI.pCode = kSolidTempDiffusion;
     if (vkCreateShaderModule(device, &shaderCI, nullptr, &m_ShaderModule) != VK_SUCCESS)
         return;
 
     VkComputePipelineCreateInfo computeCI = {};
-    computeCI.sType              = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO;
-    computeCI.layout             = m_PipeLayout;
-    computeCI.stage.sType        = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
-    computeCI.stage.stage        = VK_SHADER_STAGE_COMPUTE_BIT;
-    computeCI.stage.pName        = "main";
-    computeCI.stage.module       = m_ShaderModule;
+    computeCI.sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO;
+    computeCI.layout = m_PipeLayout;
+    computeCI.stage.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+    computeCI.stage.stage = VK_SHADER_STAGE_COMPUTE_BIT;
+    computeCI.stage.pName = "main";
+    computeCI.stage.module = m_ShaderModule;
     vkCreateComputePipelines(device, m_Instance.pipelineCache, 1, &computeCI, nullptr, &m_Pipeline);
 }
 
@@ -4270,15 +4269,11 @@ void VulkanSolidThermalPlugin::CreateBuffers(int count)
         DestroyBuffers();
 
     VkDeviceSize floatBufSize = count * sizeof(float);
-    VkDeviceSize maskBufSize  = count * sizeof(uint32_t);
+    VkDeviceSize maskBufSize = count * sizeof(uint32_t);
 
-    VkBufferUsageFlags gpuUsage =
-        VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |
-        VK_BUFFER_USAGE_TRANSFER_SRC_BIT   |
-        VK_BUFFER_USAGE_TRANSFER_DST_BIT;
-    VkMemoryPropertyFlags gpuProps    = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
-    VkMemoryPropertyFlags stagingProps =
-        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
+    VkBufferUsageFlags gpuUsage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |VK_BUFFER_USAGE_TRANSFER_SRC_BIT |VK_BUFFER_USAGE_TRANSFER_DST_BIT;
+    VkMemoryPropertyFlags gpuProps = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
+    VkMemoryPropertyFlags stagingProps = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
 
     CreateComputeBuffer(device, m_Instance.physicalDevice,floatBufSize, gpuUsage, gpuProps, m_TempBuffers[0]);
     CreateComputeBuffer(device, m_Instance.physicalDevice,floatBufSize, gpuUsage, gpuProps, m_TempBuffers[1]);
@@ -4288,7 +4283,7 @@ void VulkanSolidThermalPlugin::CreateBuffers(int count)
     CreateComputeBuffer(device, m_Instance.physicalDevice,floatBufSize, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,gpuProps, m_HeatSourcePinsBuffer);
     CreateComputeBuffer(device, m_Instance.physicalDevice,floatBufSize,VK_BUFFER_USAGE_TRANSFER_SRC_BIT, stagingProps, m_HeatSourcePinsStagingBuffer);
 
-    // Shared staging: large enough for float grid upload AND readback
+    // Shared staging for float grid upload and readback
     CreateComputeBuffer(device, m_Instance.physicalDevice,floatBufSize,VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,stagingProps, m_StagingBuffer);
 
     // Mask staging
@@ -4298,23 +4293,23 @@ void VulkanSolidThermalPlugin::CreateBuffers(int count)
 
     // Descriptor pool: 2 sets × 5 bindings = 10
     VkDescriptorPoolSize poolSize = {};
-    poolSize.type            = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    poolSize.type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
     poolSize.descriptorCount = 10;
 
     VkDescriptorPoolCreateInfo poolCI = {};
-    poolCI.sType         = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
-    poolCI.maxSets       = 2;
+    poolCI.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+    poolCI.maxSets= 2;
     poolCI.poolSizeCount = 1;
-    poolCI.pPoolSizes    = &poolSize;
+    poolCI.pPoolSizes = &poolSize;
     if (vkCreateDescriptorPool(device, &poolCI, nullptr, &m_DescPool) != VK_SUCCESS)
         return;
 
     VkDescriptorSetLayout layouts[2] = { m_DescLayout, m_DescLayout };
     VkDescriptorSetAllocateInfo allocInfo = {};
-    allocInfo.sType              = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
-    allocInfo.descriptorPool     = m_DescPool;
+    allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+    allocInfo.descriptorPool = m_DescPool;
     allocInfo.descriptorSetCount = 2;
-    allocInfo.pSetLayouts        = layouts;
+    allocInfo.pSetLayouts = layouts;
     if (vkAllocateDescriptorSets(device, &allocInfo, m_DescSets) != VK_SUCCESS)
         return;
 
@@ -4326,11 +4321,11 @@ void VulkanSolidThermalPlugin::CreateBuffers(int count)
 void VulkanSolidThermalPlugin::UpdateDescriptorSets()
 {
     VkDeviceSize floatBufSize = m_AllocatedCount * sizeof(float);
-    VkDeviceSize maskBufSize  = m_AllocatedCount * sizeof(uint32_t);
+    VkDeviceSize maskBufSize = m_AllocatedCount * sizeof(uint32_t);
 
     for (int pp = 0; pp < 2; pp++)
     {
-        int inputIdx  = pp;
+        int inputIdx = pp;
         int outputIdx = 1 - pp;
 
         VkDescriptorBufferInfo bufInfos[5] = {};
@@ -4343,12 +4338,12 @@ void VulkanSolidThermalPlugin::UpdateDescriptorSets()
         VkWriteDescriptorSet writes[5] = {};
         for (int b = 0; b < 5; b++)
         {
-            writes[b].sType           = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-            writes[b].dstSet          = m_DescSets[pp];
-            writes[b].dstBinding      = b;
+            writes[b].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+            writes[b].dstSet = m_DescSets[pp];
+            writes[b].dstBinding = b;
             writes[b].descriptorCount = 1;
-            writes[b].descriptorType  = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-            writes[b].pBufferInfo     = &bufInfos[b];
+            writes[b].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+            writes[b].pBufferInfo = &bufInfos[b];
         }
         vkUpdateDescriptorSets(m_Instance.device, 5, writes, 0, nullptr);
     }
@@ -4358,14 +4353,15 @@ void VulkanSolidThermalPlugin::DispatchCompute()
 {
     if (!m_Initialized || m_Pipeline == VK_NULL_HANDLE || g_SolidCellCount == 0)
         return;
-    VkCommandBuffer ownCmd;
+    VkCommandBuffer solidCmd;
     VkDevice device = m_Instance.device;
     {
         std::lock_guard<std::mutex> lock(g_DataMutex);
 
         if (!m_BuffersReady || m_AllocatedCount != g_SolidCellCount)
             CreateBuffers(g_SolidCellCount);
-        if (!m_BuffersReady) return;
+        if (!m_BuffersReady) 
+            return;
 
         // read previous frame result
         if (g_SolidReady && m_ReadbackBuffer.mapped && g_SolidTempOutput != nullptr)
@@ -4378,17 +4374,16 @@ void VulkanSolidThermalPlugin::DispatchCompute()
         cmdAllocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
         cmdAllocInfo.commandBufferCount = 1;
 
-        ownCmd = VK_NULL_HANDLE;
-        if (vkAllocateCommandBuffers(device, &cmdAllocInfo, &ownCmd) != VK_SUCCESS)
+        solidCmd = VK_NULL_HANDLE;
+        if (vkAllocateCommandBuffers(device, &cmdAllocInfo, &solidCmd) != VK_SUCCESS)
         {
-            //OutputDebugStringA("[SolidThermal] Failed to allocate command buffer\n");
             return;
         }
 
         VkCommandBufferBeginInfo beginInfo = {};
         beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
         beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
-        vkBeginCommandBuffer(ownCmd, &beginInfo);
+        vkBeginCommandBuffer(solidCmd, &beginInfo);
 
         // Upload temperature grid if new data arrived
         if (g_SolidNeedsUpload && m_StagingBuffer.mapped)
@@ -4397,15 +4392,13 @@ void VulkanSolidThermalPlugin::DispatchCompute()
 
             VkBufferCopy copyRegion = {};
             copyRegion.size = g_SolidCellCount * sizeof(float);
-            vkCmdCopyBuffer(ownCmd, m_StagingBuffer.buffer, m_TempBuffers[m_CurrentInput].buffer, 1, &copyRegion);
+            vkCmdCopyBuffer(solidCmd, m_StagingBuffer.buffer, m_TempBuffers[m_CurrentInput].buffer, 1, &copyRegion);
 
             VkMemoryBarrier bar = {};
-            bar.sType         = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
+            bar.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
             bar.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
             bar.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
-            vkCmdPipelineBarrier(ownCmd,
-                VK_PIPELINE_STAGE_TRANSFER_BIT,
-                VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+            vkCmdPipelineBarrier(solidCmd,VK_PIPELINE_STAGE_TRANSFER_BIT,VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
                 0, 1, &bar, 0, nullptr, 0, nullptr);
 
             g_SolidNeedsUpload = false;
@@ -4418,15 +4411,13 @@ void VulkanSolidThermalPlugin::DispatchCompute()
 
             VkBufferCopy maskCopy = {};
             maskCopy.size = g_SolidCellCount * sizeof(uint32_t);
-            vkCmdCopyBuffer(ownCmd, m_MaskStagingBuffer.buffer, m_MaskBuffer.buffer, 1, &maskCopy);
+            vkCmdCopyBuffer(solidCmd, m_MaskStagingBuffer.buffer, m_MaskBuffer.buffer, 1, &maskCopy);
 
             VkMemoryBarrier bar = {};
-            bar.sType         = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
+            bar.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
             bar.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
             bar.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
-            vkCmdPipelineBarrier(ownCmd,
-                VK_PIPELINE_STAGE_TRANSFER_BIT,
-                VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+            vkCmdPipelineBarrier(solidCmd,VK_PIPELINE_STAGE_TRANSFER_BIT,VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
                 0, 1, &bar, 0, nullptr, 0, nullptr);
 
             g_SolidMaskNeedsUpload = false;
@@ -4434,21 +4425,16 @@ void VulkanSolidThermalPlugin::DispatchCompute()
 
         if (g_SolidDiffusivityNeedsUpload && m_DiffusivityStagingBuffer.mapped)
         {
-            memcpy(m_DiffusivityStagingBuffer.mapped,
-                g_SolidDiffusivity, g_SolidCellCount * sizeof(float));
+            memcpy(m_DiffusivityStagingBuffer.mapped,g_SolidDiffusivity, g_SolidCellCount * sizeof(float));
 
             VkBufferCopy copy = {};
             copy.size = g_SolidCellCount * sizeof(float);
-            vkCmdCopyBuffer(ownCmd, m_DiffusivityStagingBuffer.buffer,
-                            m_DiffusivityBuffer.buffer, 1, &copy);
-
+            vkCmdCopyBuffer(solidCmd, m_DiffusivityStagingBuffer.buffer,m_DiffusivityBuffer.buffer, 1, &copy);
             VkMemoryBarrier bar = {};
-            bar.sType         = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
+            bar.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
             bar.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
             bar.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
-            vkCmdPipelineBarrier(ownCmd,
-                VK_PIPELINE_STAGE_TRANSFER_BIT,
-                VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+            vkCmdPipelineBarrier(solidCmd,VK_PIPELINE_STAGE_TRANSFER_BIT,VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
                 0, 1, &bar, 0, nullptr, 0, nullptr);
 
             g_SolidDiffusivityNeedsUpload = false;
@@ -4461,15 +4447,13 @@ void VulkanSolidThermalPlugin::DispatchCompute()
     
             VkBufferCopy copy = {};
             copy.size = g_SolidCellCount * sizeof(float);
-            vkCmdCopyBuffer(ownCmd, m_HeatSourcePinsStagingBuffer.buffer, m_HeatSourcePinsBuffer.buffer, 1, &copy);
+            vkCmdCopyBuffer(solidCmd, m_HeatSourcePinsStagingBuffer.buffer, m_HeatSourcePinsBuffer.buffer, 1, &copy);
     
             VkMemoryBarrier bar = {};
-            bar.sType         = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
+            bar.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
             bar.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
             bar.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
-            vkCmdPipelineBarrier(ownCmd,
-                VK_PIPELINE_STAGE_TRANSFER_BIT,
-                VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+            vkCmdPipelineBarrier(solidCmd,VK_PIPELINE_STAGE_TRANSFER_BIT,VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
                 0, 1, &bar, 0, nullptr, 0, nullptr);
     
             g_HeatSourcePinsNeedsUpload = false;
@@ -4479,11 +4463,9 @@ void VulkanSolidThermalPlugin::DispatchCompute()
     // Dispatch diffusion shader
     int outputIdx = 1 - m_CurrentInput;
 
-    vkCmdBindPipeline(ownCmd, VK_PIPELINE_BIND_POINT_COMPUTE, m_Pipeline);
-    vkCmdBindDescriptorSets(ownCmd, VK_PIPELINE_BIND_POINT_COMPUTE, m_PipeLayout,
-                            0, 1, &m_DescSets[m_CurrentInput], 0, nullptr);
-    vkCmdPushConstants(ownCmd, m_PipeLayout, VK_SHADER_STAGE_COMPUTE_BIT,
-                       0, sizeof(SolidSimParams), &g_SolidSimParams);
+    vkCmdBindPipeline(solidCmd, VK_PIPELINE_BIND_POINT_COMPUTE, m_Pipeline);
+    vkCmdBindDescriptorSets(solidCmd, VK_PIPELINE_BIND_POINT_COMPUTE, m_PipeLayout,0, 1, &m_DescSets[m_CurrentInput], 0, nullptr);
+    vkCmdPushConstants(solidCmd, m_PipeLayout, VK_SHADER_STAGE_COMPUTE_BIT,0, sizeof(SolidSimParams), &g_SolidSimParams);
 
     uint32_t groupsX = (g_SolidSimParams.gridWidth + 3) / 4;
     uint32_t groupsY = (g_SolidSimParams.gridHeight + 3) / 4;
@@ -4491,33 +4473,29 @@ void VulkanSolidThermalPlugin::DispatchCompute()
     
     char debugBuf[256];
     
-    vkCmdDispatch(ownCmd, groupsX, groupsY, groupsZ);
+    vkCmdDispatch(solidCmd, groupsX, groupsY, groupsZ);
 
-    // Barrier: shader write → transfer read
+    // Barrier: shader write -> transfer read
     VkMemoryBarrier bar = {};
-    bar.sType         = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
+    bar.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
     bar.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
     bar.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
-    vkCmdPipelineBarrier(ownCmd,
-        VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
-        VK_PIPELINE_STAGE_TRANSFER_BIT,
+    vkCmdPipelineBarrier(solidCmd, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT,
         0, 1, &bar, 0, nullptr, 0, nullptr);
 
-    // Copy output → readback buffer
+    // Copy output -> readback buffer
     VkBufferCopy stagingCopy = {};
     stagingCopy.size = g_SolidCellCount * sizeof(float);
-    vkCmdCopyBuffer(ownCmd, m_TempBuffers[outputIdx].buffer, m_ReadbackBuffer.buffer, 1, &stagingCopy);
+    vkCmdCopyBuffer(solidCmd, m_TempBuffers[outputIdx].buffer, m_ReadbackBuffer.buffer, 1, &stagingCopy);
 
     VkMemoryBarrier stagingBar = {};
-    stagingBar.sType         = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
+    stagingBar.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
     stagingBar.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
     stagingBar.dstAccessMask = VK_ACCESS_HOST_READ_BIT;
-    vkCmdPipelineBarrier(ownCmd,
-        VK_PIPELINE_STAGE_TRANSFER_BIT,
-        VK_PIPELINE_STAGE_HOST_BIT,
+    vkCmdPipelineBarrier(solidCmd,VK_PIPELINE_STAGE_TRANSFER_BIT,VK_PIPELINE_STAGE_HOST_BIT,
         0, 1, &stagingBar, 0, nullptr, 0, nullptr);
 
-    vkEndCommandBuffer(ownCmd);
+    vkEndCommandBuffer(solidCmd);
 
     // Submit & wait independently
     VkFence fence = VK_NULL_HANDLE;
@@ -4525,27 +4503,26 @@ void VulkanSolidThermalPlugin::DispatchCompute()
     fenceCI.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
     if (vkCreateFence(device, &fenceCI, nullptr, &fence) != VK_SUCCESS)
     {
-        vkFreeCommandBuffers(device, m_CommandPool, 1, &ownCmd);
+        vkFreeCommandBuffers(device, m_CommandPool, 1, &solidCmd);
         return;
     }
 
     VkSubmitInfo submitInfo = {};
     submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
     submitInfo.commandBufferCount = 1;
-    submitInfo.pCommandBuffers = &ownCmd;
+    submitInfo.pCommandBuffers = &solidCmd;
     
     if (vkQueueSubmit(m_Instance.graphicsQueue, 1, &submitInfo, fence) != VK_SUCCESS)
     {
         vkDestroyFence(device, fence, nullptr);
-        vkFreeCommandBuffers(device, m_CommandPool, 1, &ownCmd);
+        vkFreeCommandBuffers(device, m_CommandPool, 1, &solidCmd);
         return;
     }
 
     vkWaitForFences(device, 1, &fence, VK_TRUE, UINT64_MAX);
-    //OutputDebugStringA("[SolidThermal] Dispatch complete\n");
 
     vkDestroyFence(device, fence, nullptr);
-    vkFreeCommandBuffers(device, m_CommandPool, 1, &ownCmd);
+    vkFreeCommandBuffers(device, m_CommandPool, 1, &solidCmd);
 
     m_CurrentInput = outputIdx;
     g_SolidReady   = true;
@@ -4565,7 +4542,7 @@ void VulkanComputePlugin::Initialize(IUnityInterfaces *interfaces)
     config.graphicsQueueAccess = kUnityVulkanGraphicsQueueAccess_DontCare;
     config.renderPassPrecondition = kUnityVulkanRenderPass_EnsureOutside;
     config.flags = kUnityVulkanEventConfigFlag_EnsurePreviousFrameSubmission |
-                   kUnityVulkanEventConfigFlag_ModifiesCommandBuffersState;
+        kUnityVulkanEventConfigFlag_ModifiesCommandBuffersState;
     m_UnityVulkan->ConfigureEvent(3, &config);
 
     CreatePipeline();
@@ -4662,10 +4639,6 @@ void VulkanComputePlugin::CreatePipeline()
     shaderCI.pCode  = kSphTemperature;
     if (vkCreateShaderModule(device, &shaderCI, nullptr, &m_TemperatureModule) != VK_SUCCESS) return;
 
-    // shaderCI.codeSize = sizeof(kSolidTempDiffusion);
-    // shaderCI.pCode  = kSolidTempDiffusion;
-    // if (vkCreateShaderModule(device, &shaderCI, nullptr, &m_TemperatureModule) != VK_SUCCESS) return;
-
     shaderCI.codeSize = sizeof(kSphIntegrate);
     shaderCI.pCode = kSphIntegrate;
     if (vkCreateShaderModule(device, &shaderCI, nullptr, &m_IntegrateModule) != VK_SUCCESS) return;
@@ -4723,9 +4696,7 @@ void VulkanComputePlugin::CreateBuffers(int count)
     if (m_BuffersReady)
         DestroyBuffers();
 
-    VkBufferUsageFlags gpuUsage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |
-                                  VK_BUFFER_USAGE_TRANSFER_SRC_BIT |
-                                  VK_BUFFER_USAGE_TRANSFER_DST_BIT;
+    VkBufferUsageFlags gpuUsage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT;
     VkMemoryPropertyFlags gpuProps = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
 
     // Particle ping-pong buffers
@@ -4824,51 +4795,51 @@ void VulkanComputePlugin::UpdateDescriptorSets()
 
     for (int pp = 0; pp < 2; pp++)
     {
-        int inputIdx  = pp;
+        int inputIdx = pp;
         int outputIdx = 1 - pp;
 
         VkDescriptorBufferInfo bufInfos[7] = {};
         bufInfos[0].buffer = m_GpuBuffers[inputIdx].buffer;
         bufInfos[0].offset = 0;
-        bufInfos[0].range  = particleBufSize;
+        bufInfos[0].range = particleBufSize;
         bufInfos[1].buffer = m_GpuBuffers[outputIdx].buffer;
         bufInfos[1].offset = 0;
-        bufInfos[1].range  = particleBufSize;
+        bufInfos[1].range = particleBufSize;
         bufInfos[2].buffer = m_HashKeysBuffer.buffer;
         bufInfos[2].offset = 0;
-        bufInfos[2].range  = uintBufSize;
+        bufInfos[2].range = uintBufSize;
         bufInfos[3].buffer = m_IndicesBuffer.buffer;
         bufInfos[3].offset = 0;
-        bufInfos[3].range  = uintBufSize;
+        bufInfos[3].range = uintBufSize;
         bufInfos[4].buffer = m_StartIndicesBuffer.buffer;
         bufInfos[4].offset = 0;
-        bufInfos[4].range  = uintBufSize;
+        bufInfos[4].range = uintBufSize;
         bufInfos[5].buffer = m_SdfBuffer.buffer;
         bufInfos[5].offset = 0;
-        bufInfos[5].range  = sdfSize;
+        bufInfos[5].range = sdfSize;
         bufInfos[6].buffer = m_DrainBuffer.buffer;
         bufInfos[6].offset = 0;
-        bufInfos[6].range  = drainSize;
+        bufInfos[6].range = drainSize;
 
         VkDescriptorBufferInfo tempBufInfos[6] = {};
         tempBufInfos[0].buffer = m_GpuBuffers[inputIdx].buffer;
         tempBufInfos[0].offset = 0;
-        tempBufInfos[0].range  = m_AllocatedCount * sizeof(Particle);
+        tempBufInfos[0].range = m_AllocatedCount * sizeof(Particle);
         tempBufInfos[1].buffer = m_GpuBuffers[outputIdx].buffer;
         tempBufInfos[1].offset = 0;
-        tempBufInfos[1].range  = m_AllocatedCount * sizeof(Particle);
+        tempBufInfos[1].range = m_AllocatedCount * sizeof(Particle);
         tempBufInfos[2].buffer = m_HashKeysBuffer.buffer;
         tempBufInfos[2].offset = 0;
-        tempBufInfos[2].range  = m_AllocatedCount * sizeof(uint32_t);
+        tempBufInfos[2].range = m_AllocatedCount * sizeof(uint32_t);
         tempBufInfos[3].buffer = m_IndicesBuffer.buffer;
         tempBufInfos[3].offset = 0;
-        tempBufInfos[3].range  = m_AllocatedCount * sizeof(uint32_t);
+        tempBufInfos[3].range = m_AllocatedCount * sizeof(uint32_t);
         tempBufInfos[4].buffer = m_StartIndicesBuffer.buffer;
         tempBufInfos[4].offset = 0;
-        tempBufInfos[4].range  = m_AllocatedCount * sizeof(uint32_t);
+        tempBufInfos[4].range = m_AllocatedCount * sizeof(uint32_t);
         tempBufInfos[5].buffer = m_HeatSourcesBuffer.buffer;
         tempBufInfos[5].offset = 0;
-        tempBufInfos[5].range  = heatSourceSize;
+        tempBufInfos[5].range = heatSourceSize;
 
         VkWriteDescriptorSet writes[7] = {};
         VkWriteDescriptorSet tempWrites[6] = {};
@@ -4977,12 +4948,12 @@ void VulkanComputePlugin::DispatchCompute()
         heatBarrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
         heatBarrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
         vkCmdPipelineBarrier(cmd,VK_PIPELINE_STAGE_TRANSFER_BIT,VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,0, 1, 
-                            &heatBarrier, 0, nullptr, 0, nullptr);
+            &heatBarrier, 0, nullptr, 0, nullptr);
 
         g_NeedsHeatSourceUpload = false;
     }
 
-    // SDF grid upload: staging → device
+    // SDF grid upload: staging -> device
     if (g_SdfNeedsUpload && g_SdfData && g_SdfDataCount > 0 && m_SdfStagingBuffer.mapped)
     {
         VkDeviceSize uploadSize = g_SdfDataCount * sizeof(float);
@@ -4996,13 +4967,12 @@ void VulkanComputePlugin::DispatchCompute()
         sdfBarrier.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
         sdfBarrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
         sdfBarrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
-        vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT,
-                             VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
-                             0, 1, &sdfBarrier, 0, nullptr, 0, nullptr);
+        vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT,VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+            0, 1, &sdfBarrier, 0, nullptr, 0, nullptr);
         g_SdfNeedsUpload = false;
     }
 
-    // Drain zones upload: staging → device
+    // Drain zones upload: staging -> device
     if (g_DrainNeedsUpload && m_DrainStagingBuffer.mapped)
     {
         memcpy(m_DrainStagingBuffer.mapped, g_DrainZones, MAX_DRAIN_ZONES * sizeof(DrainZone));
@@ -5015,9 +4985,8 @@ void VulkanComputePlugin::DispatchCompute()
         drainBarrier.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
         drainBarrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
         drainBarrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
-        vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT,
-                             VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
-                             0, 1, &drainBarrier, 0, nullptr, 0, nullptr);
+        vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT,VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+            0, 1, &drainBarrier, 0, nullptr, 0, nullptr);
         g_DrainNeedsUpload = false;
     }
 
@@ -5030,30 +4999,22 @@ void VulkanComputePlugin::DispatchCompute()
         bar.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
         bar.srcAccessMask = src;
         bar.dstAccessMask = dst;
-        vkCmdPipelineBarrier(cmd,
-                             VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
-                             VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
-                             0, 1, &bar, 0, nullptr, 0, nullptr);
+        vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+            0, 1, &bar, 0, nullptr, 0, nullptr);
     };
 
-    // ════════════════════════════════════════════════════════════════════
-    // SPATIAL SORT, once per frame, NOT per sub-step.
-    // Between sub-steps particles move < 0.2% of a cell (dt * v << cellSize),
-    // so the spatial hash stays valid across all sub-steps within a frame.
-    // This avoids the bitonic sort dispatch explosion (43 dispatches × N sub-steps).
-    // ════════════════════════════════════════════════════════════════════
+    // Spatial sort, once per frame
 
     // Bind descriptor set once for the entire sort phase, all sort pipelines
     // share the same pipeline layout so the binding persists across pipeline changes
     vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, m_PipelineLayout,
-                            0, 1, &m_DescSets[m_CurrentInput], 0, nullptr);
+        0, 1, &m_DescSets[m_CurrentInput], 0, nullptr);
 
     // Pass 1: Compute Hash, hash cell coords, init indices
     g_SimParams.bitonicK = 0;
     g_SimParams.bitonicJ = 0;
     vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, m_ComputeHashPipeline);
-    vkCmdPushConstants(cmd, m_PipelineLayout, VK_SHADER_STAGE_COMPUTE_BIT,
-                       0, sizeof(SimParams), &g_SimParams);
+    vkCmdPushConstants(cmd, m_PipelineLayout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(SimParams), &g_SimParams);
     vkCmdDispatch(cmd, numGroups, 1, 1);
 
     computeBarrier(VK_ACCESS_SHADER_WRITE_BIT, VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT);
@@ -5069,8 +5030,7 @@ void VulkanComputePlugin::DispatchCompute()
             {
                 g_SimParams.bitonicK = k;
                 g_SimParams.bitonicJ = j;
-                vkCmdPushConstants(cmd, m_PipelineLayout, VK_SHADER_STAGE_COMPUTE_BIT,
-                                   0, sizeof(SimParams), &g_SimParams);
+                vkCmdPushConstants(cmd, m_PipelineLayout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(SimParams), &g_SimParams);
                 vkCmdDispatch(cmd, numGroups, 1, 1);
                 computeBarrier(VK_ACCESS_SHADER_WRITE_BIT, VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT);
             }
@@ -5080,30 +5040,25 @@ void VulkanComputePlugin::DispatchCompute()
         g_SimParams.bitonicK = k;
         g_SimParams.bitonicJ = 0;
         vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, m_BitonicLocalPipeline);
-        vkCmdPushConstants(cmd, m_PipelineLayout, VK_SHADER_STAGE_COMPUTE_BIT,
-                           0, sizeof(SimParams), &g_SimParams);
+        vkCmdPushConstants(cmd, m_PipelineLayout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(SimParams), &g_SimParams);
         vkCmdDispatch(cmd, numGroups, 1, 1);
         computeBarrier(VK_ACCESS_SHADER_WRITE_BIT, VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT);
     }
 
     // Clear startIndices to 0xFFFFFFFF via vkCmdFillBuffer
-    vkCmdFillBuffer(cmd, m_StartIndicesBuffer.buffer, 0,
-                    g_ElementCount * sizeof(uint32_t), 0xFFFFFFFF);
+    vkCmdFillBuffer(cmd, m_StartIndicesBuffer.buffer, 0, g_ElementCount * sizeof(uint32_t), 0xFFFFFFFF);
     {
         VkMemoryBarrier bar = {};
         bar.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
         bar.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
         bar.dstAccessMask = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT;
-        vkCmdPipelineBarrier(cmd,
-                             VK_PIPELINE_STAGE_TRANSFER_BIT,
-                             VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
-                             0, 1, &bar, 0, nullptr, 0, nullptr);
+        vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 
+            0, 1, &bar, 0, nullptr, 0, nullptr);
     }
 
     // Pass 3: Compute Start, mark bucket boundaries in startIndices
     vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, m_ComputeStartPipeline);
-    vkCmdPushConstants(cmd, m_PipelineLayout, VK_SHADER_STAGE_COMPUTE_BIT,
-                       0, sizeof(SimParams), &g_SimParams);
+    vkCmdPushConstants(cmd, m_PipelineLayout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(SimParams), &g_SimParams);
     vkCmdDispatch(cmd, numGroups, 1, 1);
 
     computeBarrier(VK_ACCESS_SHADER_WRITE_BIT, VK_ACCESS_SHADER_READ_BIT);
@@ -5113,8 +5068,7 @@ void VulkanComputePlugin::DispatchCompute()
     // lookups in density/integrate access contiguous memory (cache-coherent).
     // Also resets indices to identity so particlesIn[indices[i]] == particlesIn[i].
     vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, m_ReorderPipeline);
-    vkCmdPushConstants(cmd, m_PipelineLayout, VK_SHADER_STAGE_COMPUTE_BIT,
-                       0, sizeof(SimParams), &g_SimParams);
+    vkCmdPushConstants(cmd, m_PipelineLayout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(SimParams), &g_SimParams);
     vkCmdDispatch(cmd, numGroups, 1, 1);
 
     computeBarrier(VK_ACCESS_SHADER_WRITE_BIT, VK_ACCESS_SHADER_READ_BIT);
@@ -5124,22 +5078,19 @@ void VulkanComputePlugin::DispatchCompute()
     // so that becomes the new input for the sub-step loop.
     m_CurrentInput = 1 - m_CurrentInput;
 
-    // ════════════════════════════════════════════════════════════════════
-    // SUB-STEP LOOP, only density + integrate, reusing the spatial hash.
+    // Sub-step loop, only density + integrate, reusing the spatial hash.
     // Push constants don't change between sub-steps (bitonicK/J = 0).
-    // ════════════════════════════════════════════════════════════════════
 
     int densityOutput = 1 - m_CurrentInput;
     // Push constants are identical for all sub-steps; push once before the loop.
-    vkCmdPushConstants(cmd, m_PipelineLayout, VK_SHADER_STAGE_COMPUTE_BIT,
-                       0, sizeof(SimParams), &g_SimParams);
+    vkCmdPushConstants(cmd, m_PipelineLayout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(SimParams), &g_SimParams);
 
     for (int step = 0; step < g_SubStepCount; step++)
     {   
         // Pass 4: Density, 27-cell hash lookup
         vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, m_DensityPipeline);
         vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, m_PipelineLayout,
-                                0, 1, &m_DescSets[m_CurrentInput], 0, nullptr);
+            0, 1, &m_DescSets[m_CurrentInput], 0, nullptr);
         vkCmdDispatch(cmd, numGroups, 1, 1);
 
         computeBarrier(VK_ACCESS_SHADER_WRITE_BIT, VK_ACCESS_SHADER_READ_BIT);
@@ -5147,36 +5098,33 @@ void VulkanComputePlugin::DispatchCompute()
         // Pass 5: Force + Integrate
         vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, m_IntegratePipeline);
         vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, m_PipelineLayout,
-                                0, 1, &m_DescSets[densityOutput], 0, nullptr);
+            0, 1, &m_DescSets[densityOutput], 0, nullptr);
         vkCmdDispatch(cmd, numGroups, 1, 1);
 
-        // Barrier: compute write → next sub-step or staging transfer
+        // Barrier: compute write -> next sub-step or staging transfer
         {
             VkMemoryBarrier bar = {};
             bar.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
             bar.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
             bar.dstAccessMask = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_TRANSFER_READ_BIT;
-            vkCmdPipelineBarrier(cmd,
-                                 VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
-                                 VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_TRANSFER_BIT,
-                                 0, 1, &bar, 0, nullptr, 0, nullptr);
+            vkCmdPipelineBarrier(cmd,VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_TRANSFER_BIT,
+                0, 1, &bar, 0, nullptr, 0, nullptr);
         }
     } // end sub-step loop
 
-    // 2 passes per sub-step: input → density → buffer[densityOutput] → integrate → buffer[m_CurrentInput]
+    // 2 passes per sub-step: input -> density -> buffer[densityOutput] -> integrate -> buffer[m_CurrentInput]
     // Output ends up back in buffer[m_CurrentInput]
     int outputIdx = m_CurrentInput;
 
-    // Temperature pass, once per frame, AFTER substep loop
-    // Temperature diffusion is a slow physical process; per-substep resolution
-    // is unnecessary and was causing 50% more GPU dispatches (3 passes vs 2).
+    // Temperature pass, once per frame, after substep loop
     if (g_ThermalEnabled && m_TemperaturePipeline != VK_NULL_HANDLE)
     {
         vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, m_TemperaturePipeline);
         vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, m_TempPipelineLayout,
-                                0, 1, &m_TempDescSets[m_CurrentInput], 0, nullptr);
+            0, 1, &m_TempDescSets[m_CurrentInput], 0, nullptr);
         vkCmdPushConstants(cmd, m_TempPipelineLayout, VK_SHADER_STAGE_COMPUTE_BIT,
-                           0, sizeof(SimParams), &g_SimParams);
+            0, sizeof(SimParams), &g_SimParams);
         vkCmdDispatch(cmd, numGroups, 1, 1);
 
         // Temperature reads from buffer[m_CurrentInput], writes to buffer[1-m_CurrentInput]
@@ -5188,13 +5136,12 @@ void VulkanComputePlugin::DispatchCompute()
         tempBar.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
         tempBar.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
         tempBar.dstAccessMask = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_TRANSFER_READ_BIT;
-        vkCmdPipelineBarrier(cmd,
-                             VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
-                             VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_TRANSFER_BIT,
-                             0, 1, &tempBar, 0, nullptr, 0, nullptr);
+        vkCmdPipelineBarrier(cmd,VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+            VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_TRANSFER_BIT,
+            0, 1, &tempBar, 0, nullptr, 0, nullptr);
     }
 
-    // Copy output → staging for CPU readback next frame
+    // Copy output -> staging for CPU readback next frame
     if (!g_PerfTestMode)
     {
         VkBufferCopy stagingCopy = {};
@@ -5205,26 +5152,20 @@ void VulkanComputePlugin::DispatchCompute()
         stagingBarrier.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
         stagingBarrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
         stagingBarrier.dstAccessMask = VK_ACCESS_HOST_READ_BIT;
-        vkCmdPipelineBarrier(cmd,
-                             VK_PIPELINE_STAGE_TRANSFER_BIT,
-                             VK_PIPELINE_STAGE_HOST_BIT,
-                             0, 1, &stagingBarrier, 0, nullptr, 0, nullptr);
+        vkCmdPipelineBarrier(cmd,VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_HOST_BIT,
+            0, 1, &stagingBarrier, 0, nullptr, 0, nullptr);
         g_StagingReady = true;
     }
 
-    // Optional: GPU→GPU copy of output into a Unity-owned buffer
+    // GPU->GPU copy of output into a Unity-owned buffer
     // This enables Unity-side compute/visualization without any CPU readback.
     if (g_UnityParticleOutputBuffer != nullptr)
     {
         UnityVulkanBuffer unityOutBuf = {};
 
         // Mark the Unity buffer for transfer-write and get its VkBuffer handle.
-        if (m_UnityVulkan->AccessBuffer(
-                g_UnityParticleOutputBuffer,
-                VK_PIPELINE_STAGE_TRANSFER_BIT,
-                VK_ACCESS_TRANSFER_WRITE_BIT,
-                kUnityVulkanResourceAccess_PipelineBarrier,
-                &unityOutBuf))
+        if (m_UnityVulkan->AccessBuffer( g_UnityParticleOutputBuffer,VK_PIPELINE_STAGE_TRANSFER_BIT,
+            VK_ACCESS_TRANSFER_WRITE_BIT, kUnityVulkanResourceAccess_PipelineBarrier, &unityOutBuf))
         {
             VkDeviceSize copySize = (VkDeviceSize)g_ElementCount * (VkDeviceSize)sizeof(Particle);
             if (unityOutBuf.buffer != VK_NULL_HANDLE && unityOutBuf.sizeInBytes >= (size_t)copySize)
@@ -5233,7 +5174,7 @@ void VulkanComputePlugin::DispatchCompute()
                 copyRegion.size = copySize;
                 vkCmdCopyBuffer(cmd, m_GpuBuffers[outputIdx].buffer, unityOutBuf.buffer, 1, &copyRegion);
 
-                // Barrier: transfer write → shader read (Unity compute/graphics can safely read next).
+                // Barrier: transfer write -> shader read (Unity compute/graphics can safely read next).
                 VkBufferMemoryBarrier postCopyBarrier = {};
                 postCopyBarrier.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
                 postCopyBarrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
@@ -5244,27 +5185,19 @@ void VulkanComputePlugin::DispatchCompute()
                 postCopyBarrier.offset = 0;
                 postCopyBarrier.size = copySize;
 
-                vkCmdPipelineBarrier(cmd,
-                                     VK_PIPELINE_STAGE_TRANSFER_BIT,
-                                     VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT |
-                                         VK_PIPELINE_STAGE_VERTEX_SHADER_BIT |
-                                         VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
-                                     0,
-                                     0, nullptr,
-                                     1, &postCopyBarrier,
-                                     0, nullptr);
+                vkCmdPipelineBarrier(cmd,VK_PIPELINE_STAGE_TRANSFER_BIT, 
+                    VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_VERTEX_SHADER_BIT | VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+                    0, 0, nullptr, 1, &postCopyBarrier, 0, nullptr);
             }
         }
     }
 
     // With 2 passes, output is back in buffer[m_CurrentInput] 
     m_CurrentInput = densityOutput;
-    // g_SolidPlugin.DispatchCompute();  // Now creates its own command buffer
-    // g_SolidPlugin.ReadbackToCPU();
     g_ComputeDone = true;
 }
 
-// Debug readback: GPU → staging → CPU
+// Debug readback: GPU -> staging -> CPU
 // Blocking. Allocates a one-shot command buffer, copies the latest output
 // buffer into the staging buffer, submits, waits, and reads the result.
 // Only called when C# explicitly requests it via GetComputeResult().
@@ -5301,12 +5234,10 @@ void VulkanComputePlugin::ReadbackToCPU()
     preBarrier.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
     preBarrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
     preBarrier.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
-    vkCmdPipelineBarrier(cmd,
-                         VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
-                         VK_PIPELINE_STAGE_TRANSFER_BIT,
-                         0, 1, &preBarrier, 0, nullptr, 0, nullptr);
+    vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT,
+        0, 1, &preBarrier, 0, nullptr, 0, nullptr);
 
-    // Copy GPU buffer → staging buffer
+    // Copy GPU buffer -> staging buffer
     VkBufferCopy copyRegion = {};
     copyRegion.size = copySize;
     vkCmdCopyBuffer(cmd, srcBuffer, m_StagingBuffer.buffer, 1, &copyRegion);
@@ -5316,10 +5247,8 @@ void VulkanComputePlugin::ReadbackToCPU()
     postBarrier.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
     postBarrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
     postBarrier.dstAccessMask = VK_ACCESS_HOST_READ_BIT;
-    vkCmdPipelineBarrier(cmd,
-                         VK_PIPELINE_STAGE_TRANSFER_BIT,
-                         VK_PIPELINE_STAGE_HOST_BIT,
-                         0, 1, &postBarrier, 0, nullptr, 0, nullptr);
+    vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_HOST_BIT,
+        0, 1, &postBarrier, 0, nullptr, 0, nullptr);
 
     vkEndCommandBuffer(cmd);
 
@@ -5366,10 +5295,10 @@ void VulkanSolidThermalPlugin::ReadbackToCPU()
         return;
 
     VkMappedMemoryRange range = {};
-    range.sType  = VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE;
-    range.memory = m_ReadbackBuffer.memory;   // ← the VkDeviceMemory handle
+    range.sType = VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE;
+    range.memory = m_ReadbackBuffer.memory;   //  the VkDeviceMemory handle
     range.offset = 0;
-    range.size   = VK_WHOLE_SIZE;
+    range.size = VK_WHOLE_SIZE;
     vkInvalidateMappedMemoryRanges(m_Instance.device, 1, &range);
 
     // Now safe to read GPU→CPU
@@ -5397,7 +5326,8 @@ GetComputeResult(Particle *outData, int count)
 extern "C" void UNITY_INTERFACE_EXPORT UNITY_INTERFACE_API
 GetSolidComputeResult(float* outData, int count)
 {
-    if (g_SolidTempOutput == nullptr || count <= 0) return;
+    if (g_SolidTempOutput == nullptr || count <= 0) 
+        return;
     int n = (count > g_SolidCellCount) ? g_SolidCellCount : count;
     memcpy(outData, g_SolidTempOutput, n * sizeof(float));
 }
@@ -5471,33 +5401,32 @@ void VulkanComputePlugin::DestroyPipeline()
 
     DestroyBuffers();
 
-    if (m_CommandPool)           { vkDestroyCommandPool(device, m_CommandPool, nullptr);             m_CommandPool = VK_NULL_HANDLE; }
-    if (m_ComputeHashPipeline)   { vkDestroyPipeline(device, m_ComputeHashPipeline, nullptr);      m_ComputeHashPipeline = VK_NULL_HANDLE; }
-    if (m_BitonicSortPipeline)   { vkDestroyPipeline(device, m_BitonicSortPipeline, nullptr);      m_BitonicSortPipeline = VK_NULL_HANDLE; }
-    if (m_BitonicLocalPipeline)  { vkDestroyPipeline(device, m_BitonicLocalPipeline, nullptr);     m_BitonicLocalPipeline = VK_NULL_HANDLE; }
-    if (m_ComputeStartPipeline)  { vkDestroyPipeline(device, m_ComputeStartPipeline, nullptr);     m_ComputeStartPipeline = VK_NULL_HANDLE; }
-    if (m_DensityPipeline)       { vkDestroyPipeline(device, m_DensityPipeline, nullptr);          m_DensityPipeline = VK_NULL_HANDLE; }
-    if (m_TemperaturePipeline)   { vkDestroyPipeline(device, m_TemperaturePipeline, nullptr);      m_TemperaturePipeline = VK_NULL_HANDLE; }
-    if (m_IntegratePipeline)     { vkDestroyPipeline(device, m_IntegratePipeline, nullptr);        m_IntegratePipeline = VK_NULL_HANDLE; }
-    if (m_ReorderPipeline)       { vkDestroyPipeline(device, m_ReorderPipeline, nullptr);          m_ReorderPipeline = VK_NULL_HANDLE; }
-    if (m_PipelineLayout)        { vkDestroyPipelineLayout(device, m_PipelineLayout, nullptr);     m_PipelineLayout = VK_NULL_HANDLE; }
-    if (m_DescSetLayout)         { vkDestroyDescriptorSetLayout(device, m_DescSetLayout, nullptr); m_DescSetLayout = VK_NULL_HANDLE; }
-    if (m_ComputeHashModule)     { vkDestroyShaderModule(device, m_ComputeHashModule, nullptr);    m_ComputeHashModule = VK_NULL_HANDLE; }
-    if (m_BitonicSortModule)     { vkDestroyShaderModule(device, m_BitonicSortModule, nullptr);    m_BitonicSortModule = VK_NULL_HANDLE; }
-    if (m_BitonicLocalModule)    { vkDestroyShaderModule(device, m_BitonicLocalModule, nullptr);   m_BitonicLocalModule = VK_NULL_HANDLE; }
-    if (m_ComputeStartModule)    { vkDestroyShaderModule(device, m_ComputeStartModule, nullptr);   m_ComputeStartModule = VK_NULL_HANDLE; }
-    if (m_DensityModule)         { vkDestroyShaderModule(device, m_DensityModule, nullptr);        m_DensityModule = VK_NULL_HANDLE; }
-    if (m_TemperatureModule)     { vkDestroyShaderModule(device, m_TemperatureModule, nullptr);    m_TemperatureModule = VK_NULL_HANDLE; }
-    if (m_IntegrateModule)       { vkDestroyShaderModule(device, m_IntegrateModule, nullptr);      m_IntegrateModule = VK_NULL_HANDLE; }
-    if (m_ReorderModule)         { vkDestroyShaderModule(device, m_ReorderModule, nullptr);        m_ReorderModule = VK_NULL_HANDLE; }
-    if (m_TempPipelineLayout)    { vkDestroyPipelineLayout(device, m_TempPipelineLayout, nullptr); m_TempPipelineLayout  = VK_NULL_HANDLE; }
-    if (m_TempDescSetLayout)     { vkDestroyDescriptorSetLayout(device, m_TempDescSetLayout, nullptr);m_TempDescSetLayout   = VK_NULL_HANDLE; }
+    if (m_CommandPool) { vkDestroyCommandPool(device, m_CommandPool, nullptr); m_CommandPool = VK_NULL_HANDLE; }
+    if (m_ComputeHashPipeline) { vkDestroyPipeline(device, m_ComputeHashPipeline, nullptr); m_ComputeHashPipeline = VK_NULL_HANDLE; }
+    if (m_BitonicSortPipeline) { vkDestroyPipeline(device, m_BitonicSortPipeline, nullptr); m_BitonicSortPipeline = VK_NULL_HANDLE; }
+    if (m_BitonicLocalPipeline) { vkDestroyPipeline(device, m_BitonicLocalPipeline, nullptr); m_BitonicLocalPipeline = VK_NULL_HANDLE; }
+    if (m_ComputeStartPipeline) { vkDestroyPipeline(device, m_ComputeStartPipeline, nullptr); m_ComputeStartPipeline = VK_NULL_HANDLE; }
+    if (m_DensityPipeline) { vkDestroyPipeline(device, m_DensityPipeline, nullptr); m_DensityPipeline = VK_NULL_HANDLE; }
+    if (m_TemperaturePipeline) { vkDestroyPipeline(device, m_TemperaturePipeline, nullptr); m_TemperaturePipeline = VK_NULL_HANDLE; }
+    if (m_IntegratePipeline) { vkDestroyPipeline(device, m_IntegratePipeline, nullptr); m_IntegratePipeline = VK_NULL_HANDLE; }
+    if (m_ReorderPipeline) { vkDestroyPipeline(device, m_ReorderPipeline, nullptr); m_ReorderPipeline = VK_NULL_HANDLE; }
+    if (m_PipelineLayout) { vkDestroyPipelineLayout(device, m_PipelineLayout, nullptr); m_PipelineLayout = VK_NULL_HANDLE; }
+    if (m_DescSetLayout) { vkDestroyDescriptorSetLayout(device, m_DescSetLayout, nullptr); m_DescSetLayout = VK_NULL_HANDLE; }
+    if (m_ComputeHashModule) { vkDestroyShaderModule(device, m_ComputeHashModule, nullptr); m_ComputeHashModule = VK_NULL_HANDLE; }
+    if (m_BitonicSortModule) { vkDestroyShaderModule(device, m_BitonicSortModule, nullptr); m_BitonicSortModule = VK_NULL_HANDLE; }
+    if (m_BitonicLocalModule){ vkDestroyShaderModule(device, m_BitonicLocalModule, nullptr); m_BitonicLocalModule = VK_NULL_HANDLE; }
+    if (m_ComputeStartModule) { vkDestroyShaderModule(device, m_ComputeStartModule, nullptr); m_ComputeStartModule = VK_NULL_HANDLE; }
+    if (m_DensityModule) { vkDestroyShaderModule(device, m_DensityModule, nullptr); m_DensityModule = VK_NULL_HANDLE; }
+    if (m_TemperatureModule) { vkDestroyShaderModule(device, m_TemperatureModule, nullptr);  m_TemperatureModule = VK_NULL_HANDLE; }
+    if (m_IntegrateModule) { vkDestroyShaderModule(device, m_IntegrateModule, nullptr); m_IntegrateModule = VK_NULL_HANDLE; }
+    if (m_ReorderModule) { vkDestroyShaderModule(device, m_ReorderModule, nullptr); m_ReorderModule = VK_NULL_HANDLE; }
+    if (m_TempPipelineLayout) { vkDestroyPipelineLayout(device, m_TempPipelineLayout, nullptr); m_TempPipelineLayout = VK_NULL_HANDLE; }
+    if (m_TempDescSetLayout) { vkDestroyDescriptorSetLayout(device, m_TempDescSetLayout, nullptr);m_TempDescSetLayout = VK_NULL_HANDLE; }
 }
 
 void VulkanComputePlugin::Shutdown()
 {
     DestroyPipeline();
-    // g_SolidPlugin.Shutdown();
     m_Initialized = false;
 }
 
@@ -5505,9 +5434,9 @@ void VulkanSolidThermalPlugin::Shutdown()
 {
     DestroyBuffers();
     VkDevice device = m_Instance.device;
-    if (m_Pipeline    != VK_NULL_HANDLE) vkDestroyPipeline(device, m_Pipeline, nullptr);
-    if (m_PipeLayout  != VK_NULL_HANDLE) vkDestroyPipelineLayout(device, m_PipeLayout, nullptr);
-    if (m_DescLayout  != VK_NULL_HANDLE) vkDestroyDescriptorSetLayout(device, m_DescLayout, nullptr);
+    if (m_Pipeline != VK_NULL_HANDLE) vkDestroyPipeline(device, m_Pipeline, nullptr);
+    if (m_PipeLayout != VK_NULL_HANDLE) vkDestroyPipelineLayout(device, m_PipeLayout, nullptr);
+    if (m_DescLayout != VK_NULL_HANDLE) vkDestroyDescriptorSetLayout(device, m_DescLayout, nullptr);
     if (m_ShaderModule!= VK_NULL_HANDLE) vkDestroyShaderModule(device, m_ShaderModule, nullptr);
     m_Initialized = false;
 }

@@ -2,12 +2,10 @@ using System.Collections;
 using UnityEngine;
 using UnityEngine.EventSystems;
 
-/// <summary>
-/// Manages the full ingot lifecycle:
-/// </summary>
+// Manages the full ingot lifecycle:
 public class IngotInteraction : MonoBehaviour
 {
-    // ----- References ----------------------------------------------
+    // Inspector fields
 
     [Header("Ingots")]
     public GameObject[] ingots;                  
@@ -36,8 +34,7 @@ public class IngotInteraction : MonoBehaviour
     [Tooltip("Time in seconds for the ingot to travel to a slot.")]
     public float placeDuration = 0.6f;
 
-    // ---- State ------------------------------------------------------
-
+    // State 
     public enum WorkflowStage
     {
         WaitingForPliers, WaitingForIngotPick, IngotHeld, AtForge, Returning
@@ -45,6 +42,7 @@ public class IngotInteraction : MonoBehaviour
 
     public WorkflowStage Stage { get; private set; } = WorkflowStage.WaitingForPliers;
 
+    // private variables 
     private GameObject _heldIngot;
     private int _heldIngotIndex = -1;
     private Vector3[] _ingotHomePositions;
@@ -58,14 +56,14 @@ public class IngotInteraction : MonoBehaviour
     private bool _nextPressed = false;
     public void NotifyNextPressed() => _nextPressed = true;
 
-    // ----Events (Blacksmith minigame listens to these to know when to unlock Next) --
+    // Events (Blacksmith minigame listens to these to know when to unlock Next) 
 
     public event System.Action OnPliersPickedUp;
     public event System.Action OnIngotPickedUp;
     public event System.Action OnIngotPlacedInForge;
     public event System.Action OnIngotReturned;
 
-    // ----- Unity Lifecycle ----------------------------------------------
+    //  Unity Lifecycle 
 
     private void Start()
     {
@@ -124,48 +122,41 @@ public class IngotInteraction : MonoBehaviour
         HandleClicks();
     }
 
-    // ------ click Handling --------------------------------------------------
+    // click Handling 
 
     private void HandleClicks()
     {
         if (!Input.GetMouseButtonDown(0)) 
             return;
 
-        // ---- Block click if it landed on a UI element (like the Next button) ----
+        //  Block click if it landed on a UI element (like the Next button) 
         if (EventSystem.current != null && EventSystem.current.IsPointerOverGameObject())
         {
-            //Debug.Log("[IngotInteraction] Click blocked , the pointer is over UI.");
             return;
         }
 
-        // ---- Diagnostic: draw the ray in the Scene view for 3 seconds -------
+        //  Diagnostic: draw the ray in the Scene view for 3 seconds 
         Ray ray = _cam.ScreenPointToRay(Input.mousePosition);
         Debug.DrawRay(ray.origin, ray.direction * 50f, Color.red, 3f);
-        // Debug.Log($"[IngotInteraction] Ray origin={ray.origin:F2}  dir={ray.direction:F2}  " +
-        //           $"mousePos={Input.mousePosition}  cursorLocked={Cursor.lockState}");
+        Debug.Log($"IngotInteraction: Ray origin={ray.origin:F2}  dir={ray.direction:F2}  " +
+                  $"mousePos={Input.mousePosition}  cursorLocked={Cursor.lockState}");
 
         // Cast against ALL layers so we can see what is in the way
         RaycastHit[] allHits = Physics.RaycastAll(ray, 50f);
         if (allHits.Length == 0)
         {
-            Debug.LogWarning("[IngotInteraction] RaycastAll hit NOTHING in 50 units. " +
+            Debug.LogWarning("IngotInteraction: RaycastAll hit NOTHING in 50 units. " +
                              "Check that your objects have colliders enabled and are " +
                              "not on a layer set to ignore raycasts.");
 
             // List every collider in the scene so you can cross-reference
             var allCols = FindObjectsOfType<Collider>();
             foreach (var c in allCols)
-                Debug.Log($"  Collider in scene: '{c.gameObject.name}'  " +
+                Debug.Log($"Collider in scene: '{c.gameObject.name}'  " +
                           $"enabled={c.enabled}  layer={LayerMask.LayerToName(c.gameObject.layer)}  " +
                           $"pos={c.transform.position:F2}");
             return;
         }
-
-        // Show everything the ray passed through (including triggers)
-        // foreach (var h in allHits)
-        //     Debug.Log($"  RaycastAll hit: '{h.collider.gameObject.name}'  " +
-        //               $"dist={h.distance:F2}  layer={LayerMask.LayerToName(h.collider.gameObject.layer)}  " +
-        //               $"isTrigger={h.collider.isTrigger}");
 
         // Use the closest non-trigger hit for interaction
         System.Array.Sort(allHits, (a, b) => a.distance.CompareTo(b.distance));
@@ -183,7 +174,7 @@ public class IngotInteraction : MonoBehaviour
 
         if (!foundHit)
         {
-            Debug.LogWarning("[IngotInteraction] Ray only hit triggers — no solid collider found.");
+            Debug.LogWarning("IngotInteraction: Ray only hit triggers , no solid collider found.");
             return;
         }
 
@@ -220,7 +211,7 @@ public class IngotInteraction : MonoBehaviour
         }
     }
 
-    // --- get data about the currently held ingot ----------------
+    //  get data about the currently held ingot 
     public IngotData GetHeldIngotData()
     {
         if (_heldIngot == null) 
@@ -228,7 +219,7 @@ public class IngotInteraction : MonoBehaviour
         return _heldIngot.GetComponentInParent<IngotData>();
     }
 
-    // ---- pick up pliers ---------------------------
+    //  pick up pliers
 
     private void PickUpPliers()
     {
@@ -249,7 +240,7 @@ public class IngotInteraction : MonoBehaviour
         OnPliersPickedUp?.Invoke();
     }
 
-    // --- pick up ingot ----------------------------
+    //  pick up ingot 
 
     private void PickUpIngot(int index)
     {
@@ -267,7 +258,7 @@ public class IngotInteraction : MonoBehaviour
         OnIngotPickedUp?.Invoke();
     }
 
-    // ---- swap ingot while still at table ----------------------------
+    //  swap ingot while still at table 
 
     private void SwapIngot(int newIndex)
     {
@@ -283,7 +274,7 @@ public class IngotInteraction : MonoBehaviour
         PickUpIngot(newIndex);
     }
 
-    // --------- place ingot in forge ---------------------
+    //  place ingot in forge 
 
     public void PlaceInForge()
     {
@@ -297,7 +288,7 @@ public class IngotInteraction : MonoBehaviour
         }));
     }
     
-    // --------- return ingot to table -----------------------------
+    // return ingot to table 
 
     public void ReturnIngotToTable()
     {
@@ -329,9 +320,9 @@ public class IngotInteraction : MonoBehaviour
         }));
     }
 
-    // -------- helpers ----------------------------
+    //  helpers 
 
-    // Move an object (already unparented) to a world-space slot transform.
+    // Move an object to a world-space slot transform.
     private IEnumerator PlaceAtSlot(Transform slot, System.Action onDone)
     {
         yield return StartCoroutine(MoveToWorld(_heldIngot.transform,slot.position, slot.rotation, placeDuration));
