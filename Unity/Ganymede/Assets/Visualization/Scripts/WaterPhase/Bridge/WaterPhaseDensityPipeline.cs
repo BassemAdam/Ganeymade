@@ -41,6 +41,7 @@ public sealed class WaterPhaseDensityPipeline
     private static readonly int ID_BlurSigma = Shader.PropertyToID("_BlurSigma");
     private static readonly int ID_BlurDetailPreserve = Shader.PropertyToID("_BlurDetailPreserve");
     private static readonly int ID_BlurChannel = Shader.PropertyToID("_BlurChannel");
+    private static readonly int ID_BlurAxis = Shader.PropertyToID("_BlurAxis");
 
     public WaterPhaseDensityPipeline(ComputeShader computeShader)
     {
@@ -191,11 +192,21 @@ public sealed class WaterPhaseDensityPipeline
 
         _computeShader.SetInt(ID_BlurRadius, blur.GetRadius(channel));
         _computeShader.SetFloat(ID_BlurSigma, blur.GetSigma(channel));
-        _computeShader.SetFloat(ID_BlurDetailPreserve, blur.GetDetailPreserve(channel));
         _computeShader.SetInt(ID_BlurChannel, channel);
-        _computeShader.Dispatch(_blurDensityKernel, groupsX, groupsY, groupsZ);
+
+        float detailPreserve = blur.GetDetailPreserve(channel);
+
+        // Separable 1-D blur: three axis passes (X, Y, Z).
+        // Detail preservation is applied only on the final (Z) pass so that
+        // the high-frequency residual is added back once, not three times.
         // https://docs.unity3d.com/6000.4/Documentation/ScriptReference/Graphics.CopyTexture.html
-        Graphics.CopyTexture(resources.PhaseDensityScratchTexture, resources.PhaseDensityTexture);
+        for (int axis = 0; axis < 3; axis++)
+        {
+            _computeShader.SetInt(ID_BlurAxis, axis);
+            _computeShader.SetFloat(ID_BlurDetailPreserve, axis == 2 ? detailPreserve : 0f);
+            _computeShader.Dispatch(_blurDensityKernel, groupsX, groupsY, groupsZ);
+            Graphics.CopyTexture(resources.PhaseDensityScratchTexture, resources.PhaseDensityTexture);
+        }
     }
 
     private void DispatchNormalBake(WaterPhaseResources resources, int groupsX, int groupsY, int groupsZ)

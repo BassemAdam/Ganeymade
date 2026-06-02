@@ -205,6 +205,111 @@ WaterSSRTraceResult TraceWaterScreenSpaceReflection(
     return trace;
 }
 
+struct WaterRefractionTraceResult
+{
+    bool   hit;
+    float2 hitUV;
+    float  hitDistanceAlongRay;
+};
+
+WaterRefractionTraceResult TraceWaterScreenSpaceRefraction(
+    SurfaceHit surfaceHit,
+    float2 sourceScreenUV,
+    float maxSearchDistance)
+{
+    WaterRefractionTraceResult trace;
+    trace.hit = false;
+    trace.hitUV = sourceScreenUV;
+    trace.hitDistanceAlongRay = maxSearchDistance;
+
+    if (!surfaceHit.hit || _RefractionStrength <= 1e-5)
+        return trace;
+
+    float3 refractDirWS = normalize(surfaceHit.refractDir);
+    if (dot(refractDirWS, refractDirWS) < 0.9)
+        return trace;
+
+    float stepLength = max(_RefractionStepSize, 1e-4);
+    float maxDistance = min(maxSearchDistance, max(_SSRMaxDistance, stepLength));
+    int maxSteps = clamp((int)round(_RefractionMaxSteps), 1, 512);
+    float thickness = max(_RefractionThickness, 1e-4);
+
+    float3 rayOriginWS = surfaceHit.posWS + refractDirWS * 1e-3;
+    float jitter = SampleWaterBlueNoiseChannel(sourceScreenUV, 3);
+    float currentDistance = stepLength * lerp(0.25, 1.0, jitter);
+    float previousDistance = currentDistance;
+    float previousDepthDelta = -1e6;
+
+    [loop]
+    for (int stepIndex = 0; stepIndex < maxSteps && currentDistance <= maxDistance; stepIndex++)
+    {
+        float3 samplePosWS = rayOriginWS + refractDirWS * currentDistance;
+        float2 sampleUV;
+        float rayDistance;
+        float sceneDistance;
+        float depthDelta;
+
+        if (!WaterSSRProjectPoint(samplePosWS, sampleUV, rayDistance, sceneDistance, depthDelta))
+        {
+            break;
+        }
+
+        bool crossedSurface = (depthDelta >= 0.0) && (previousDepthDelta < 0.0);
+        bool depthWithinThickness = (depthDelta >= 0.0) && (depthDelta <= thickness);
+
+        if (depthWithinThickness || crossedSurface)
+        {
+            float2 hitUV = sampleUV;
+            float hitDistance = currentDistance;
+
+            if (crossedSurface)
+            {
+                float lowDistance = previousDistance;
+                float highDistance = currentDistance;
+
+                [unroll(4)]
+                for (int refine = 0; refine < 4; refine++)
+                {
+                    float midDistance = 0.5 * (lowDistance + highDistance);
+                    float3 midPosWS = rayOriginWS + refractDirWS * midDistance;
+                    float2 midUV;
+                    float midRayDistance;
+                    float midSceneDistance;
+                    float midDepthDelta;
+
+                    if (!WaterSSRProjectPoint(midPosWS, midUV, midRayDistance, midSceneDistance, midDepthDelta))
+                    {
+                        highDistance = midDistance;
+                        continue;
+                    }
+
+                    if (midDepthDelta >= 0.0)
+                    {
+                        highDistance = midDistance;
+                        hitUV = midUV;
+                        hitDistance = midDistance;
+                    }
+                    else
+                    {
+                        lowDistance = midDistance;
+                    }
+                }
+            }
+
+            trace.hit = true;
+            trace.hitUV = hitUV;
+            trace.hitDistanceAlongRay = hitDistance;
+            return trace;
+        }
+
+        previousDistance = currentDistance;
+        previousDepthDelta = depthDelta;
+        currentDistance += stepLength;
+    }
+
+    return trace;
+}
+
 float3 ComposeSceneDepthDebugColor(float2 screenUV)
 {
     float rawDepth = SampleSceneDepth(screenUV);

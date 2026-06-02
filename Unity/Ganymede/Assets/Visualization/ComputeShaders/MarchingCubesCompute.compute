@@ -1,48 +1,47 @@
-// Marching Cubes on a density grid (Texture3D<float>).
-// ALL lookup data comes from runtime StructuredBuffers — zero large static const
-// arrays, guaranteed Vulkan/SPIR-V compatibility.
-
+// Declaring entry points by telling compiler compile this function as a GPU entry point
+// this allows us to link it to c# scripts and find it in the scripts
 #pragma kernel MarchDensity
 #pragma kernel ClearArgs
 
-// Tiny arrays (24 ints total) — well within Vulkan constant limits
+
 static const int cornerA[12] = {0, 1, 2, 3, 4, 5, 6, 7, 0, 1, 2, 3};
 static const int cornerB[12] = {1, 2, 3, 0, 5, 6, 7, 4, 4, 5, 6, 7};
 
 struct Vertex
 {
-    float4 position;   // xyz = world pos, w = 1
-    float4 normal;     // xyz = normal,    w = 0
+    float4 position;
+    float4 normal;
 };
 
-// ---- Inputs ----
-Texture3D<float2> DensityTexture3D;   // R = liquid density, G = vapour (ignored here)
+Texture3D<float2> DensityTexture3D;
 SamplerState samplerDensityTexture3D;
-Texture3D<float4>  NormalTexture3D;     // pre-baked outward surface normals (xyz), w = 0
+Texture3D<float4>  NormalTexture3D;
 SamplerState       samplerNormalTexture3D;
-StructuredBuffer<int>  lut;        // flat triangle edge indices
-StructuredBuffer<int>  offsets;    // offset into lut for each of 256 configs
-StructuredBuffer<int>  lengths;    // number of indices per config
+StructuredBuffer<int>  lut;
+StructuredBuffer<int>  offsets;
+StructuredBuffer<int>  lengths;
 
 int3   GridSize;
 float3 VoxelSize;
 float3 BoundsMinWS;
 float  isoLevel;
 
-// ---- Output ----
 RWStructuredBuffer<Vertex> vertices;
 RWStructuredBuffer<uint> drawArgs;
 
 [numthreads(1,1,1)]
 void ClearArgs(uint3 id : SV_DispatchThreadID)
 {
-    drawArgs[0] = 0;
-    drawArgs[1] = 1;
-    drawArgs[2] = 0;
-    drawArgs[3] = 0;
+    // drawArgs is read by DrawProceduralIndirect to know how to render the mesh
+    // It never goes back to the CPU — the GPU reads it directly for rendering
+
+    drawArgs[0] = 0; // vertex count: reset to 0, MarchDensity fills this up via InterlockedAdd
+    drawArgs[1] = 1; // instance count: always 1 — we draw the fluid mesh once, not multiple copies
+                     // (instancing = draw same mesh N times, e.g. 1000 trees. We dont need that here)
+    drawArgs[2] = 0; // start vertex: begin reading vertices from slot 0
+    drawArgs[3] = 0; // start instance: begin at instance 0 (irrelevant since instance count = 1)
 }
 
-// ---- Helpers ----
 float SampleDensity(int3 pos)
 {
     bool isEdge = any(pos <= 0) || any(pos >= GridSize - 1);
@@ -67,15 +66,11 @@ Vertex MakeVertex(int3 ca, int3 cb)
 
     float t = (abs(dB - dA) < 0.00001) ? 0.0 : (isoLevel - dA) / (dB - dA);
 
-    // Sample the pre-baked normal texture at the interpolated vertex position.
     float3 vertexPosWS  = posA + t * (posB - posA);
     float3 volumeSizeWS = max((float3)GridSize * VoxelSize, 1e-5);
     float3 uvw          = (vertexPosWS - BoundsMinWS) / volumeSizeWS;
     float3 n    = NormalTexture3D.SampleLevel(samplerNormalTexture3D, uvw, 0).xyz;
     float  nLen = length(n);
-    // Zero normal: gradient below threshold at this position. Store as-is — the
-    // surface shader will receive zero and produce no specular/diffuse contribution,
-    // which is the correct physical response for an indeterminate surface orientation.
 
     Vertex v;
     v.position = float4(vertexPosWS, 1.0);
@@ -83,7 +78,6 @@ Vertex MakeVertex(int3 ca, int3 cb)
     return v;
 }
 
-// ---- Kernel ----
 [numthreads(8, 8, 8)]
 void MarchDensity(int3 id : SV_DispatchThreadID)
 {
@@ -99,14 +93,24 @@ void MarchDensity(int3 id : SV_DispatchThreadID)
     int cfg = 0;
     for (int i = 0; i < 8; i++)
         if (SampleDensity(c[i]) < isoLevel)
-            cfg |= (1 << i);
+            cfg |= (1 << i); // shift left by i bits then or it with cfg
 
     if (cfg == 0 || cfg == 255) return;
 
+    // by using lengths and offsets arrays that i asked llm to generate it for me 
+    // LUT is now much more compacted 512 bytes instead of 4kb
+    // becase traditional patted format is 256 x 16 every config gets 16 slots event if it only needs 3 or 6 
+    // 256 x 16 x 4 bytes (int) = 16,000 bytes 
+    // new format : 2460 ints = 9,840 bytes plus 256 x 2 x 4 bytes = 11888 bytes
     int numIdx = lengths[cfg];
     int off    = offsets[cfg];
 
     uint startIdx;
+    // each thread wants to write its traingles somewhere in sahred verticies buffer 
+    // atomic add steps
+    // 1- first it reads drawArgs[0] which contains number of traingles written so far 
+    // 2- it add numIdx to drawArgs[0] to reserve space for its traingles
+    // 3- return the old value before the add in startIdx so each thread gets a unique starting index
     InterlockedAdd(drawArgs[0], numIdx, startIdx);
 
     for (int t = 0; t < numIdx; t += 3)
@@ -115,9 +119,12 @@ void MarchDensity(int3 id : SV_DispatchThreadID)
         int e1 = lut[off + t + 1];
         int e2 = lut[off + t + 2];
 
-        // Swapped e2, e1, e0 back to e0, e1, e2 to fix winding order
         vertices[startIdx + t]     = MakeVertex(c[cornerA[e0]], c[cornerB[e0]]);
         vertices[startIdx + t + 1] = MakeVertex(c[cornerA[e1]], c[cornerB[e1]]);
         vertices[startIdx + t + 2] = MakeVertex(c[cornerA[e2]], c[cornerB[e2]]);
+        
+        // Example to understand the mappinig
+        // e0 = 3 which is cornerA = 2, cornerB = 3 which is (1,0,1) and (0,0,1) 
+        // after that we give to make vertex (1,0,1) and (0,0,1) to get interpolated vertex positon and normal 
     }
 }

@@ -18,7 +18,7 @@ StructuredBuffer<float> sdfGrid;
 [[vk::binding(6, 0)]]
 StructuredBuffer<DrainZone> drains;
 
-// ── SDF sampling helpers ────────────────────────────────────────────────
+// SDF sampling helpers
 // Buffer layout: [0]=originX [1]=originY [2]=originZ [3]=pad, then SDF data at index 4+
 
 static const int SDF_HEADER = 4; // floats before actual SDF data
@@ -74,8 +74,8 @@ float3 sdfGradient(float3 worldPos)
     return len > 1e-8 ? grad / len : float3(0, 1, 0);
 }
 
-// ── Cohesion kernel (Akinci 2013, clamped) ──────────────────────────────
-// Peaks at r ≈ h/2, zero at r=0 and r=h — models mid-range liquid attraction.
+// Cohesion kernel (Akinci 2013, clamped)
+// Peaks at r ≈ h/2, zero at r=0 and r=h, models mid-range liquid attraction.
 // Clamped to >= 0: pressure handles close-range repulsion; cohesion is attraction only.
 float cohesionKernel(float r, float h)
 {
@@ -92,7 +92,7 @@ float cohesionKernel(float r, float h)
     return max(0.0, val); // clamp: no repulsive cohesion at very close range
 }
 
-// ── Main compute kernel ─────────────────────────────────────────────────
+// Main compute kernel
 
 [shader("compute")]
 [numthreads(256, 1, 1)]
@@ -178,7 +178,7 @@ void computeMain(uint3 threadId: SV_DispatchThreadID)
                float visc = (p.phase == 1) ? params.gasViscosity : params.viscosity;
                fViscosity += params.particleMass * visc * (pj.velocity - p.velocity) / pj.density * viscLap;
 
-               // Cohesion: liquid-liquid only — attracts particles toward each other at mid-range
+               // Cohesion: liquid-liquid only. attracts particles toward each other at mid-range
                if (p.phase == 0 && pj.phase == 0 && params.cohesionStrength > 0.0)
                {
                   float ck = cohesionKernel(r, h);
@@ -193,17 +193,17 @@ void computeMain(uint3 threadId: SV_DispatchThreadID)
    float3 sphAccel = (fPressure + fViscosity + fCohesion) / p.density + fBoundary;
    p.acceleration = sphAccel;
 
-   // ── Buoyancy: gas particles always rise at full strength ──
+   // Buoyancy: gas particles always rise at full strength
    float3 buoyancy = float3(0.0);
    if (p.phase == 1)
    {
        buoyancy = float3(0.0, params.gasBuoyancy, 0.0);
    }
 
-   // ── Boundary repulsion: compensates for SPH kernel truncation at walls ──
+   // Boundary repulsion: compensates for SPH kernel truncation at walls
    // Without this, wall-adjacent particles lose ~half their kernel support,
    // underestimating density and producing a pressure gradient that pushes
-   // particles INTO the wall instead of away from it.
+   // particles into the wall instead of away from it.
    float3 boundaryForce = float3(0.0);
    float boundaryStiff = params.gasStiffness / h;
    float3 dLo = p.position - params.boundsMin;
@@ -234,7 +234,7 @@ void computeMain(uint3 threadId: SV_DispatchThreadID)
    float damp = (p.phase == 1) ? min(params.damping + 0.001, 1.0) : params.damping;
    p.velocity *= damp;
 
-   // Velocity magnitude clamp BEFORE position update — otherwise an unclamped
+   // Velocity magnitude clamp before position update. otherwise an unclamped
    // velocity moves the particle too far in a single frame.
    float maxVel = 30.0;
    float vel2 = dot(p.velocity, p.velocity);
@@ -243,7 +243,7 @@ void computeMain(uint3 threadId: SV_DispatchThreadID)
 
    p.position += p.velocity * params.dt;
 
-   // ── SDF collision ──────────────────────────────────────────────
+   // SDF collision
    // Skin offset is baked into the SDF data on CPU (subtracted before upload),
    // so dist=0 is the desired keep-out surface. dist < 0 = penetrated.
    // Multiple iterations handle deep penetrations (e.g. enlarged surfaces).
@@ -287,7 +287,7 @@ void computeMain(uint3 threadId: SV_DispatchThreadID)
       }
    }
 
-   // ── Drain zones: deactivate particles inside any active drain ────
+   // DISABLED Drain zones: deactivate particles inside any active drain
    for (uint d = 0; d < 16; d++)
    {
       if (drains[d].active == 0) continue;

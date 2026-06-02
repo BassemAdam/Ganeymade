@@ -50,7 +50,7 @@ Material:
         m_Scale: {x: 1, y: 1}
         m_Offset: {x: 0, y: 0}
     - _DetailNormalMap:
-        m_Texture: {fileID: 0}
+        m_Texture: {fileID: 2800000, guid: e432ff791cc84e445ae7f5c66a06c137, type: 3}
         m_Scale: {x: 1, y: 1}
         m_Offset: {x: 0, y: 0}
     - _EmissionMap:
@@ -113,7 +113,7 @@ Material:
     - _BlueNoiseScale: 1
     - _BlueNoiseStrength: 0
     - _BlueNoiseTimeSpeed: 0
-    - _BoundaryNormalBlendDistance: 1.385
+    - _BoundaryNormalBlendDistance: 2
     - _BoundaryNormalUpBiasPower: 11.88
     - _BumpScale: 1
     - _CausticsScale: 2
@@ -128,10 +128,12 @@ Material:
     - _DebugReflectionCubemapMode: 2
     - _DebugViewMode: 0
     - _DensityMultiplier: 1
-    - _DensityOffset: -0.18
+    - _DensityOffset: -0.48
     - _DensityPower: 1.5
     - _DetailAlbedoMapScale: 1
     - _DetailNormalMapScale: 1
+    - _DetailNormalScale: 0
+    - _DetailNormalTiling: 2
     - _DstBlend: 0
     - _DstBlendAlpha: 0
     - _EdgeSoftness: 0.5
@@ -156,7 +158,10 @@ Material:
     - _ReflectionStrength: 1
     - _ReflectionVisibilityBoost: 3.76
     - _ReflectionVisibilityFloor: 0.04
+    - _RefractionMaxSteps: 64
+    - _RefractionStepSize: 0.05
     - _RefractionStrength: 1
+    - _RefractionThickness: 0.08
     - _SSRBackfaceThreshold: 0.232
     - _SSRColorBoost: 7.85
     - _SSREdgeFadeWidth: 0.05
@@ -177,6 +182,8 @@ Material:
     - _SurfaceDetectionMargin: 0.19
     - _SurfaceRefineIterations: 8
     - _TIRSoftness: 0.5
+    - _UseDetailNormal: 4.65
+    - _UseRuntimeNormal: 0
     - _VapourAOStepSize: 0.946
     - _VapourAOStrength: 7.4
     - _VapourAbsorption: 0.1
@@ -220,6 +227,7 @@ Material:
     - _AbsorptionColor: {r: 0.6, g: 0.09999997, b: 0.01, a: 1}
     - _BaseColor: {r: 1, g: 1, b: 1, a: 1}
     - _Color: {r: 1, g: 1, b: 1, a: 1}
+    - _DetailNormalSpeed: {r: 0.03, g: 0.015, b: -0.015, a: -0.03}
     - _EmissionColor: {r: 0, g: 0, b: 0, a: 1}
     - _ExtinctionColor: {r: 0.8, g: 0.19999996, b: 0.049999982, a: 1}
     - _LiquidScatterColor: {r: 0.17331186, g: 0.47181275, b: 0.7987421, a: 1}

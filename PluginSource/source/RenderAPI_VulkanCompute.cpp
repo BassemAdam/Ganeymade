@@ -1,4 +1,4 @@
-// Vulkan Compute Shader Plugin — "Multiply by 2" example
+// Vulkan Compute Shader Plugin, "Multiply by 2" example
 // Demonstrates a minimal compute pipeline inside Unity's native plugin architecture.
 //
 // How it works:
@@ -23,7 +23,7 @@
 #include <utility>
 #include <vector>
 
-// ─── Vulkan function pointers (loaded at runtime) ───────────────────────────
+// Vulkan function pointers (loaded at runtime)
 // We load these dynamically since the plugin doesn't link against the Vulkan loader.
 
 #define COMPUTE_VULKAN_FUNCTIONS(apply)         \
@@ -85,20 +85,7 @@ static void LoadComputeVulkanFunctions(PFN_vkGetInstanceProcAddr getInstanceProc
 #undef LOAD_FUNC
 }
 
-// ─── SPIR-V compiled from multiply.slang (Slang shader language) ────────────
-// Source (shaders/multiply.slang):
-//   struct SimParams { float dt; float multiplier; float externalForce; uint elementCount; };
-//   [[vk::push_constant]] ConstantBuffer<SimParams> params;
-//   StructuredBuffer<float> inputData;       // binding=0, set=0
-//   RWStructuredBuffer<float> outputData;    // binding=1, set=0
-//   [shader("compute")]  [numthreads(256, 1, 1)]
-//   void computeMain(uint3 threadId : SV_DispatchThreadID) {
-//       if (threadId.x >= params.elementCount) return;
-//       outputData[threadId.x] = inputData[threadId.x] * params.multiplier
-//                              + params.externalForce * params.dt;
-//   }
-// Compiled with: slangc multiply.slang -target spirv -entry computeMain -o multiply.spv
-// Push constant data — updated from C# every frame
+// Push constant data, updated from C# every frame
 struct SimParams
 {
     float dt;              // timestep
@@ -151,13 +138,13 @@ struct Particle
     float density;        // 4 bytes
     float velocity[3];    // 12 bytes
     float pressure;       // 4 bytes
-    float acceleration[3]; // 12 bytes — accumulated SPH forces
+    float acceleration[3]; // 12 bytes, accumulated SPH forces
     float mass;           // 4 bytes
     float temperature;    // 4 bytes
     int phase;            // 4 bytes
-    float latentHeatAccum; // 4 bytes — accumulated latent energy for phase transition
+    float latentHeatAccum; // 4 bytes, accumulated latent energy for phase transition
     int fixedId;          // 4 bytes
-    float neighborCount;  // 4 bytes — splash detection neighbor count
+    float neighborCount;  // 4 bytes, splash detection neighbor count
     float _pad0;          // padding to match GPU array stride (80 bytes)
     float _pad1;
     float _pad2;
@@ -3731,7 +3718,7 @@ static const uint32_t kReorderParticles[] = {
 
 
 
-// ─── Helper: find suitable memory type ──────────────────────────────────────
+// Helper: find suitable memory type
 
 static int FindMemoryType(VkPhysicalDevice physDevice, uint32_t typeFilter, VkMemoryPropertyFlags props)
 {
@@ -3746,7 +3733,7 @@ static int FindMemoryType(VkPhysicalDevice physDevice, uint32_t typeFilter, VkMe
     return -1;
 }
 
-// ─── Helper: create a buffer with memory ────────────────────────────────────
+// Helper: create a buffer with memory
 
 struct ComputeBuffer
 {
@@ -3816,7 +3803,7 @@ static void DestroyComputeBuffer(VkDevice device, ComputeBuffer &buf)
     }
 }
 
-// ─── Shared state: data passed from C# ─────────────────────────────────────
+// Shared state: data passed from C#
 
 static const int MAX_ELEMENTS = 262144;
 static const int MAX_HEAT_SOURCES = 16;
@@ -3871,7 +3858,7 @@ static SimParams g_SimParams = {0.016f, 1, 0.0f, 0, 0.0f, 0.0f, 0.0f, 0.0f, {0.0
 {0,0,0}, 0, {0,0,0}, 0, 0, 0, 0, 0, {0, 0, 0}, 0, 0, 0};
 static SolidSimParams g_SolidSimParams = { 0.016f, 32, 32, 32};
 
-// ─── Exported C functions (called from Unity C#) ────────────────────────────
+// Exported C functions (called from Unity C#)
 
 // Called ONCE to upload initial data to GPU. After that, compute stays on GPU.
 extern "C" void UNITY_INTERFACE_EXPORT UNITY_INTERFACE_API
@@ -3962,7 +3949,7 @@ SetUnityParticleOutputBuffer(void* nativeBuffer)
     g_UnityParticleOutputBuffer = nativeBuffer;
 }
 
-// Set per-frame simulation parameters (pushed to GPU via push constants — no buffer copy)
+// Set per-frame simulation parameters (pushed to GPU via push constants, no buffer copy)
 extern "C" void UNITY_INTERFACE_EXPORT UNITY_INTERFACE_API
 SetSimParams(SimParams params)
 {
@@ -4088,7 +4075,7 @@ SetHeatSourceData(float* pinTemperatures, int count)
     g_HeatSourcePinsNeedsUpload = true;
 }
 
-// ─── The Vulkan compute pipeline class ──────────────────────────────────────
+// The Vulkan compute pipeline class
 // Single-pass gravity + bounce with ping-pong double buffering.
 
 class VulkanComputePlugin
@@ -4167,7 +4154,7 @@ private:
     int  m_AllocatedCount = 0;
 };
 
-// ─── Vulkan solid thermal diffusion pipeline ─────────────────────────────────
+// Vulkan solid thermal diffusion pipeline
 
 class VulkanSolidThermalPlugin
 {
@@ -4403,7 +4390,7 @@ void VulkanSolidThermalPlugin::DispatchCompute()
         beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
         vkBeginCommandBuffer(ownCmd, &beginInfo);
 
-        // ── Upload temperature grid if new data arrived ──────────────────────
+        // Upload temperature grid if new data arrived
         if (g_SolidNeedsUpload && m_StagingBuffer.mapped)
         {
             memcpy(m_StagingBuffer.mapped, g_SolidTempInput, g_SolidCellCount * sizeof(float));
@@ -4424,7 +4411,7 @@ void VulkanSolidThermalPlugin::DispatchCompute()
             g_SolidNeedsUpload = false;
         }
 
-        // ── Upload mask if it changed ────────────────────────────────────────
+        // Upload mask if it changed
         if (g_SolidMaskNeedsUpload && m_MaskStagingBuffer.mapped)
         {
             memcpy(m_MaskStagingBuffer.mapped, g_SolidMask, g_SolidCellCount * sizeof(uint32_t));
@@ -4466,7 +4453,7 @@ void VulkanSolidThermalPlugin::DispatchCompute()
 
             g_SolidDiffusivityNeedsUpload = false;
         }
-        // ── Upload heat source pins ──────────────────────────────────────────
+        // Upload heat source pins
         // Triggered on first call and whenever ThermalReceiver detects a source change.
         if (g_HeatSourcePinsNeedsUpload && m_HeatSourcePinsStagingBuffer.mapped)
         {
@@ -4489,7 +4476,7 @@ void VulkanSolidThermalPlugin::DispatchCompute()
         }
     }
 
-    // ── Dispatch diffusion shader ────────────────────────────────────────
+    // Dispatch diffusion shader
     int outputIdx = 1 - m_CurrentInput;
 
     vkCmdBindPipeline(ownCmd, VK_PIPELINE_BIND_POINT_COMPUTE, m_Pipeline);
@@ -4590,7 +4577,7 @@ void VulkanComputePlugin::CreatePipeline()
 {
     VkDevice device = m_Instance.device;
 
-    // ── Descriptor set layout: 7 storage buffer bindings ──────────────
+    // Descriptor set layout: 7 storage buffer bindings
     // 0: particlesIn, 1: particlesOut, 2: hashKeys, 3: indices,
     // 4: startIndices, 5: sdfGrid, 6: drainZones
     VkDescriptorSetLayoutBinding bindings[7] = {};
@@ -4609,17 +4596,13 @@ void VulkanComputePlugin::CreatePipeline()
         return;
 
     VkDescriptorSetLayoutBinding tempBindings[6] = {};
-    for (int b = 0; b < 5; b++)
+    for (int b = 0; b < 6; b++)
     {
         tempBindings[b].binding= b;
         tempBindings[b].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
         tempBindings[b].descriptorCount = 1;
         tempBindings[b].stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
     }
-    tempBindings[5].binding = 5;
-    tempBindings[5].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-    tempBindings[5].descriptorCount = 1;
-    tempBindings[5].stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
 
     VkDescriptorSetLayoutCreateInfo tempLayoutCI = {};
     tempLayoutCI.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
@@ -4627,7 +4610,7 @@ void VulkanComputePlugin::CreatePipeline()
     tempLayoutCI.pBindings = tempBindings;
     vkCreateDescriptorSetLayout(device, &tempLayoutCI, nullptr, &m_TempDescSetLayout);
 
-    // ── Pipeline layout: push SimParams ─────────────────────────────────
+    // Pipeline layout: push SimParams
     VkPushConstantRange pushRange = {};
     pushRange.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
     pushRange.offset = 0;
@@ -4651,7 +4634,7 @@ void VulkanComputePlugin::CreatePipeline()
     if (vkCreatePipelineLayout(device, &tempPipeLayoutCI, nullptr, &m_TempPipelineLayout) != VK_SUCCESS)
         return;
 
-    // ── Shader modules + pipelines ──────────────────────────────────────
+    // Shader modules + pipelines
     VkShaderModuleCreateInfo shaderCI = {};
     shaderCI.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
 
@@ -4724,7 +4707,7 @@ void VulkanComputePlugin::CreatePipeline()
     computeCI.stage.module = m_TemperatureModule;
     vkCreateComputePipelines(device, m_Instance.pipelineCache, 1, &computeCI, nullptr, &m_TemperaturePipeline);
 
-    // ── Command pool ────────────────────────────────────────────────────
+    // Command pool
     VkCommandPoolCreateInfo cmdPoolCI = {};
     cmdPoolCI.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
     cmdPoolCI.queueFamilyIndex = m_Instance.queueFamilyIndex;
@@ -4745,7 +4728,7 @@ void VulkanComputePlugin::CreateBuffers(int count)
                                   VK_BUFFER_USAGE_TRANSFER_DST_BIT;
     VkMemoryPropertyFlags gpuProps = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
 
-    // ── Particle ping-pong buffers ──────────────────────────────────────
+    // Particle ping-pong buffers
     if (!CreateComputeBuffer(device, m_Instance.physicalDevice, particleBufSize, gpuUsage, gpuProps, m_GpuBuffers[0]) ||
         !CreateComputeBuffer(device, m_Instance.physicalDevice, particleBufSize, gpuUsage, gpuProps, m_GpuBuffers[1]))
     {
@@ -4754,20 +4737,20 @@ void VulkanComputePlugin::CreateBuffers(int count)
         CreateComputeBuffer(device, m_Instance.physicalDevice, particleBufSize, gpuUsage, gpuProps, m_GpuBuffers[1]);
     }
 
-    // ── Staging buffer ──────────────────────────────────────────────────
+    // Staging buffer
     VkBufferUsageFlags stagingUsage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT;
     VkMemoryPropertyFlags stagingProps = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
     CreateComputeBuffer(device, m_Instance.physicalDevice, particleBufSize, stagingUsage, stagingProps, m_StagingBuffer);
     CreateComputeBuffer(device, m_Instance.physicalDevice, particleBufSize, stagingUsage, stagingProps, m_UploadStagingBuffer);
     CreateComputeBuffer(device, m_Instance.physicalDevice, particleBufSize, stagingUsage, stagingProps, m_ReadbackStagingBuffer);
 
-    // ── Spatial hashing buffers (hashKeys, indices, startIndices) ────────
+    // Spatial hashing buffers (hashKeys, indices, startIndices)
     VkDeviceSize uintBufSize = count * sizeof(uint32_t);
     CreateComputeBuffer(device, m_Instance.physicalDevice, uintBufSize, gpuUsage, gpuProps, m_HashKeysBuffer);
     CreateComputeBuffer(device, m_Instance.physicalDevice, uintBufSize, gpuUsage, gpuProps, m_IndicesBuffer);
     CreateComputeBuffer(device, m_Instance.physicalDevice, uintBufSize, gpuUsage, gpuProps, m_StartIndicesBuffer);
 
-    // Heat sources buffer — small fixed-size, DEVICE_LOCAL
+    // Heat sources buffer, small fixed-size, DEVICE_LOCAL
     VkDeviceSize heatSrcSize = MAX_HEAT_SOURCES * sizeof(HeatSource);
     VkBufferUsageFlags heatSrcUsage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT;
     CreateComputeBuffer(device, m_Instance.physicalDevice,heatSrcSize, heatSrcUsage,VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, m_HeatSourcesBuffer);
@@ -4776,7 +4759,7 @@ void VulkanComputePlugin::CreateBuffers(int count)
     VkBufferUsageFlags heatSrcStagingUsage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
     CreateComputeBuffer(device, m_Instance.physicalDevice,heatSrcSize, heatSrcStagingUsage,VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,m_HeatSourcesStagingBuffer);
 
-    // SDF grid buffer — fixed max size, DEVICE_LOCAL
+    // SDF grid buffer, fixed max size, DEVICE_LOCAL
     VkDeviceSize sdfBufSize = MAX_SDF_VOXELS * sizeof(float);
     VkBufferUsageFlags sdfUsage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT;
     CreateComputeBuffer(device, m_Instance.physicalDevice, sdfBufSize, sdfUsage, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, m_SdfBuffer);
@@ -4785,7 +4768,7 @@ void VulkanComputePlugin::CreateBuffers(int count)
     CreateComputeBuffer(device, m_Instance.physicalDevice, sdfBufSize, sdfStagingUsage,
         VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, m_SdfStagingBuffer);
 
-    // Drain zones buffer — small fixed-size, DEVICE_LOCAL
+    // Drain zones buffer, small fixed-size, DEVICE_LOCAL
     VkDeviceSize drainBufSize = MAX_DRAIN_ZONES * sizeof(DrainZone);
     VkBufferUsageFlags drainUsage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT;
     CreateComputeBuffer(device, m_Instance.physicalDevice, drainBufSize, drainUsage, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, m_DrainBuffer);
@@ -4795,7 +4778,7 @@ void VulkanComputePlugin::CreateBuffers(int count)
         VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, m_DrainStagingBuffer);
 
 
-    // ── Descriptor pool: 2 sets × 7 bindings + 2 temp sets × 6 = 26, with margin
+    // Descriptor pool: 2 sets × 7 bindings + 2 temp sets × 6 = 26, with margin
     VkDescriptorPoolSize poolSize = {};
     poolSize.type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
     poolSize.descriptorCount = 30;
@@ -4808,7 +4791,7 @@ void VulkanComputePlugin::CreateBuffers(int count)
     if (vkCreateDescriptorPool(device, &poolCI, nullptr, &m_DescPool) != VK_SUCCESS)
         return;
 
-    // ── Allocate ping-pong descriptor sets ──────────────────────────────
+    // Allocate ping-pong descriptor sets
     VkDescriptorSetLayout layouts[2] = {m_DescSetLayout, m_DescSetLayout};
     VkDescriptorSetAllocateInfo allocInfo = {};
     allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
@@ -4898,7 +4881,7 @@ void VulkanComputePlugin::UpdateDescriptorSets()
             writes[b].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
             writes[b].pBufferInfo = &bufInfos[b];
         }
-        for (int b = 0; b < 5; b++)
+        for (int b = 0; b < 6; b++)
         {
             tempWrites[b].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
             tempWrites[b].dstSet = m_TempDescSets[pp];
@@ -4907,12 +4890,6 @@ void VulkanComputePlugin::UpdateDescriptorSets()
             tempWrites[b].descriptorType= VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
             tempWrites[b].pBufferInfo = &tempBufInfos[b];
         }
-        tempWrites[5].sType           = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        tempWrites[5].dstSet          = m_TempDescSets[pp];
-        tempWrites[5].dstBinding      = 5;
-        tempWrites[5].descriptorCount = 1;
-        tempWrites[5].descriptorType  = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-        tempWrites[5].pBufferInfo     = &tempBufInfos[5];
         vkUpdateDescriptorSets(m_Instance.device, 7, writes, 0, nullptr);
         vkUpdateDescriptorSets(m_Instance.device, 6, tempWrites, 0, nullptr);
     }
@@ -4940,7 +4917,7 @@ void VulkanComputePlugin::DispatchCompute()
 
     VkCommandBuffer cmd = recState.commandBuffer;
 
-    // ── Read previous frame's staging data ──────────────────────────────
+    // Read previous frame's staging data
     if (!g_PerfTestMode && g_StagingReady && m_ReadbackStagingBuffer.mapped)
     {
         VkMappedMemoryRange range = {};
@@ -4952,7 +4929,7 @@ void VulkanComputePlugin::DispatchCompute()
         memcpy(g_OutputData, m_ReadbackStagingBuffer.mapped, g_ElementCount * sizeof(Particle));
     }
 
-    // ── Initial upload: CPU → staging → GPU ─────────────────────────────
+    // Initial upload: CPU → staging → GPU
     if (g_NeedsUpload)
     {
         if (g_FullUploadNeeded)
@@ -5005,7 +4982,7 @@ void VulkanComputePlugin::DispatchCompute()
         g_NeedsHeatSourceUpload = false;
     }
 
-    // ── SDF grid upload: staging → device ───────────────────────────────
+    // SDF grid upload: staging → device
     if (g_SdfNeedsUpload && g_SdfData && g_SdfDataCount > 0 && m_SdfStagingBuffer.mapped)
     {
         VkDeviceSize uploadSize = g_SdfDataCount * sizeof(float);
@@ -5025,7 +5002,7 @@ void VulkanComputePlugin::DispatchCompute()
         g_SdfNeedsUpload = false;
     }
 
-    // ── Drain zones upload: staging → device ────────────────────────────
+    // Drain zones upload: staging → device
     if (g_DrainNeedsUpload && m_DrainStagingBuffer.mapped)
     {
         memcpy(m_DrainStagingBuffer.mapped, g_DrainZones, MAX_DRAIN_ZONES * sizeof(DrainZone));
@@ -5060,18 +5037,18 @@ void VulkanComputePlugin::DispatchCompute()
     };
 
     // ════════════════════════════════════════════════════════════════════
-    // SPATIAL SORT — once per frame, NOT per sub-step.
+    // SPATIAL SORT, once per frame, NOT per sub-step.
     // Between sub-steps particles move < 0.2% of a cell (dt * v << cellSize),
     // so the spatial hash stays valid across all sub-steps within a frame.
     // This avoids the bitonic sort dispatch explosion (43 dispatches × N sub-steps).
     // ════════════════════════════════════════════════════════════════════
 
-    // Bind descriptor set once for the entire sort phase — all sort pipelines
+    // Bind descriptor set once for the entire sort phase, all sort pipelines
     // share the same pipeline layout so the binding persists across pipeline changes
     vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, m_PipelineLayout,
                             0, 1, &m_DescSets[m_CurrentInput], 0, nullptr);
 
-    // ── Pass 1: Compute Hash — hash cell coords, init indices ───────────
+    // Pass 1: Compute Hash, hash cell coords, init indices
     g_SimParams.bitonicK = 0;
     g_SimParams.bitonicJ = 0;
     vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, m_ComputeHashPipeline);
@@ -5081,10 +5058,10 @@ void VulkanComputePlugin::DispatchCompute()
 
     computeBarrier(VK_ACCESS_SHADER_WRITE_BIT, VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT);
 
-    // ── Pass 2: Bitonic Sort — hybrid global/local with hoisted binds ───
+    // Pass 2: Bitonic Sort, hybrid global/local with hoisted binds
     for (uint32_t k = 2; k <= (uint32_t)g_ElementCount; k <<= 1)
     {
-        // Global sort steps (j > 128) — bind pipeline once per k iteration
+        // Global sort steps (j > 128), bind pipeline once per k iteration
         if ((k >> 1) > 128)
         {
             vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, m_BitonicSortPipeline);
@@ -5099,7 +5076,7 @@ void VulkanComputePlugin::DispatchCompute()
             }
         }
 
-        // Local sort step — handles remaining j values in shared memory
+        // Local sort step, handles remaining j values in shared memory
         g_SimParams.bitonicK = k;
         g_SimParams.bitonicJ = 0;
         vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, m_BitonicLocalPipeline);
@@ -5109,7 +5086,7 @@ void VulkanComputePlugin::DispatchCompute()
         computeBarrier(VK_ACCESS_SHADER_WRITE_BIT, VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT);
     }
 
-    // ── Clear startIndices to 0xFFFFFFFF via vkCmdFillBuffer ────────────
+    // Clear startIndices to 0xFFFFFFFF via vkCmdFillBuffer
     vkCmdFillBuffer(cmd, m_StartIndicesBuffer.buffer, 0,
                     g_ElementCount * sizeof(uint32_t), 0xFFFFFFFF);
     {
@@ -5123,7 +5100,7 @@ void VulkanComputePlugin::DispatchCompute()
                              0, 1, &bar, 0, nullptr, 0, nullptr);
     }
 
-    // ── Pass 3: Compute Start — mark bucket boundaries in startIndices ──
+    // Pass 3: Compute Start, mark bucket boundaries in startIndices
     vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, m_ComputeStartPipeline);
     vkCmdPushConstants(cmd, m_PipelineLayout, VK_SHADER_STAGE_COMPUTE_BIT,
                        0, sizeof(SimParams), &g_SimParams);
@@ -5131,7 +5108,7 @@ void VulkanComputePlugin::DispatchCompute()
 
     computeBarrier(VK_ACCESS_SHADER_WRITE_BIT, VK_ACCESS_SHADER_READ_BIT);
 
-    // ── Pass 3b: Reorder particles — scatter to match sorted hash order ─
+    // Pass 3b: Reorder particles, scatter to match sorted hash order
     // After this, memory layout matches the spatial hash order so neighbor
     // lookups in density/integrate access contiguous memory (cache-coherent).
     // Also resets indices to identity so particlesIn[indices[i]] == particlesIn[i].
@@ -5148,7 +5125,7 @@ void VulkanComputePlugin::DispatchCompute()
     m_CurrentInput = 1 - m_CurrentInput;
 
     // ════════════════════════════════════════════════════════════════════
-    // SUB-STEP LOOP — only density + integrate, reusing the spatial hash.
+    // SUB-STEP LOOP, only density + integrate, reusing the spatial hash.
     // Push constants don't change between sub-steps (bitonicK/J = 0).
     // ════════════════════════════════════════════════════════════════════
 
@@ -5159,7 +5136,7 @@ void VulkanComputePlugin::DispatchCompute()
 
     for (int step = 0; step < g_SubStepCount; step++)
     {   
-        // ── Pass 4: Density — 27-cell hash lookup ───────────────────────
+        // Pass 4: Density, 27-cell hash lookup
         vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, m_DensityPipeline);
         vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, m_PipelineLayout,
                                 0, 1, &m_DescSets[m_CurrentInput], 0, nullptr);
@@ -5167,7 +5144,7 @@ void VulkanComputePlugin::DispatchCompute()
 
         computeBarrier(VK_ACCESS_SHADER_WRITE_BIT, VK_ACCESS_SHADER_READ_BIT);
 
-        // ── Pass 5: Force + Integrate ───────────────────────────────────
+        // Pass 5: Force + Integrate
         vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, m_IntegratePipeline);
         vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, m_PipelineLayout,
                                 0, 1, &m_DescSets[densityOutput], 0, nullptr);
@@ -5190,7 +5167,7 @@ void VulkanComputePlugin::DispatchCompute()
     // Output ends up back in buffer[m_CurrentInput]
     int outputIdx = m_CurrentInput;
 
-    // ── Temperature pass — once per frame, AFTER substep loop ───────────
+    // Temperature pass, once per frame, AFTER substep loop
     // Temperature diffusion is a slow physical process; per-substep resolution
     // is unnecessary and was causing 50% more GPU dispatches (3 passes vs 2).
     if (g_ThermalEnabled && m_TemperaturePipeline != VK_NULL_HANDLE)
@@ -5217,7 +5194,7 @@ void VulkanComputePlugin::DispatchCompute()
                              0, 1, &tempBar, 0, nullptr, 0, nullptr);
     }
 
-    // ── Copy output → staging for CPU readback next frame ───────────────
+    // Copy output → staging for CPU readback next frame
     if (!g_PerfTestMode)
     {
         VkBufferCopy stagingCopy = {};
@@ -5235,7 +5212,7 @@ void VulkanComputePlugin::DispatchCompute()
         g_StagingReady = true;
     }
 
-    // ── Optional: GPU→GPU copy of output into a Unity-owned buffer ───────
+    // Optional: GPU→GPU copy of output into a Unity-owned buffer
     // This enables Unity-side compute/visualization without any CPU readback.
     if (g_UnityParticleOutputBuffer != nullptr)
     {
@@ -5287,7 +5264,7 @@ void VulkanComputePlugin::DispatchCompute()
     g_ComputeDone = true;
 }
 
-// ── Debug readback: GPU → staging → CPU ─────────────────────────────────────
+// Debug readback: GPU → staging → CPU
 // Blocking. Allocates a one-shot command buffer, copies the latest output
 // buffer into the staging buffer, submits, waits, and reads the result.
 // Only called when C# explicitly requests it via GetComputeResult().
@@ -5346,7 +5323,7 @@ void VulkanComputePlugin::ReadbackToCPU()
 
     vkEndCommandBuffer(cmd);
 
-    // Submit and wait (blocking — this stalls the GPU pipeline)
+    // Submit and wait (blocking, this stalls the GPU pipeline)
     VkFence fence = VK_NULL_HANDLE;
     VkFenceCreateInfo fenceCI = {};
     fenceCI.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
@@ -5408,7 +5385,7 @@ GetComputeOutputBuffer()
     return (void *)g_ComputePlugin.GetOutputBufferHandle();
 }
 
-// Non-blocking readback — reads from g_OutputData which is populated each frame
+// Non-blocking readback, reads from g_OutputData which is populated each frame
 // by DispatchCompute's staging buffer copy (1-frame latency).
 extern "C" void UNITY_INTERFACE_EXPORT UNITY_INTERFACE_API
 GetComputeResult(Particle *outData, int count)
@@ -5535,7 +5512,7 @@ void VulkanSolidThermalPlugin::Shutdown()
     m_Initialized = false;
 }
 
-// ─── Hooks called from RenderingPlugin.cpp ──────────────────────────────────
+// Hooks called from RenderingPlugin.cpp
 
 void VulkanCompute_Initialize(IUnityInterfaces *interfaces)
 {

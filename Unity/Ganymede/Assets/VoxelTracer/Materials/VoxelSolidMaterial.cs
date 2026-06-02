@@ -1,16 +1,13 @@
 using UnityEngine;
 
-/// <summary>
-/// Attachable material properties for solid objects.
-/// Defines thermal and physical properties that the external sim module
-/// reads when computing heat transfer between solids and fluids.
-/// Matches relevant fields from the SimParams/Particle structs in the sim module.
-///
-/// Attach to any GameObject with a Renderer (static or VoxelDynamic).
-/// The voxelizer stamps temperature into the TemperatureTexture for overlapping voxels.
-/// The external sim module reads these properties for boundary condition computation.
-/// Self-registers with VoxelTracerSystem.
-/// </summary>
+// Attachable material properties for solid objects.
+// Defines thermal and physical properties that the external sim module
+// reads when computing heat transfer between solids and fluids.
+// Matches relevant fields from the SimParams/Particle structs in the sim module.
+// Attach to any GameObject with a Renderer (static or VoxelDynamic).
+// The voxelizer stamps temperature into the TemperatureTexture for overlapping voxels.
+// The external sim module reads these properties for boundary condition computation.
+// Self-registers with VoxelTracerSystem.
 public sealed class VoxelSolidMaterial : MonoBehaviour
 {
     [Header("Thermal")]
@@ -40,7 +37,7 @@ public sealed class VoxelSolidMaterial : MonoBehaviour
              "Maps to the 'phase' field in the Particle struct.")]
     public int phase = 0;
 
-    void OnEnable()  => VoxelTracerSystem.RegisterSolidMaterial(this);
+    void OnEnable() => VoxelTracerSystem.RegisterSolidMaterial(this);
     void OnDisable() => VoxelTracerSystem.UnregisterSolidMaterial(this);
 
     void OnDrawGizmosSelected()

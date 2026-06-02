@@ -568,60 +568,6 @@ Transform:
   m_Children: []
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
---- !u!1 &281062055
-GameObject:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  serializedVersion: 6
-  m_Component:
-  - component: {fileID: 281062058}
-  - component: {fileID: 281062056}
-  m_Layer: 0
-  m_Name: water source
-  m_TagString: Untagged
-  m_Icon: {fileID: 0}
-  m_NavMeshLayer: 0
-  m_StaticEditorFlags: 0
-  m_IsActive: 1
---- !u!114 &281062056
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 281062055}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: ccc445b9f904c1446bcac3f66c2b47db, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: Assembly-CSharp::WaterSource
-  spawnMode: 0
-  tapExhausted: 0
-  emissionRate: 100
-  emissionDirection: {x: 0, y: -1, z: 0}
-  emissionSpeed: 100
-  emissionRadius: 0.15
-  initialTemperature: 25
-  isActive: 1
-  latticeSpacing: 0
-  latticeSize: {x: 1, y: 1, z: 1}
---- !u!4 &281062058
-Transform:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 281062055}
-  serializedVersion: 2
-  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: -1.056, y: 3.63779, z: -0.62775}
-  m_LocalScale: {x: 1, y: 1, z: 1}
-  m_ConstrainProportionsScale: 0
-  m_Children: []
-  m_Father: {fileID: 0}
-  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &308150037
 GameObject:
   m_ObjectHideFlags: 0
@@ -1516,7 +1462,7 @@ MonoBehaviour:
     m_ColorSpace: -1
     m_NumColorKeys: 4
     m_NumAlphaKeys: 2
-  minValue: 175
+  minValue: 0
   maxValue: 300
   computePlugin: {fileID: 1188592651}
   lastValidatedField: 2
@@ -2583,12 +2529,12 @@ MonoBehaviour:
       marchingCubesLUT: {fileID: 4900000, guid: 711f0eebef002a84e95e6dc230c006be, type: 3}
     densityGrid:
       volumeDims: {x: 128, y: 128, z: 128}
-      vapourSmoothingRadiusWS: 0.1
-      maxKernelRadiusVoxels: 2
+      vapourSmoothingRadiusWS: 1
+      maxKernelRadiusVoxels: 3
     raymarchBlur:
       liquidBlurEnabled: 1
-      liquidBlurRadius: 2
-      liquidBlurSigma: 4
+      liquidBlurRadius: 16
+      liquidBlurSigma: 2
       liquidBlurDetailPreserve: 0
       vapourBlurEnabled: 1
       vapourBlurRadius: 4
@@ -2604,11 +2550,11 @@ MonoBehaviour:
       vapourBlurSigma: 0.1
       vapourBlurDetailPreserve: 0
     raymarchSmoothing:
-      liquidSmoothingRadiusWS: 0
-      adaptiveRadiusEnabled: 1
-      liquidBulkSmoothingRadiusWS: 0.4
-      adaptiveDensitySurface: 181
-      adaptiveDensityBulk: 215
+      liquidSmoothingRadiusWS: 1
+      adaptiveRadiusEnabled: 0
+      liquidBulkSmoothingRadiusWS: 1
+      adaptiveDensitySurface: 195.9
+      adaptiveDensityBulk: 198.1
       adaptiveDensityCurve: 1
     marchingCubesSmoothing:
       liquidSmoothingRadiusWS: 0
@@ -2618,7 +2564,7 @@ MonoBehaviour:
       adaptiveDensityBulk: 260
       adaptiveDensityCurve: 0.4
     rendering:
-      mode: 2
+      mode: 0
       rayMarchingMaterial: {fileID: 2100000, guid: 03c4cd8b0ea45e14190b02d13513c0d9, type: 2}
       marchingCubesMaterial: {fileID: 2100000, guid: a5f165da16e6e4a4e8b93a9c48ecc59b, type: 2}
       vapourRaymarchMaterial: {fileID: 2100000, guid: ecfb9a36afdd6404e9a46793705c4a27, type: 2}
@@ -3944,7 +3890,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 4161998456328252244, guid: 18cf1fa5220a198409fde72db8b3e2a5, type: 3}
       propertyPath: spawnPoolReserve
-      value: 32768
+      value: 0
       objectReference: {fileID: 0}
     - target: {fileID: 4161998456328252244, guid: 18cf1fa5220a198409fde72db8b3e2a5, type: 3}
       propertyPath: thermalDiffusivity
@@ -4039,5 +3985,4 @@ SceneRoots:
   - {fileID: 1724334553}
   - {fileID: 1268717250}
   - {fileID: 671089471}
-  - {fileID: 281062058}
   - {fileID: 1170001649}

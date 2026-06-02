@@ -6,28 +6,26 @@ using UnityEngine;
 
 public sealed class VoxelTracerSystem : MonoBehaviour
 {
-    // ================================================================
-    // Inspector
-    // ================================================================
+    //inspector options
 
     [Header("Compute Shaders")]
-    public ComputeShader coreCS;
+    public ComputeShader coreCS; //attach here the VoxelTracerCore.compute which builds the fill texture
 
     [Header("Grid")]
-    public BoundsMode boundsMode = BoundsMode.AutoFitScene;
+    public BoundsMode boundsMode = BoundsMode.AutoFitScene; //forms a bounding box around existing scene objects, ideal if sim is guaranteed to stay within the initally placed objects, smaller scenes
     [Tooltip("Only used when Bounds Mode = Manual")]
     public Vector3 gridMin = new Vector3(-10, -2, -10);
     [Tooltip("Only used when Bounds Mode = Manual")]
     public Vector3 gridMax = new Vector3(10, 10, 10);
     [Min(0.01f)] public float voxelSize = 0.25f;
     [Tooltip("Padding (in world units) added around auto-fit bounds")]
-    [Min(0)] public float autoFitPadding = 1f;
+    [Min(0)] public float autoFitPadding = 1f; //allow room for movement outside range of initally placed objects
 
     [Header("Volume Fill")]
     [Tooltip("Fill interior volume between front and back surfaces")]
     public bool fillVolume = true;
     [Tooltip("Number of sweep rounds for flood fill (1 handles most geometry, 2 for complex concavities)")]
-    [Range(1, 4)] public int fillSweepRounds = 1;
+    [Range(1, 4)] public int fillSweepRounds = 1; //almost never needed more
 
     [Header("Normals")]
     [Tooltip("Compute gradient normals each frame. Only enable if a consumer reads NormalsTexture.")]
@@ -35,16 +33,16 @@ public sealed class VoxelTracerSystem : MonoBehaviour
 
     [Header("SDF")]
     [Tooltip("Compute a signed distance field each frame via Jump Flood Algorithm.")]
-    public bool computeSDF = false;
+    public bool computeSDF = false; //this will result in normals being calculated from a blurr texture
 
     [Header("Scene Input")]
     public bool includeMeshRenderers = true;
-    public bool includeSkinnedMeshRenderers = true;
-    public bool includeTerrains = true;
+    public bool includeSkinnedMeshRenderers = true; //if you don't have deformable/animated meshes just keep it off
+    public bool includeTerrains = true; //terrains are quite expensive at scale, we recommend using this with manual mode set to a small, relevant portion of the terrain
     [Range(1, 32)] public int terrainSampleStep = 4;
 
     [Tooltip("Only objects on these layers are voxelized. Set to 'Everything' to include all layers (default behavior).")]
-    public LayerMask voxelizeLayers = ~0; // default: Everything
+    public LayerMask voxelizeLayers = ~0; //default: Everything
 
     [Header("Material Properties")]
     [Tooltip("Default temperature for filled solid voxels (ambient)")]
@@ -52,50 +50,47 @@ public sealed class VoxelTracerSystem : MonoBehaviour
     [Tooltip("Default thermal diffusivity for filled solid voxels")]
     [Min(0)] public float defaultSolidDiffusivity = 0.1f;
 
-    [Header("Safety")]
+    [Header("Safety")] //the default values are quite sufficient for most cases to function normally
     [Range(32, 512)] public int maxVoxelsPerAxis = 256;
     [Min(1)] public float maxVoxelCountMillions = 32f;
 
-    // ================================================================
-    // Enums / Structs
-    // ================================================================
+    //enums and structs
 
     public enum BoundsMode { Manual, AutoFitScene }
 
-    [StructLayout(LayoutKind.Sequential)]
+    [StructLayout(LayoutKind.Sequential)] //forces C# to layout the struct the same way in memory as specified in code, provides memory predictability
     struct Tri
     {
         public Vector3 a, b, c;
     }
 
-    /// Per-object dirty region in grid coordinates.
+    //Per-object dirty region in grid coordinates.
     struct DirtyRegion
     {
         public Vector3Int min, max;
     }
 
-    /// GPU-side material source stamp. Matches compute shader struct.
+    //GPU-side material source stamp. Matches compute shader struct.
     [StructLayout(LayoutKind.Sequential)]
     struct MaterialSource
     {
-        public Vector3 position;   // world-space center
-        public Vector3 extents;    // half-size (AABB) or (radius,radius,radius) for sphere
+        public Vector3 position;   //world-space center
+        public Vector3 extents;    //half-size (AABB) or (radius,radius,radius) for sphere
         public float temperature;
         public float thermalDiffusivity;
-        public float phase;      // 0 = solid, 1 = fluid
-        public uint shape;      // 0 = AABB, 1 = sphere
+        public float phase;      //0=solid, 1=fluid
+        public uint shape;      //0 = AABB, 1=sphere
     }
 
-    // ================================================================
-    // Public accessors for the camera
-    // ================================================================
+
+    //Public accessors for the camera
 
     public RenderTexture FillTexture => _fillTex;
     public RenderTexture NormalsTexture => _normalsTex;
     public RenderTexture TemperatureTexture => _temperatureTex;
     public RenderTexture DiffusivityTexture => _diffusivityTex;
     public RenderTexture PhaseTexture => _phaseTex;
-    public RenderTexture SDFTexture => _sdfTex;
+    public RenderTexture SDFTexture => _sdfTex; //signed distance field: the distance of any voxel to nearest surface vox
     public RenderTexture HeatSourceTexture => _heatSourceTex;
     public int Nx => _nx;
     public int Ny => _ny;
@@ -104,29 +99,28 @@ public sealed class VoxelTracerSystem : MonoBehaviour
     public float ActiveVoxelSize => voxelSize;
     public bool IsReady => _fillTex != null && _nx > 0;
 
-    /// Incremented every time VoxelizeFrame writes new data into the fill/material textures.
-    /// ThermalReceiver polls this to detect dynamic-object changes that require a GPU
-    /// mask/diffusivity/heat-source re-upload
+    //Incremented every time VoxelizeFrame writes new data into the fill/material textures.
+    //ThermalReceiver polls this to detect dynamic-object changes that require a GPU
+    //mask/diffusivity/heat-source re-upload
     public int VoxelizeFrameCount { get; private set; }
 
-    /// Read-only access to registered heat sources (for external sim module).
+    //Read-only access to registered heat sources (for external sim module).
     public static IReadOnlyCollection<VoxelHeatSource> HeatSources => _registeredHeatSources;
-    /// Read-only access to registered fluid sources (for external sim module).
+    //Read-only access to registered fluid sources (for external sim module).
     public static IReadOnlyCollection<VoxelFluidSource> FluidSources => _registeredFluidSources;
-    /// Read-only access to registered water bodies (for external sim module).
+    //Read-only access to registered water bodies (for external sim module).
     public static IReadOnlyCollection<VoxelWaterBody> WaterBodies => _registeredWaterBodies;
-    /// Read-only access to registered solid material properties (for external sim module).
+    //Read-only access to registered solid material properties (for external sim module).
     public static IReadOnlyCollection<VoxelSolidMaterial> SolidMaterials => _registeredSolidMaterials;
-    /// Read-only access to registered fluid material properties (for external sim module).
+    //Read-only access to registered fluid material properties (for external sim module).
     public static IReadOnlyCollection<VoxelFluidMaterial> FluidMaterials => _registeredFluidMaterials;
     /// Read-only access to registered dynamic objects (for external sim module).
     public static IReadOnlyCollection<VoxelDynamic> DynamicObjects => _registeredDynamics;
 
-    // ================================================================
-    // Private state
-    // ================================================================
 
-    // Kernel indices
+    //Private state
+
+    //Kernel indices
     int KClear, KSurface, KSweepFill, KBuildTexture, KComputeNormals;
     int KBlurFill;
     int KCopyAndClearFlood, KCopyAndClearFloodLinear;
@@ -137,15 +131,15 @@ public sealed class VoxelTracerSystem : MonoBehaviour
     bool _kernelsCached;
     int KWriteHeatSources;
 
-    // GPU buffers
-    ComputeBuffer _voxelBuffer;      // working buffer: packed (bit 0=surface, bit 1=outside)
-    ComputeBuffer _staticVoxelBuf;   // cached static packed (surface + flood)
-    ComputeBuffer _staticTriBuffer;  // static triangles (uploaded once)
-    ComputeBuffer _dynamicTriBuffer; // dynamic triangles (uploaded every frame)
+    //GPU buffers
+    ComputeBuffer _voxelBuffer;      //working buffer: packed (bit 0=surface, bit 1=outside)
+    ComputeBuffer _staticVoxelBuf;   //cached static packed (surface + flood)
+    ComputeBuffer _staticTriBuffer;  //static triangles (uploaded once)
+    ComputeBuffer _dynamicTriBuffer; //dynamic triangles (uploaded every frame)
     int _staticTriCount;
     int _dynamicTriCount;
 
-    // Textures
+    //Textures
     RenderTexture _fillTex;
     RenderTexture _blurredFillTex;
     RenderTexture _normalsTex;
@@ -155,30 +149,30 @@ public sealed class VoxelTracerSystem : MonoBehaviour
     RenderTexture _sdfTex;
     RenderTexture _heatSourceTex;
 
-    // SDF (Jump Flood Algorithm) buffers
+    //SDF (Jump Flood Algorithm) buffers
     ComputeBuffer _jfaBufferA;
     ComputeBuffer _jfaBufferB;
 
-    // Material source GPU buffer
+    //Material source GPU buffer
     ComputeBuffer _materialSourceBuffer;
     ComputeBuffer _heatSourceMaterialBuffer;
     readonly List<MaterialSource> _materialSourceList = new List<MaterialSource>(64);
 
-    // Grid state
+    //Grid state
     int _nx, _ny, _nz;
     int _totalVoxels;
     Vector3 _activeMin, _activeMax;
 
-    // Triangle lists (CPU)
+    //Triangle lists (CPU)
     readonly List<Tri> _staticTriList = new List<Tri>(128 * 1024);
     readonly List<Tri> _dynamicTriList = new List<Tri>(16 * 1024);
     Mesh _bakedMesh;
 
-    // Reusable mesh data lists
+    //Reusable mesh data lists
     readonly List<Vector3> _tmpVerts = new List<Vector3>(4096);
     readonly List<int> _tmpIndices = new List<int>(12288);
 
-    // Registration-based object tracking
+    //Registration-based object tracking
     static readonly HashSet<VoxelDynamic> _registeredDynamics = new HashSet<VoxelDynamic>();
     static readonly HashSet<SkinnedMeshRenderer> _registeredSkins = new HashSet<SkinnedMeshRenderer>();
     static readonly HashSet<VoxelHeatSource> _registeredHeatSources = new HashSet<VoxelHeatSource>();
@@ -203,37 +197,37 @@ public sealed class VoxelTracerSystem : MonoBehaviour
     public static void RegisterFluidMaterial(VoxelFluidMaterial fm) { if (fm != null) _registeredFluidMaterials.Add(fm); }
     public static void UnregisterFluidMaterial(VoxelFluidMaterial fm) { _registeredFluidMaterials.Remove(fm); }
 
-    // Boundary collider registration
+    //Boundary collider registration
     static readonly HashSet<VoxelBoundaryCollider> _registeredBoundaryColliders = new HashSet<VoxelBoundaryCollider>();
     public static IReadOnlyCollection<VoxelBoundaryCollider> BoundaryColliders => _registeredBoundaryColliders;
     public static void RegisterBoundaryCollider(VoxelBoundaryCollider bc) { if (bc != null) _registeredBoundaryColliders.Add(bc); }
     public static void UnregisterBoundaryCollider(VoxelBoundaryCollider bc) { _registeredBoundaryColliders.Remove(bc); }
 
-    // Dirty flags
-    bool _staticDirty = true;      // rebuild static tris + re-voxelize static layer
-    bool _hasDynamicObjects;       // any dynamic objects exist in scene
+    //dirty flags
+    bool _staticDirty = true;  //rebuild static tris and re-voxelize static layer
+    bool _hasDynamicObjects;    //any dynamic objects exist in scene
 
-    // Per-object dirty region tracking
+    //per object dirty region tracking
     readonly List<DirtyRegion> _curDirtyRegions = new List<DirtyRegion>(16);
     readonly List<DirtyRegion> _prevDirtyRegions = new List<DirtyRegion>(16);
     readonly List<DirtyRegion> _mergedDirtyRegions = new List<DirtyRegion>(32);
     readonly List<DirtyRegion> _consolidatedRegions = new List<DirtyRegion>(16);
 
-    // ================================================================
-    // Lifecycle
-    // ================================================================
+
+    //Lifecycle
+
 
     void OnEnable()
     {
         if (coreCS == null) return;
-        CacheKernels();
-        RebuildStatic();
-        VoxelizeFrame();
+        CacheKernels(); //removes need for string lookup of kernel's name upon dispatching
+        RebuildStatic(); //static triangle list
+        VoxelizeFrame(); //first frame call
     }
 
     void OnDisable()
     {
-        ReleaseAll();
+        ReleaseAll(); //release all gpu resources, which are not managed by C#
     }
 
     void LateUpdate()
@@ -245,24 +239,23 @@ public sealed class VoxelTracerSystem : MonoBehaviour
 
         VoxelizeFrame();
 
-        // Pump async voxel-buffer readback so the cached snapshot used by
-        // boundary-particle generation stays fresh without ever stalling.
+        //pump async voxel-buffer readback so the cached snapshot used by
+        //boundary-particle generation stays fresh without ever stalling.
         PollVoxelReadback();
 
-        // Press F3 during play mode to dump temperature & diffusivity stats
+        //Press F3 during play mode to dump temperature & diffusivity stats
         if (Input.GetKeyDown(KeyCode.F3))
             DebugPrintMaterialTextures();
     }
 
-    // ================================================================
-    // Public API
-    // ================================================================
 
-    /// Call when static geometry changes (e.g. terrain edited, static objects added/removed).
+    //Public API
+
+    //Call when static geometry changes (e.g. terrain edited, static objects added/removed).
     [ContextMenu("Rebuild Static")]
     public void MarkStaticDirty() => _staticDirty = true;
 
-    /// Full rebuild of everything.
+    //Full rebuild of everything.
     [ContextMenu("Force Voxelize")]
     public void ForceRebuild()
     {
@@ -271,42 +264,40 @@ public sealed class VoxelTracerSystem : MonoBehaviour
         VoxelizeFrame();
     }
 
-    // ================================================================
-    // Boundary Particle Surface Extraction
-    // ================================================================
+    //Boundary Particle Surface Extraction
 
-    // Async voxel-buffer snapshot. The CPU never blocks on the GPU; instead the
-    // most recent completed snapshot is reused until a fresh one arrives. A snapshot
-    // is at most one frame stale relative to a normal interval-driven boundary refresh.
+    //Async voxel-buffer snapshot. The CPU never blocks on the GPU; instead the
+    //most recent completed snapshot is reused until a fresh one arrives. A snapshot
+    //is at most one frame stale relative to a normal interval-driven boundary refresh.
     UnityEngine.Rendering.AsyncGPUReadbackRequest _voxelReadbackRequest;
     bool _voxelReadbackPending;
-    uint[] _voxelSnapshot;          // last completed snapshot (sized _totalVoxels at request time)
+    uint[] _voxelSnapshot;          //last completed snapshot (sized _totalVoxels at request time)
     int _voxelSnapshotNx, _voxelSnapshotNy, _voxelSnapshotNz;
     Vector3 _voxelSnapshotMin;
     float _voxelSnapshotVoxelSize;
     bool _voxelSnapshotValid;
 
-    // Reused output buffer (avoids per-call List allocation).
+    //Reused output buffer (avoids per-call List allocation).
     readonly List<Vector3> _surfacePositionsCache = new List<Vector3>(4096);
 
-    /// True once at least one async voxel-buffer snapshot has completed.
+    //True once at least one async voxel-buffer snapshot has completed.
     public bool HasSurfaceSnapshot => _voxelSnapshotValid;
 
-    /// 
-    /// Fires an async readback of the current voxel buffer if none is in flight.
-    /// Safe to call every frame — work is automatically coalesced.
-    /// 
+    //
+    //Fires an async readback of the current voxel buffer if none is in flight.
+    //Safe to call every frame; work is automatically coalesced.
+    //
     public void RequestSurfaceVoxelSnapshot()
     {
         if (_voxelBuffer == null || _totalVoxels == 0 || _nx == 0) return;
         if (_voxelReadbackPending) return;
 
-        // Resize backing array only when grid dimensions change.
+        //Resize backing array only when grid dimensions change.
         if (_voxelSnapshot == null || _voxelSnapshot.Length != _totalVoxels)
             _voxelSnapshot = new uint[_totalVoxels];
 
-        // Capture current grid metadata so a stale snapshot doesn't get sampled
-        // against a different grid layout than the one it was taken from.
+        //Capture current grid metadata so a stale snapshot doesn't get sampled
+        //against a different grid layout than the one it was taken from.
         _voxelSnapshotNx = _nx;
         _voxelSnapshotNy = _ny;
         _voxelSnapshotNz = _nz;
@@ -329,30 +320,30 @@ public sealed class VoxelTracerSystem : MonoBehaviour
         var data = _voxelReadbackRequest.GetData<uint>();
         if (data.Length != _voxelSnapshot.Length)
             _voxelSnapshot = new uint[data.Length];
-        // Copy out — the NativeArray is invalidated after this callback frame.
+        //Copy out; the NativeArray is invalidated after this callback frame.
         data.CopyTo(_voxelSnapshot);
         _voxelSnapshotValid = true;
     }
 
-    /// 
-    /// Returns world-space positions of surface voxels, optionally filtered by bounds and normal direction.
-    /// Uses the most recent async voxel-buffer snapshot — never blocks the GPU pipeline.
-    /// On the very first call (before any snapshot has completed) this returns an empty list and
-    /// kicks off an async request; callers that retry next frame (e.g. boundary particle init)
-    /// will succeed once data arrives.
-    /// 
+    //
+    //Returns world-space positions of surface voxels, optionally filtered by bounds and normal direction.
+    //Uses the most recent async voxel-buffer snapshot; never blocks the GPU pipeline.
+    //On the very first call (before any snapshot has completed) this returns an empty list and
+    //kicks off an async request; callers that retry next frame (e.g. boundary particle init)
+    //will succeed once data arrives.
+    //
     public List<Vector3> GetSurfaceVoxelPositions(float spacing, Bounds[] colliderBounds = null,
         bool useNormalFilter = false, Vector3 filterDirection = default, float filterThreshold = 0f)
     {
-        // Make sure we have a request in flight so the next call can return data.
+        //make sure we have a request in flight so the next call can return data.
         RequestSurfaceVoxelSnapshot();
         PollVoxelReadback();
 
         _surfacePositionsCache.Clear();
         if (!_voxelSnapshotValid) return _surfacePositionsCache;
 
-        // Use the snapshot's captured grid metadata (in case the grid resized
-        // after the readback was issued).
+        //use the snapshot's captured grid metadata (in case the grid resized
+        //after the readback was issued).
         int snx = _voxelSnapshotNx;
         int sny = _voxelSnapshotNy;
         int snz = _voxelSnapshotNz;
@@ -373,7 +364,7 @@ public sealed class VoxelTracerSystem : MonoBehaviour
                 for (int x = 0; x < snx; x += step)
                 {
                     int idx = z * (snx * sny) + y * snx + x;
-                    if ((voxels[idx] & 1u) == 0) continue; // bit 0 = surface voxel
+                    if ((voxels[idx] & 1u) == 0) continue; //bit 0 = surface voxel
 
                     Vector3 worldPos = snapMin + new Vector3(
                         x * snapVoxel + halfVoxel,
@@ -403,6 +394,7 @@ public sealed class VoxelTracerSystem : MonoBehaviour
         return _surfacePositionsCache;
     }
 
+    //cpu lookup methods
     Vector3 EstimateSurfaceNormalSnapshot(uint[] voxels, int snx, int sny, int snz, int x, int y, int z)
     {
         float xn = SampleOccupancySnapshot(voxels, snx, sny, snz, x - 1, y, z);
@@ -432,13 +424,13 @@ public sealed class VoxelTracerSystem : MonoBehaviour
         float yp = SampleOccupancy(voxels, x, y + 1, z);
         float zn = SampleOccupancy(voxels, x, y, z - 1);
         float zp = SampleOccupancy(voxels, x, y, z + 1);
-        // Normal points from occupied toward empty
+        //Normal points from occupied toward empty
         Vector3 n = new Vector3(xn - xp, yn - yp, zn - zp);
         float mag = n.magnitude;
         return mag > 0.001f ? n / mag : Vector3.up;
     }
 
-    float SampleOccupancy(uint[] voxels, int x, int y, int z)
+    float SampleOccupancy(uint[] voxels, int x, int y, int z) //lookup which voxels in the snapshot have been occupied
     {
         if (x < 0 || x >= _nx || y < 0 || y >= _ny || z < 0 || z >= _nz)
             return 0f;
@@ -446,22 +438,22 @@ public sealed class VoxelTracerSystem : MonoBehaviour
         return (voxels[idx] & 1u) != 0 ? 1f : 0f;
     }
 
-    // ================================================================
-    // Static rebuild (runs once, or when MarkStaticDirty called)
-    // ================================================================
+
+    //Static rebuild (runs once, or when MarkStaticDirty called)
+
 
     void RebuildStatic()
     {
         if (!_kernelsCached) CacheKernels();
         _staticDirty = false;
 
-        // Gather ALL triangles (static + dynamic) to compute bounds
+        //Gather ALL triangles (static + dynamic) to compute bounds
         BuildTriangleLists();
 
         int totalTris = _staticTriList.Count + _dynamicTriList.Count;
         if (totalTris == 0) { _nx = _ny = _nz = 0; return; }
 
-        // Compute bounds from all geometry (static + dynamic)
+        //Compute bounds from all geometry (static + dynamic)
         ComputeBoundsFromBothLists(out Vector3 mn, out Vector3 mx);
         _activeMin = mn;
         _activeMax = mx;
@@ -472,19 +464,19 @@ public sealed class VoxelTracerSystem : MonoBehaviour
 
         AllocateResources(gx, gy, gz);
 
-        // Upload static triangles
+        //Upload static triangles
         UploadStaticTriangles();
 
         if (_staticTriCount == 0)
         {
-            // No static geometry — just clear the static voxel cache
+            //No static geometry; just clear the static voxel cache
             SetGridUniforms(gx, gy, gz);
             SetRegionMin(0, 0, 0);
             ClearStaticVoxelCache(gx, gy, gz);
             return;
         }
 
-        // Voxelize static geometry once → store in _staticVoxelBuf
+        //Voxelize static geometry once -> store in _staticVoxelBuf
         SetGridUniforms(gx, gy, gz);
         SetRegionMin(0, 0, 0);
         BindClearBuffers();
@@ -495,39 +487,37 @@ public sealed class VoxelTracerSystem : MonoBehaviour
         coreCS.SetInt("_TriCount", _staticTriCount);
         DispatchLinear(KSurface, _staticTriCount);
 
-        // Run the full fill pipeline so output textures are pre-populated
-        // with the static-only result. This makes per-frame work ZERO
-        // when no dynamic objects exist.
+        //Run the full fill pipeline so output textures are pre-populated
+        //with the static-only result. This makes per-frame work ZERO
+        //when no dynamic objects exist.
         var fullMin = Vector3Int.zero;
         var fullMax = new Vector3Int(gx - 1, gy - 1, gz - 1);
         RunFillPipeline(gx, gy, gz, fullMin, fullMax);
 
-        // Copy AFTER fill pipeline: static cache now includes surface (bit 0) + flood (bit 1).
-        // This enables restoration frames to skip sweep entirely.
+        //Copy afterfill pipeline: static cache now includes surface bit 0 + flood bit 1.
+        //This enables restoration frames to skip sweep entirely.
         CopyWorkingToStaticCache(gx, gy, gz);
 
-        // Reset dirty-region tracking after full bake
+        //Reset dirty-region tracking after full bake
         _prevDirtyRegions.Clear();
     }
 
     void ClearStaticVoxelCache(int gx, int gy, int gz)
     {
-        // GPU-side clear via the ClearVoxelBuffer kernel (3D dispatch, safe for any grid size)
+        //GPU-side clear via the ClearVoxelBuffer kernel (3D dispatch, safe for any grid size)
         coreCS.SetBuffer(KClearVoxelBuffer, "_VoxelBuffer", _staticVoxelBuf);
         Dispatch3D(KClearVoxelBuffer, gx, gy, gz);
     }
 
     void CopyWorkingToStaticCache(int gx, int gy, int gz)
     {
-        // GPU-side copy: working → static cache (no readback stall)
+        //GPU-side copy: working -> static cache without readback
         coreCS.SetBuffer(KCopyWorkingToStatic, "_VoxelBuffer", _voxelBuffer);
         coreCS.SetBuffer(KCopyWorkingToStatic, "_DstBuffer", _staticVoxelBuf);
         Dispatch3D(KCopyWorkingToStatic, gx, gy, gz);
     }
 
-    // ================================================================
-    // Per-frame voxelization (fast path)
-    // ================================================================
+    //Per-frame voxelization (fast path)
 
     void VoxelizeFrame()
     {
@@ -535,23 +525,23 @@ public sealed class VoxelTracerSystem : MonoBehaviour
 
         int gx = _nx, gy = _ny, gz = _nz;
 
-        // Rebuild dynamic triangle list every frame
+        //rebuild dynamic triangle list every frame
         BuildDynamicTriangleList();
 
         bool hasDynamics = _dynamicTriList.Count > 0;
 
-        // Fast path: no dynamic objects and no previous dirty regions to restore
+        //fast path: no dynamic objects and no previous dirty regions to restore
         if (!hasDynamics && _prevDirtyRegions.Count == 0)
             return;
 
-        // Collect all raw regions (current + previous, un-padded)
+        //collect all raw regions (current + previous, un-padded)
         _mergedDirtyRegions.Clear();
         for (int i = 0; i < _curDirtyRegions.Count; i++)
             _mergedDirtyRegions.Add(_curDirtyRegions[i]);
         for (int i = 0; i < _prevDirtyRegions.Count; i++)
             _mergedDirtyRegions.Add(_prevDirtyRegions[i]);
 
-        // Pad all regions, then consolidate overlapping/nearby ones
+        //pad all regions, then consolidate overlapping/nearby ones
         const int pad = 3;
         var gridMax = new Vector3Int(gx - 1, gy - 1, gz - 1);
         for (int i = 0; i < _mergedDirtyRegions.Count; i++)
@@ -563,14 +553,14 @@ public sealed class VoxelTracerSystem : MonoBehaviour
         }
         ConsolidateRegions(_mergedDirtyRegions, _consolidatedRegions);
 
-        // Update tracking: current becomes previous for next frame
+        //update tracking: current becomes previous for next frame
         _prevDirtyRegions.Clear();
         for (int i = 0; i < _curDirtyRegions.Count; i++)
-            _prevDirtyRegions.Add(_curDirtyRegions[i]); // store UN-padded
+            _prevDirtyRegions.Add(_curDirtyRegions[i]); //store UN-padded
 
         SetGridUniforms(gx, gy, gz);
 
-        // Decide: full-grid fast path OR per-region path.
+        //decide if full-grid fast path OR per-region path.
         bool useFullGrid = false;
         if (_consolidatedRegions.Count == 1)
         {
@@ -582,7 +572,7 @@ public sealed class VoxelTracerSystem : MonoBehaviour
                 useFullGrid = true;
         }
 
-        // Non-dynamic restoration: static cache includes flood, skip sweep entirely.
+        //non-dynamic restoration: static cache includes flood, skip sweep entirely.
         if (!hasDynamics)
         {
             VoxelizeFrameRestore(gx, gy, gz, useFullGrid);
@@ -602,26 +592,26 @@ public sealed class VoxelTracerSystem : MonoBehaviour
         }
     }
 
-    /// Restoration path: dynamics have disappeared, restore static state.
-    /// Static cache includes pre-computed flood marks, so sweep is skipped entirely.
-    /// Saves 3 sweep dispatches + surface dispatch on transition frames.
+    //restoration path: dynamics have disappeared, restore static state.
+    //static cache includes pre-computed flood marks, so sweep is skipped entirely.
+    //saves 3 sweep dispatches + surface dispatch on transition frames.
     void VoxelizeFrameRestore(int gx, int gy, int gz, bool useFullGrid)
     {
         if (useFullGrid)
         {
-            // Restore full static surface + flood with linear coalescing
+            //Restore full static surface + flood with linear coalescing
             coreCS.SetInt("_TotalVoxels", _totalVoxels);
             coreCS.SetBuffer(KRestoreStaticFullLinear, "_VoxelBuffer", _voxelBuffer);
             coreCS.SetBuffer(KRestoreStaticFullLinear, "_StaticVoxelBuffer", _staticVoxelBuf);
             DispatchLinear(KRestoreStaticFullLinear, _totalVoxels);
 
-            // BuildTexture scoped to dirty region (skip sweep — flood is correct from cache)
+            //BuildTexture scoped to dirty region (skip sweep; flood is correct from cache)
             var r = _consolidatedRegions[0];
             RunBuildOnly(gx, gy, gz, r.min, r.max);
         }
         else
         {
-            // Per-region restore: copy full static (surface + flood) into dirty regions
+            //Per-region restore: copy full static (surface + flood) into dirty regions
             coreCS.SetBuffer(KRestoreStaticFull, "_VoxelBuffer", _voxelBuffer);
             coreCS.SetBuffer(KRestoreStaticFull, "_StaticVoxelBuffer", _staticVoxelBuf);
             for (int i = 0; i < _consolidatedRegions.Count; i++)
@@ -632,7 +622,7 @@ public sealed class VoxelTracerSystem : MonoBehaviour
                 Dispatch3D(KRestoreStaticFull, sz.x, sz.y, sz.z);
             }
 
-            // BuildTexture per region (no sweep needed)
+            //BuildTexture per region (no sweep needed)
             for (int i = 0; i < _consolidatedRegions.Count; i++)
             {
                 var r = _consolidatedRegions[i];
@@ -641,31 +631,31 @@ public sealed class VoxelTracerSystem : MonoBehaviour
         }
     }
 
-    /// Full-grid path: linear kernel for buffer copy (perfect coalescing),
-    /// fill pipeline scoped to dirty region. Used when dirty volume is large.
+    //Full-grid path: linear kernel for buffer copy (perfect coalescing),
+    //fill pipeline scoped to dirty region. Used when dirty volume is large.
     void VoxelizeFrameFullGrid(int gx, int gy, int gz, DirtyRegion dirtyRegion)
     {
-        // 1) Copy static surface, clear flood — single linear dispatch
+        //1) Copy static surface, clear flood; single linear dispatch
         coreCS.SetInt("_TotalVoxels", _totalVoxels);
         coreCS.SetBuffer(KCopyAndClearFloodLinear, "_VoxelBuffer", _voxelBuffer);
         coreCS.SetBuffer(KCopyAndClearFloodLinear, "_StaticVoxelBuffer", _staticVoxelBuf);
         DispatchLinear(KCopyAndClearFloodLinear, _totalVoxels);
 
-        // 2) Surface voxelization — dynamic triangles
+        //2) Surface voxelization; dynamic triangles
         coreCS.SetBuffer(KSurface, "_VoxelBuffer", _voxelBuffer);
         coreCS.SetBuffer(KSurface, "_Tris", _dynamicTriBuffer);
         coreCS.SetInt("_TriCount", _dynamicTriCount);
         DispatchLinear(KSurface, _dynamicTriCount);
 
-        // 3) Fill pipeline — scoped to dirty region
+        //3) Fill pipeline; scoped to dirty region
         RunFillPipeline(gx, gy, gz, dirtyRegion.min, dirtyRegion.max);
     }
 
-    /// Per-region path: only processes dirty sub-volumes.
-    /// Used when dirty volume is small relative to total grid.
+    //Per-region path: only processes dirty sub-volumes.
+    //Used when dirty volume is small relative to total grid.
     void VoxelizeFrameRegions(int gx, int gy, int gz)
     {
-        // 1) Restore static surface + clear flood per dirty region
+        //1) Restore static surface + clear flood per dirty region
         coreCS.SetBuffer(KCopyAndClearFlood, "_VoxelBuffer", _voxelBuffer);
         coreCS.SetBuffer(KCopyAndClearFlood, "_StaticVoxelBuffer", _staticVoxelBuf);
         for (int i = 0; i < _consolidatedRegions.Count; i++)
@@ -676,13 +666,13 @@ public sealed class VoxelTracerSystem : MonoBehaviour
             Dispatch3D(KCopyAndClearFlood, sz.x, sz.y, sz.z);
         }
 
-        // 2) Surface voxelization — all dynamic triangles at once
+        //2) Surface voxelization; all dynamic triangles at once
         coreCS.SetBuffer(KSurface, "_VoxelBuffer", _voxelBuffer);
         coreCS.SetBuffer(KSurface, "_Tris", _dynamicTriBuffer);
         coreCS.SetInt("_TriCount", _dynamicTriCount);
         DispatchLinear(KSurface, _dynamicTriCount);
 
-        // 3) Fill pipeline per consolidated region
+        //3) Fill pipeline per consolidated region
         for (int i = 0; i < _consolidatedRegions.Count; i++)
         {
             var r = _consolidatedRegions[i];
@@ -690,9 +680,9 @@ public sealed class VoxelTracerSystem : MonoBehaviour
         }
     }
 
-    /// Merge overlapping or nearby regions to minimize dispatch count.
-    /// Uses greedy iterative merging: any two regions whose AABBs overlap are
-    /// unioned into one. Repeats until stable. O(N^2) but N is tiny (< 20).
+    //Merge overlapping or nearby regions to minimize dispatch count.
+    //Uses greedy iterative merging: any two regions whose AABBs overlap are
+    //unioned into one. Repeats until stable. O(N^2) but N is tiny (< 20).
     static void ConsolidateRegions(List<DirtyRegion> input, List<DirtyRegion> output)
     {
         output.Clear();
@@ -710,12 +700,12 @@ public sealed class VoxelTracerSystem : MonoBehaviour
                     var a = output[i];
                     var b = output[j];
 
-                    // Check AABB overlap (regions already padded, so touching = overlapping)
+                    //Check AABB overlap (regions already padded, so touching = overlapping)
                     if (a.min.x <= b.max.x && a.max.x >= b.min.x &&
                         a.min.y <= b.max.y && a.max.y >= b.min.y &&
                         a.min.z <= b.max.z && a.max.z >= b.min.z)
                     {
-                        // Union them
+                        //Union them
                         output[i] = new DirtyRegion
                         {
                             min = Vector3Int.Min(a.min, b.min),
@@ -731,14 +721,14 @@ public sealed class VoxelTracerSystem : MonoBehaviour
         }
     }
 
-    /// Shared fill pipeline: sweep fill → build texture → blur → normals.
-    /// Region parameters control which voxels are processed.
+    //Shared fill pipeline: sweep fill -> build texture -> blur -> normals.
+    //Region parameters control which voxels are processed.
     void RunFillPipeline(int gx, int gy, int gz, Vector3Int regMin, Vector3Int regMax)
     {
         Vector3Int regSize = regMax - regMin + Vector3Int.one;
 
-        // Sweep flood fill — only lines that cross the dirty region,
-        // but each line sweeps full axis length for correctness
+        //Sweep flood fill; only lines that cross the dirty region,
+        //but each line sweeps full axis length for correctness
         if (fillVolume)
         {
             coreCS.SetBuffer(KSweepFill, "_VoxelBuffer", _voxelBuffer);
@@ -753,20 +743,20 @@ public sealed class VoxelTracerSystem : MonoBehaviour
         RunBuildOnly(gx, gy, gz, regMin, regMax);
     }
 
-    /// Build fill texture (+ optional blur/normals) without sweep.
-    /// Used both after sweep and for restoration frames where flood is pre-computed.
+    //Build fill texture (+ optional blur/normals) without sweep.
+    //Used both after sweep and for restoration frames where flood is pre-computed.
     void RunBuildOnly(int gx, int gy, int gz, Vector3Int regMin, Vector3Int regMax)
     {
         Vector3Int regSize = regMax - regMin + Vector3Int.one;
 
-        // Build fill texture (dirty region only)
+        //Build fill texture (dirty region only)
         SetRegionMin(regMin.x, regMin.y, regMin.z);
         coreCS.SetInt("_FillVolume", fillVolume ? 1 : 0);
         coreCS.SetBuffer(KBuildTexture, "_VoxelBuffer", _voxelBuffer);
         coreCS.SetTexture(KBuildTexture, "_FillTex", _fillTex);
         Dispatch3D(KBuildTexture, regSize.x, regSize.y, regSize.z);
 
-        // Blur fill + compute normals (legacy path — only when SDF is off)
+        //Blur fill + compute normals (legacy path; only when SDF is off) but it ususally will be on.
         if (!computeSDF && computeNormals && _blurredFillTex != null && _normalsTex != null)
         {
             Vector3Int blurMin = Vector3Int.Max(regMin - Vector3Int.one, Vector3Int.zero);
@@ -785,17 +775,17 @@ public sealed class VoxelTracerSystem : MonoBehaviour
             Dispatch3D(KComputeNormals, blurSize.x, blurSize.y, blurSize.z);
         }
 
-        // Write material properties (temperature, phase) after fill is known
+        //write material properties (temperature, phase) after fill is known
         StampMaterialProperties(gx, gy, gz, regMin, regMax);
 
-        // Compute SDF + SDF-based normals (replaces blur normals when SDF is on)
+        //compute SDF + SDF-based normals (replaces blur normals when SDF is on)
         if (computeSDF && _sdfTex != null)
             ComputeSDFJumpFlood(gx, gy, gz);
-        // Stamp heat-source voxels into the dedicated HeatSourceTexture.
-        // Must run after StampMaterialProperties so fill is guaranteed written.
+        //stamp heat-source voxels into the dedicated HeatSourceTexture.
+        //must run after StampMaterialProperties so fill is guaranteed written.
         StampHeatSources(gx, gy, gz, regMin, regMax);
 
-        // Signal to external systems (e.g. ThermalReceiver) that texture data changed.
+        //signal to external systems (ex: ThermalReceiver) that texture data changed.
         VoxelizeFrameCount++;
     }
 
@@ -822,9 +812,9 @@ public sealed class VoxelTracerSystem : MonoBehaviour
         coreCS.SetTexture(KClear, "_FillTex", _fillTex);
     }
 
-    // ================================================================
-    // Triangle extraction (CPU)
-    // ================================================================
+
+    //Triangle extraction (CPU)
+
 
     void BuildTriangleLists()
     {
@@ -883,9 +873,9 @@ public sealed class VoxelTracerSystem : MonoBehaviour
         }
     }
 
-    /// Lightweight per-frame rebuild of dynamic triangles only.
-    /// Uses registration-based tracking (O(1) list access) instead of FindObjectsByType (O(N) scene scan).
-    /// Also computes per-object grid AABBs for dirty-region tracking.
+    //Lightweight per-frame rebuild of dynamic triangles only.
+    //Uses registration-based tracking (O(1) list access) instead of FindObjectsByType (O(N) scene scan).
+    //Also computes per-object grid AABBs for dirty-region tracking.
     void BuildDynamicTriangleList()
     {
         _dynamicTriList.Clear();
@@ -949,12 +939,11 @@ public sealed class VoxelTracerSystem : MonoBehaviour
         _curDirtyRegions.Add(new DirtyRegion { min = gMin, max = gMax });
     }
 
-    /// Zero-GC mesh triangle extraction. Uses Mesh.GetVertices/GetIndices
-    /// which reuse pre-allocated Lists instead of allocating new arrays.
-    /// Iterates all submeshes to match the old mesh.triangles behavior.
+
+    //Iterates all submeshes
     void AppendMesh(Mesh mesh, Matrix4x4 l2w, List<Tri> target)
     {
-        mesh.GetVertices(_tmpVerts);
+        mesh.GetVertices(_tmpVerts); //zero garbage collection since no new list is being created
         int vertCount = _tmpVerts.Count;
         if (vertCount == 0) return;
 
@@ -978,7 +967,7 @@ public sealed class VoxelTracerSystem : MonoBehaviour
                 Vector3 b = l2w.MultiplyPoint3x4(_tmpVerts[i1]);
                 Vector3 c = l2w.MultiplyPoint3x4(_tmpVerts[i2]);
 
-                // Degenerate triangle check (no sqrt needed — just check cross product magnitude)
+                //degenerate triangle check (no sqrt needed; just check cross product magnitude)
                 Vector3 cross = Vector3.Cross(b - a, c - a);
                 if (cross.sqrMagnitude < 1e-20f) continue;
 
@@ -1002,7 +991,7 @@ public sealed class VoxelTracerSystem : MonoBehaviour
         int xSteps = (hRes - 1) / step;
         int zSteps = (hRes - 1) / step;
 
-        float bottomY = tPos.y; // bottom of terrain volume
+        float bottomY = tPos.y; //bottom of terrain volume
 
         for (int iz = 0; iz < zSteps; iz++)
             for (int ix = 0; ix < xSteps; ix++)
@@ -1015,11 +1004,11 @@ public sealed class VoxelTracerSystem : MonoBehaviour
                 Vector3 v01 = HToW(x0, z1, heights[z1, x0], hRes, tPos, tSize);
                 Vector3 v11 = HToW(x1, z1, heights[z1, x1], hRes, tPos, tSize);
 
-                // Top surface (heightmap)
+                //top surface (heightmap)
                 AddTri(v00, v11, v10, target);
                 AddTri(v00, v01, v11, target);
 
-                // Bottom surface (flat at terrain base Y, reversed winding)
+                //bottom surface (flat at terrain base Y, reversed winding)
                 Vector3 b00 = new Vector3(v00.x, bottomY, v00.z);
                 Vector3 b10 = new Vector3(v10.x, bottomY, v10.z);
                 Vector3 b01 = new Vector3(v01.x, bottomY, v01.z);
@@ -1028,11 +1017,11 @@ public sealed class VoxelTracerSystem : MonoBehaviour
                 AddTri(b00, b11, b01, target);
             }
 
-        // Side-wall skirts to seal the mesh when edges are raised.
-        // Without these, the sweep fill leaks through the gap between
-        // the top heightmap edge and the flat bottom surface.
+        //side-wall skirts to seal the mesh when edges are raised.
+        //without these, the sweep fill leaks through the gap between
+        //the top heightmap edge and the flat bottom surface.
 
-        // Z-min edge (iz == 0, front face, winding faces outward -Z)
+        //z-min edge (iz == 0, front face, winding faces outward -Z)
         for (int ix = 0; ix < xSteps; ix++)
         {
             int x0 = ix * step, x1 = Mathf.Min(x0 + step, hRes - 1);
@@ -1044,12 +1033,12 @@ public sealed class VoxelTracerSystem : MonoBehaviour
             AddTri(top0, bot1, bot0, target);
         }
 
-        // Z-max edge (iz == zSteps, back face, winding faces outward +Z)
+        //z-max edge (iz == zSteps, back face, winding faces outward +Z)
         for (int ix = 0; ix < xSteps; ix++)
         {
             int x0 = ix * step, x1 = Mathf.Min(x0 + step, hRes - 1);
             int z = Mathf.Min(zSteps * step, hRes - 1);
-            Vector3 top0 = HToW(x0, z, heights[z, x0], hRes, tPos, tSize);
+            Vector3 top0 = HToW(x0, z, heights[z, x0], hRes, tPos, tSize); //convert hieght map to world indices
             Vector3 top1 = HToW(x1, z, heights[z, x1], hRes, tPos, tSize);
             Vector3 bot0 = new Vector3(top0.x, bottomY, top0.z);
             Vector3 bot1 = new Vector3(top1.x, bottomY, top1.z);
@@ -1057,7 +1046,7 @@ public sealed class VoxelTracerSystem : MonoBehaviour
             AddTri(top0, bot0, bot1, target);
         }
 
-        // X-min edge (ix == 0, left face, winding faces outward -X)
+        //x-min edge (ix == 0, left face, winding faces outward -X)
         for (int iz = 0; iz < zSteps; iz++)
         {
             int z0 = iz * step, z1 = Mathf.Min(z0 + step, hRes - 1);
@@ -1069,7 +1058,7 @@ public sealed class VoxelTracerSystem : MonoBehaviour
             AddTri(top0, bot1, top1, target);
         }
 
-        // X-max edge (ix == xSteps, right face, winding faces outward +X)
+        //x-max edge (ix == xSteps, right face, winding faces outward +X)
         for (int iz = 0; iz < zSteps; iz++)
         {
             int z0 = iz * step, z1 = Mathf.Min(z0 + step, hRes - 1);
@@ -1099,10 +1088,7 @@ public sealed class VoxelTracerSystem : MonoBehaviour
         target.Add(new Tri { a = a, b = b, c = c });
     }
 
-    // ================================================================
-    // Bounds
-    // ================================================================
-
+    //Bounds
     void ComputeBoundsFromBothLists(out Vector3 mn, out Vector3 mx)
     {
         if (boundsMode == BoundsMode.Manual)
@@ -1115,9 +1101,9 @@ public sealed class VoxelTracerSystem : MonoBehaviour
         mn = new Vector3(float.MaxValue, float.MaxValue, float.MaxValue);
         mx = new Vector3(float.MinValue, float.MinValue, float.MinValue);
 
-        // Size grid to STATIC geometry only. Dynamic objects move each frame,
-        // so baking their initial position into the grid bounds wastes
-        // resolution and can blow past the SDF voxel budget.
+        //Size grid to STATIC geometry only. Dynamic objects move each frame,
+        //so baking their initial position into the grid bounds wastes
+        //resolution and can blow past the SDF voxel budget.
         ExpandBounds(_staticTriList, ref mn, ref mx);
 
         if (mn.x > mx.x) { mn = gridMin; mx = gridMax; return; }
@@ -1137,10 +1123,7 @@ public sealed class VoxelTracerSystem : MonoBehaviour
         }
     }
 
-    // ================================================================
-    // Grid sizing
-    // ================================================================
-
+    //Grid sizing
     void ComputeGridSize(Vector3 mn, Vector3 mx, out int gx, out int gy, out int gz)
     {
         Vector3 size = mx - mn;
@@ -1164,11 +1147,9 @@ public sealed class VoxelTracerSystem : MonoBehaviour
         }
     }
 
-    // ================================================================
-    // GPU resource management
-    // ================================================================
 
-    void CacheKernels()
+    //GPU resource management
+    void CacheKernels() //finds them once and cache the kernel to avoid string lookup every time it's needed
     {
         KClear = coreCS.FindKernel("Clear");
         KSurface = coreCS.FindKernel("Surface");
@@ -1213,7 +1194,7 @@ public sealed class VoxelTracerSystem : MonoBehaviour
         };
         _fillTex.Create();
 
-        // Material property textures — always allocated (used by external sim module)
+        //Material property textures; always allocated (used by external sim module)
         _temperatureTex = new RenderTexture(gx, gy, 0, RenderTextureFormat.RFloat)
         {
             dimension = UnityEngine.Rendering.TextureDimension.Tex3D,
@@ -1262,12 +1243,12 @@ public sealed class VoxelTracerSystem : MonoBehaviour
         };
         _heatSourceTex.Create();
 
-        // Normals textures: allocate when computeNormals OR computeSDF is enabled
-        // When SDF is on, normals come from SDF gradient (no blur needed)
+        //Normals textures: allocate when computeNormals OR computeSDF is enabled
+        //When SDF is on, normals come from SDF gradient (no blur needed), this is the recommended path
         bool needNormals = computeNormals || computeSDF;
         if (needNormals)
         {
-            // Blur texture only needed for legacy fill-based normals (non-SDF path)
+            //blur texture only needed for legacy fill-based normals (non-SDF path)
             if (computeNormals && !computeSDF)
             {
                 _blurredFillTex = new RenderTexture(gx, gy, 0, RenderTextureFormat.RFloat)
@@ -1296,7 +1277,7 @@ public sealed class VoxelTracerSystem : MonoBehaviour
             _normalsTex.Create();
         }
 
-        // SDF texture + JFA buffers: only allocate when computeSDF is enabled
+        //SDF texture + JFA buffers: only allocate when computeSDF is enabled
         if (computeSDF)
         {
             _sdfTex = new RenderTexture(gx, gy, 0, RenderTextureFormat.RFloat)
@@ -1334,7 +1315,7 @@ public sealed class VoxelTracerSystem : MonoBehaviour
         _dynamicTriCount = _dynamicTriList.Count;
         if (_dynamicTriCount == 0)
         {
-            // Release to save memory when no dynamic objects
+            //Release to save memory when no dynamic objects
             if (_dynamicTriBuffer != null) { _dynamicTriBuffer.Release(); _dynamicTriBuffer = null; }
             return;
         }
@@ -1377,8 +1358,8 @@ public sealed class VoxelTracerSystem : MonoBehaviour
 
     void ReleaseAll()
     {
-        // Wait for any in-flight async readback to avoid touching freed memory
-        // from a callback after the buffer has been released.
+        //wait for any in-flight async readback to avoid touching freed memory
+        //from a callback after the buffer has been released.
         if (_voxelReadbackPending)
         {
             _voxelReadbackRequest.WaitForCompletion();
@@ -1394,31 +1375,31 @@ public sealed class VoxelTracerSystem : MonoBehaviour
         if (_bakedMesh != null) { Destroy(_bakedMesh); _bakedMesh = null; }
     }
 
-    // ================================================================
-    // SDF computation (Jump Flood Algorithm)
-    // ================================================================
 
-    /// Compute a signed distance field from the fill texture using JFA.
-    /// Runs over the full grid (not region-scoped) since JFA is a global algorithm.
+    //SDF computation (Jump Flood Algorithm)
+
+
+    //compute a signed distance field from the fill texture using JFA.
+    //runs over the full grid (not region-scoped) since JFA is a global algorithm.
     void ComputeSDFJumpFlood(int gx, int gy, int gz)
     {
         if (_jfaBufferA == null || _jfaBufferB == null || _sdfTex == null) return;
 
-        // 1) Seed: surface voxels → self-reference, others → 0xFFFFFFFF
+        //1) Seed: surface voxels -> self-reference, others -> 0xFFFFFFFF
         coreCS.SetTexture(KSDFSeed, "_FillTex", _fillTex);
         coreCS.SetBuffer(KSDFSeed, "_JFABuffer", _jfaBufferA);
         Dispatch3D(KSDFSeed, gx, gy, gz);
 
-        // 2) JFA steps: starting from half the max dimension, halving each step
+        //2) JFA steps: starting from half the max dimension, halving each step
         int maxDim = Mathf.Max(gx, Mathf.Max(gy, gz));
         int step = Mathf.Max(1, Mathf.NextPowerOfTwo(maxDim) / 2);
-        bool pingToA = false; // seed is in A, first step reads A writes B
+        bool pingToA = false; //seed is in A, first step reads A writes B
 
         while (step >= 1)
         {
             coreCS.SetInt("_JFAStepSize", step);
 
-            // Read from current source, write to current dest
+            //Read from current source, write to current dest
             ComputeBuffer src = pingToA ? _jfaBufferB : _jfaBufferA;
             ComputeBuffer dst = pingToA ? _jfaBufferA : _jfaBufferB;
 
@@ -1430,15 +1411,15 @@ public sealed class VoxelTracerSystem : MonoBehaviour
             step /= 2;
         }
 
-        // 3) Finalize: convert JFA result → signed distance in world units
-        // Result buffer is whichever was last written to
+        //3) Finalize: convert JFA result -> signed distance in world units
+        //Result buffer is whichever was last written to
         ComputeBuffer resultBuf = pingToA ? _jfaBufferA : _jfaBufferB;
         coreCS.SetBuffer(KSDFFinalize, "_JFABuffer", resultBuf);
         coreCS.SetTexture(KSDFFinalize, "_FillTex", _fillTex);
         coreCS.SetTexture(KSDFFinalize, "_SDFTex", _sdfTex);
         Dispatch3D(KSDFFinalize, gx, gy, gz);
 
-        // 4) Compute normals from SDF gradient (always, since SDF is on)
+        //4) Compute normals from SDF gradient (always, since SDF is on)
         if (_normalsTex != null)
         {
             coreCS.SetTexture(KComputeSDFNormals, "_FillTex", _fillTex);
@@ -1448,21 +1429,19 @@ public sealed class VoxelTracerSystem : MonoBehaviour
         }
     }
 
-    // ================================================================
-    // Material property stamping
-    // ================================================================
 
-    /// Build the material source list from registered heat sources,
-    /// fluid sources, and water bodies, then dispatch the GPU stamp kernel.
+    //Material property stamping
+    //build the material source list from registered heat sources,
+    //fluid sources, and water bodies, then dispatch the GPU stamp kernel.
     void StampMaterialProperties(int gx, int gy, int gz, Vector3Int regMin, Vector3Int regMax)
     {
         if (_temperatureTex == null || _phaseTex == null || _diffusivityTex == null) return;
 
         BuildMaterialSourceList();
 
-        // If a terrain has VoxelSolidMaterial, use its values as the grid-wide
-        // defaults. This avoids a grid-spanning AABB source that would overwrite
-        // every other object. Per-object sources then only need to cover their own voxels.
+        //If a terrain has VoxelSolidMaterial, use its values as the grid-wide
+        //defaults. This avoids a grid-spanning AABB source that would overwrite
+        //every other object. Per-object sources then only need to cover their own voxels.
         float tempDefault = defaultSolidTemperature;
         float diffDefault = defaultSolidDiffusivity;
         foreach (var sm in _registeredSolidMaterials)
@@ -1475,7 +1454,7 @@ public sealed class VoxelTracerSystem : MonoBehaviour
             }
         }
 
-        // DEBUG: log all material sources being uploaded
+        //DEBUG: log all material sources being uploaded
         if (Input.GetKey(KeyCode.F3))
         {
             for (int i = 0; i < _materialSourceList.Count; i++)
@@ -1506,20 +1485,20 @@ public sealed class VoxelTracerSystem : MonoBehaviour
 
         Dispatch3D(KWriteMaterialProperties, regSize.x, regSize.y, regSize.z);
     }
-    /// 
-    /// Writes the HeatSourceTexture for the given dirty region.
-    /// The texture is first cleared to 0 across the region (so sources that
-    /// moved or deactivated since last frame don't leave stale hot spots).
-    /// Then every active VoxelHeatSource stamps its temperature value into the
-    /// voxels it overlaps.
-    /// 
+    //
+    //Writes the HeatSourceTexture for the given dirty region.
+    //The texture is first cleared to 0 across the region (so sources that
+    //moved or deactivated since last frame don't leave stale hot spots).
+    //Then every active VoxelHeatSource stamps its temperature value into the
+    //voxels it overlaps.
+    //
     void StampHeatSources(int gx, int gy, int gz, Vector3Int regMin, Vector3Int regMax)
     {
         if (_heatSourceTex == null) return;
 
         var heatSourceEntries = new List<MaterialSource>(8);
 
-        // Stamp VoxelSolidMaterial objects flagged as permanent heat sources
+        //Stamp VoxelSolidMaterial objects flagged as permanent heat sources
         foreach (var sm in _registeredSolidMaterials)
         {
             if (sm == null || !sm.isActiveAndEnabled || !sm.isContinuousHeatSource) continue;
@@ -1553,7 +1532,7 @@ public sealed class VoxelTracerSystem : MonoBehaviour
         }
 
         //Always ensure the GPU buffer is valid and contains current data,
-        // even when count == 0 (kernel still runs to clear the texture region).
+        //even when count == 0 (kernel still runs to clear the texture region).
         int count = heatSourceEntries.Count;
         if (_heatSourceMaterialBuffer == null || _heatSourceMaterialBuffer.count < Mathf.Max(1, count))
         {
@@ -1566,7 +1545,7 @@ public sealed class VoxelTracerSystem : MonoBehaviour
         Vector3Int regSize = regMax - regMin + Vector3Int.one;
         SetRegionMin(0, 0, 0);
 
-        coreCS.SetInt("_MaterialSourceCount", count);   // correctly 0 when no sources
+        coreCS.SetInt("_MaterialSourceCount", count);   //correctly 0 when no sources
         coreCS.SetTexture(KWriteHeatSources, "_FillTex", _fillTex);
         coreCS.SetTexture(KWriteHeatSources, "_HeatSourceTex", _heatSourceTex);
         coreCS.SetBuffer(KWriteHeatSources, "_MaterialSources", _heatSourceMaterialBuffer);
@@ -1576,25 +1555,25 @@ public sealed class VoxelTracerSystem : MonoBehaviour
     {
         _materialSourceList.Clear();
 
-        // Half-voxel padding: the SAT voxelizer marks voxels as filled up to
-        // _HalfUnit beyond the mesh surface, so Renderer.bounds doesn't fully
-        // cover the voxelized shell. Safe now that terrain uses defaults.
+        //Half-voxel padding: the SAT voxelizer marks voxels as filled up to
+        //_HalfUnit beyond the mesh surface, so Renderer.bounds doesn't fully
+        //cover the voxelized shell. Safe now that terrain uses defaults.
         Vector3 halfVoxelPad = Vector3.one * (voxelSize * 0.5f);
 
-        // ---- Priority order (lowest first, last wins): ----
-        // Terrain VoxelSolidMaterial is not added as a source — it sets the
-        // grid-wide defaults in StampMaterialProperties() instead, so it
-        // cannot cross-contaminate other objects.
-        // 1. Non-terrain solid materials (per-object bounds)
-        // 2. Heat sources
-        // 3. Water bodies
-        // 4. Fluid sources (highest priority)
+        //---- Priority order (lowest first, last wins): ----
+        //Terrain VoxelSolidMaterial is not added as a source; it sets the
+        //grid-wide defaults in StampMaterialProperties() instead, so it
+        //cannot cross-contaminate other objects.
+        //1. Non-terrain solid materials (per-object bounds)
+        //2. Heat sources
+        //3. Water bodies
+        //4. Fluid sources (highest priority)
 
-        // 1) Non-terrain solid materials
+        //1) Non-terrain solid materials
         foreach (var sm in _registeredSolidMaterials)
         {
             if (sm == null || !sm.isActiveAndEnabled) continue;
-            if (sm.GetComponent<Terrain>() != null) continue; // handled via defaults
+            if (sm.GetComponent<Terrain>() != null) continue; //handled via defaults
 
             var r = sm.GetComponent<Renderer>();
             if (r != null)
@@ -1623,54 +1602,54 @@ public sealed class VoxelTracerSystem : MonoBehaviour
             }
         }
 
-        // 2) Heat sources
-        // foreach (var hs in _registeredHeatSources)
-        // {
-        //     if (hs == null || !hs.isActiveAndEnabled || !hs.active) continue;
+        //2) Heat sources
+        //foreach (var hs in _registeredHeatSources)
+        //{
+        //    if (hs == null || !hs.isActiveAndEnabled || !hs.active) continue;
 
-        //     if (hs.radius > 0f)
-        //     {
-        //         _materialSourceList.Add(new MaterialSource
-        //         {
-        //             position = hs.transform.position,
-        //             extents = Vector3.one * hs.radius,
-        //             temperature = hs.temperature,
-        //             thermalDiffusivity = 0f,
-        //             phase = 0f,
-        //             shape = 1
-        //         });
-        //     }
-        //     else
-        //     {
-        //         var r = hs.GetComponent<Renderer>();
-        //         if (r != null)
-        //         {
-        //             _materialSourceList.Add(new MaterialSource
-        //             {
-        //                 position = r.bounds.center,
-        //                 extents = r.bounds.extents + Vector3.one * voxelSize,
-        //                 temperature = hs.temperature,
-        //                 thermalDiffusivity = 0f,
-        //                 phase = 0f,
-        //                 shape = 0
-        //             });
-        //         }
-        //         else
-        //         {
-        //             _materialSourceList.Add(new MaterialSource
-        //             {
-        //                 position = hs.transform.position,
-        //                 extents = Vector3.one * 0.5f,
-        //                 temperature = hs.temperature,
-        //                 thermalDiffusivity = 0f,
-        //                 phase = 0f,
-        //                 shape = 1
-        //             });
-        //         }
-        //     }
-        // }
+        //    if (hs.radius > 0f)
+        //    {
+        //        _materialSourceList.Add(new MaterialSource
+        //        {
+        //            position = hs.transform.position,
+        //            extents = Vector3.one * hs.radius,
+        //            temperature = hs.temperature,
+        //            thermalDiffusivity = 0f,
+        //            phase = 0f,
+        //            shape = 1
+        //        });
+        //    }
+        //    else
+        //    {
+        //        var r = hs.GetComponent<Renderer>();
+        //        if (r != null)
+        //        {
+        //            _materialSourceList.Add(new MaterialSource
+        //            {
+        //                position = r.bounds.center,
+        //                extents = r.bounds.extents + Vector3.one * voxelSize,
+        //                temperature = hs.temperature,
+        //                thermalDiffusivity = 0f,
+        //                phase = 0f,
+        //                shape = 0
+        //            });
+        //        }
+        //        else
+        //        {
+        //            _materialSourceList.Add(new MaterialSource
+        //            {
+        //                position = hs.transform.position,
+        //                extents = Vector3.one * 0.5f,
+        //                temperature = hs.temperature,
+        //                thermalDiffusivity = 0f,
+        //                phase = 0f,
+        //                shape = 1
+        //            });
+        //        }
+        //    }
+        //}
 
-        // 4) Water bodies
+        //4) Water bodies
         foreach (var wb in _registeredWaterBodies)
         {
             if (wb == null || !wb.isActiveAndEnabled) continue;
@@ -1685,12 +1664,12 @@ public sealed class VoxelTracerSystem : MonoBehaviour
                 temperature = temp,
                 thermalDiffusivity = diff,
                 phase = phase,
-                shape = 0   // AABB
+                shape = 0   //AABB
             });
         }
 
-        // Fluid sources: spherical emission volumes marked as fluid
-        // Use VoxelFluidMaterial temperature if attached, otherwise fallback to initialTemperature
+        //Fluid sources: spherical emission volumes marked as fluid
+        //Use VoxelFluidMaterial temperature if attached, otherwise fallback to initialTemperature
         foreach (var fs in _registeredFluidSources)
         {
             if (fs == null || !fs.isActiveAndEnabled) continue;
@@ -1705,7 +1684,7 @@ public sealed class VoxelTracerSystem : MonoBehaviour
                 temperature = temp,
                 thermalDiffusivity = diff,
                 phase = phase,
-                shape = 1   // sphere
+                shape = 1   //sphere
             });
         }
     }
@@ -1715,7 +1694,7 @@ public sealed class VoxelTracerSystem : MonoBehaviour
         int count = _materialSourceList.Count;
         if (count == 0)
         {
-            // Need at least a 1-element buffer to bind (GPU requires valid buffer)
+            //Need at least a 1-element buffer to bind (GPU requires valid buffer)
             if (_materialSourceBuffer == null)
                 _materialSourceBuffer = new ComputeBuffer(1, Marshal.SizeOf(typeof(MaterialSource)));
             return;
@@ -1729,9 +1708,9 @@ public sealed class VoxelTracerSystem : MonoBehaviour
         _materialSourceBuffer.SetData(_materialSourceList);
     }
 
-    // ================================================================
-    // Dispatch helpers
-    // ================================================================
+
+    //Dispatch helpers
+
 
     void Dispatch3D(int kernel, int gx, int gy, int gz)
     {
@@ -1777,9 +1756,9 @@ public sealed class VoxelTracerSystem : MonoBehaviour
         coreCS.Dispatch(kernel, Mathf.CeilToInt(count / (float)tx), 1, 1);
     }
 
-    // ================================================================
-    // Editor gizmos
-    // ================================================================
+
+    //Editor gizmos
+
 
     void OnDrawGizmosSelected()
     {
@@ -1797,11 +1776,11 @@ public sealed class VoxelTracerSystem : MonoBehaviour
         }
     }
 
-    // ================================================================
-    // Debug: temperature & diffusivity readback
-    // ================================================================
 
-    /// Read back a 3D RFloat RenderTexture into a flat float array (CPU-side).
+    //Debug: temperature & diffusivity readback
+
+
+    //Read back a 3D RFloat RenderTexture into a flat float array (CPU-side).
     static float[] ReadBack3DTexture(RenderTexture rt, int nx, int ny, int nz)
     {
         float[] data = new float[nx * ny * nz];
@@ -1827,11 +1806,11 @@ public sealed class VoxelTracerSystem : MonoBehaviour
         return data;
     }
 
-    /// 
-    /// Logs a summary of temperature and diffusivity textures to the console.
-    /// Shows min/max/avg and lists all non-zero voxels (capped to avoid console flood).
-    /// Call from inspector context menu or script: GetComponent&lt;VoxelTracerSystem&gt;().DebugPrintMaterialTextures();
-    /// 
+    //
+    //Logs a summary of temperature and diffusivity textures to the console.
+    //Shows min/max/avg and lists all non-zero voxels (capped to avoid console flood).
+    //Call from inspector context menu or script: GetComponent&lt;VoxelTracerSystem&gt;().DebugPrintMaterialTextures();
+    //
     [ContextMenu("Debug Print Temperature & Diffusivity")]
     public void DebugPrintMaterialTextures()
     {
@@ -1866,14 +1845,14 @@ public sealed class VoxelTracerSystem : MonoBehaviour
         }
 
         Debug.Log($"[VoxelTracer] Grid {nx}x{ny}x{nz} = {total} voxels\n" +
-                  $"  Temperature  — min: {tMin:F3}, max: {tMax:F3}, avg: {tSum / total:F3}, non-zero: {nonZeroTemp}\n" +
-                  $"  Diffusivity  — min: {dMin:F3}, max: {dMax:F3}, avg: {dSum / total:F3}, non-zero: {nonZeroDiff}");
+                  $"  Temperature ; min: {tMin:F3}, max: {tMax:F3}, avg: {tSum / total:F3}, non-zero: {nonZeroTemp}\n" +
+                  $"  Diffusivity ; min: {dMin:F3}, max: {dMax:F3}, avg: {dSum / total:F3}, non-zero: {nonZeroDiff}");
 
-        // Print up to 50 sample non-zero voxels
+        //Print up to 50 sample non-zero voxels
         int logged = 0;
         const int maxSamples = 50;
         var sb = new System.Text.StringBuilder();
-        sb.AppendLine("[VoxelTracer] Non-zero voxel samples (x,y,z) → temp, diff:");
+        sb.AppendLine("[VoxelTracer] Non-zero voxel samples (x,y,z) -> temp, diff:");
 
         for (int idx = 0; idx < total && logged < maxSamples; idx++)
         {
@@ -1881,7 +1860,7 @@ public sealed class VoxelTracerSystem : MonoBehaviour
             int x = idx % nx;
             int y = (idx / nx) % ny;
             int z = idx / (nx * ny);
-            sb.AppendLine($"  ({x},{y},{z}) → temp={tempData[idx]:F2}, diff={diffData[idx]:F4}");
+            sb.AppendLine($"  ({x},{y},{z}) -> temp={tempData[idx]:F2}, diff={diffData[idx]:F4}");
             logged++;
         }
 

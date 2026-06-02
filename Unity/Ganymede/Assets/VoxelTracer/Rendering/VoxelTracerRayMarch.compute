@@ -1,31 +1,31 @@
-// ============================================================================
+
 // VoxelTracerRayMarch.compute
 // Full-screen DDA ray march. Normals derived from DDA step direction
 // (which voxel face the ray entered through). No normal texture needed.
-// ============================================================================
+
 #pragma kernel RayMarch
 
-// ---- Camera ----
+//  Camera 
 float4x4 _CamToWorld;
 float4x4 _InvProj;
 float3   _CamPos;
 float2   _ScreenSize;
 
-// ---- Volume ----
+//  Volume 
 int _Width, _Height, _Depth;
 float3 _Start;
 float  _Unit;
 
-// ---- Fill texture (read-only) ----
+//  Fill texture (read-only) 
 Texture3D<float> _FillTex;
 
-// ---- Temperature ----
+//  Temperature 
 Texture3D<float> _TempTex;
 SamplerState sampler_TempTex;
 float _MinTemp;
 float _MaxTemp;
 
-// ---- Shading ----
+//  Shading 
 int    _VisMode;        // 0 = lit, 1 = normals
 float3 _SurfaceColor;
 float3 _LightDir;
@@ -33,13 +33,13 @@ float3 _LightColor;
 float3 _AmbientColor;
 float4 _BackgroundColor;
 
-// ---- Output ----
+//  Output 
 RWTexture2D<float4> _ColorOut;
 
-// ---- Limits ----
+//  Limits 
 int _MaxSteps;
 
-// ========================= Helpers =========================
+// Helpers
 
 float2 RayAABB(float3 ro, float3 rd, float3 bmin, float3 bmax)
 {
@@ -61,14 +61,14 @@ float3 HeatColor(float t)
     );
 }
 
-// ========================= Main =========================
+// Main
 
 [numthreads(8, 8, 1)]
 void RayMarch(uint3 id : SV_DispatchThreadID)
 {
     if (id.x >= (uint)_ScreenSize.x || id.y >= (uint)_ScreenSize.y) return;
 
-    // ---- Build ray ----
+    //  Build ray 
     float2 uv  = (float2(id.xy) + 0.5) / _ScreenSize;
     float2 ndc = uv * 2.0 - 1.0;
 
@@ -82,18 +82,18 @@ void RayMarch(uint3 id : SV_DispatchThreadID)
     rd.y += (abs(rd.y) < 1e-8) ? 1e-8 : 0.0;
     rd.z += (abs(rd.z) < 1e-8) ? 1e-8 : 0.0;
 
-    // ---- AABB test ----
+    //  AABB test 
     float3 bmin = _Start;
     float3 bmax = _Start + float3(_Width, _Height, _Depth) * _Unit;
     float2 tRange = RayAABB(ro, rd, bmin, bmax);
 
     if (tRange.x > tRange.y || tRange.y < 0.0)
     {
-        _ColorOut[id.xy] = float4(0, 0, 0, 0); // transparent — let scene show through
+        _ColorOut[id.xy] = float4(0, 0, 0, 0); // transparent ; let scene show through
         return;
     }
 
-    // ---- DDA setup ----
+    //  DDA setup 
     float tStart = max(tRange.x + _Unit * 0.001, 0.0);
     float3 entry = ro + rd * tStart;
     float3 gridF = (entry - _Start) / _Unit;
@@ -116,7 +116,7 @@ void RayMarch(uint3 id : SV_DispatchThreadID)
     nextBound.z = _Start.z + ((stepDir.z > 0) ? (voxel.z + 1) : voxel.z) * _Unit;
     float3 tMax = (nextBound - ro) * invRd;
 
-    // ---- DDA traversal ----
+    //  DDA traversal 
     bool hit = false;
     int lastAxis = -1; // tracks which axis DDA stepped on: 0=X, 1=Y, 2=Z
 
@@ -169,11 +169,11 @@ void RayMarch(uint3 id : SV_DispatchThreadID)
 
     if (!hit)
     {
-        _ColorOut[id.xy] = float4(0, 0, 0, 0); // transparent — let scene show through
+        _ColorOut[id.xy] = float4(0, 0, 0, 0); // transparent ; let scene show through
         return;
     }
 
-    // ---- Compute normal from DDA face crossing ----
+    //  Compute normal from DDA face crossing 
     // The normal is the face of the voxel the ray entered through,
     // pointing back toward the ray origin.
     float3 normal;
@@ -185,7 +185,7 @@ void RayMarch(uint3 id : SV_DispatchThreadID)
         normal = float3(0.0, 0.0, (float)(-stepDir.z));
     else
     {
-        // First voxel hit (no DDA step yet) — derive from dominant ray direction
+        // First voxel hit (no DDA step yet) ; derive from dominant ray direction
         float3 absRd = abs(rd);
         if (absRd.x > absRd.y && absRd.x > absRd.z)
             normal = float3(rd.x > 0.0 ? -1.0 : 1.0, 0.0, 0.0);
@@ -195,7 +195,7 @@ void RayMarch(uint3 id : SV_DispatchThreadID)
             normal = float3(0.0, 0.0, rd.z > 0.0 ? -1.0 : 1.0);
     }
 
-    // ---- Shade ----
+    //  Shade 
     float3 color;
 
     if (_VisMode == 1)

@@ -7,6 +7,7 @@ float CalculateFresnel(float3 normalWS, float3 positionWS, float power)
     float3 V = normalize(_WorldSpaceCameraPos - positionWS);
     float NdotV = saturate(dot(N, V));
     float F0 = 0.02;  // water at normal incidence reflects only 2% of light
+    // this schlick approximation https://en.wikipedia.org/wiki/Schlick%27s_approximation
     return F0 + (1.0 - F0) * pow(1.0 - NdotV, power);
 }
 

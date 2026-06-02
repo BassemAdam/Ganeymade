@@ -37,6 +37,10 @@ Shader "Custom/WaterRaymarching"
         _SSRThickness ("SSR Thickness Tolerance", Range(0.001, 2.0)) = 0.08
         _SSREdgeFadeWidth ("SSR Edge Fade Width", Range(0.001, 0.5)) = 0.08
         _SSRBackfaceThreshold ("SSR Backface Dot Threshold", Range(-1.0, 1.0)) = 0.05
+        [Header(Screen Space Refractions)]
+        _RefractionStepSize ("Refraction Step Size (WS)", Range(0.005, 1.0)) = 0.05
+        _RefractionMaxSteps ("Refraction Max Steps", Range(8, 256)) = 64
+        _RefractionThickness ("Refraction Thickness Tolerance", Range(0.001, 2.0)) = 0.08
         [Header(Vapour Rendering)]
         _VapourBaseColor ("Vapour Base Color", Color) = (1.0, 1.0, 1.0, 1)
         _VapourAbsorption ("Vapour Absorption (density -> opacity)", Range(0.1, 20.0)) = 8.0
@@ -147,6 +151,10 @@ Shader "Custom/WaterRaymarching"
                 float  _SSRThickness;
                 float  _SSREdgeFadeWidth;
                 float  _SSRBackfaceThreshold;
+
+                float  _RefractionStepSize;
+                float  _RefractionMaxSteps;
+                float  _RefractionThickness;
 
                 half4  _VapourBaseColor;
                 float  _VapourAbsorption;

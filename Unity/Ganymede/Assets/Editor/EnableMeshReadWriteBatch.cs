@@ -3,11 +3,11 @@ using System.Collections.Generic;
 using UnityEditor;
 using UnityEngine;
 
-/// <summary>
-/// Batch tool: enables Read/Write on every model asset (and standalone Mesh asset)
-/// in the project so that Mesh.GetVertices / Mesh.GetIndices work in builds.
-/// Required by VoxelTracerSystem.AppendMesh — see Tools/Voxel/Enable Read-Write On All Meshes.
-/// </summary>
+
+//Batch tool: enables Read/Write on every model asset (and standalone Mesh asset)
+//in the project so that Mesh.GetVertices / Mesh.GetIndices work in builds.
+//Required by VoxelTracerSystem.AppendMesh — see Tools/Voxel/Enable Read-Write On All Meshes.
+
 public static class EnableMeshReadWriteBatch
 {
     private const string MENU_ALL       = "Tools/Voxel/Enable Read-Write On All Meshes";

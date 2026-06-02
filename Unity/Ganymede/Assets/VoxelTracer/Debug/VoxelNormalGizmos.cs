@@ -3,11 +3,11 @@ using UnityEngine;
 using UnityEngine.Rendering;
 using UnityEngine.Rendering.Universal;
 
-/// <summary>
-/// Builds normal-line geometry on filled surface voxels.
-/// Attach to the same Camera that has VoxelTracerCamera.
-/// Rendering is handled by <see cref="VoxelNormalGizmosFeature"/>.
-/// </summary>
+
+//Builds normal-line geometry on filled surface voxels.
+//attach to the same Camera that has VoxelTracerCamera.
+//Rendering is handled by <see cref="VoxelNormalGizmosFeature"/>.
+
 [RequireComponent(typeof(Camera))]
 [DefaultExecutionOrder(100)] // run after VoxelTracerCamera
 public class VoxelNormalGizmos : MonoBehaviour
@@ -50,16 +50,12 @@ public class VoxelNormalGizmos : MonoBehaviour
     Vector3[] _lineStarts;
     Vector3[] _lineEnds;
 
-    // ================================================================
     // Public API for VoxelNormalGizmosFeature
-    // ================================================================
-
     public bool HasLines => enabled && _lineMesh != null && _lineCount > 0 && _lineMat != null;
 
-    /// <summary>
-    /// Draw the normal lines into the given CommandBuffer.
-    /// Called by VoxelNormalGizmosFeature inside a render graph raster pass.
-    /// </summary>
+
+    // Draw the normal lines into the given CommandBuffer.
+    // Called by VoxelNormalGizmosFeature inside a render graph raster pass.
     public void DrawLines(RasterCommandBuffer cmd, Matrix4x4 view, Matrix4x4 proj)
     {
         if (!HasLines) return;
@@ -68,9 +64,7 @@ public class VoxelNormalGizmos : MonoBehaviour
         cmd.DrawMesh(_lineMesh, Matrix4x4.identity, _lineMat, 0, 0);
     }
 
-    // ================================================================
     // Lifecycle
-    // ================================================================
 
     void OnEnable()
     {
@@ -111,13 +105,13 @@ public class VoxelNormalGizmos : MonoBehaviour
         int nz = voxelSystem.Nz;
         int total = nx * ny * nz;
 
-        // GPU readback of fill texture into CPU array
+        //GPU readback of fill texture into CPU array
         var fillRT = voxelSystem.FillTexture;
         if (fillRT == null) return;
 
-        // Create a temporary Texture3D readback via compute buffer copy
-        // Since direct Texture3D readback is complex, use AsyncGPUReadback
-        // For simplicity, use a RenderTexture.active trick per-slice
+        //Create a temporary Texture3D readback via compute buffer copy
+        //Since direct Texture3D readback is complex, use AsyncGPUReadback
+        //For simplicity, use a RenderTexture.active trick per-slice
         if (_fillData == null || _fillData.Length != total ||
             _cachedNx != nx || _cachedNy != ny || _cachedNz != nz)
         {
@@ -127,7 +121,7 @@ public class VoxelNormalGizmos : MonoBehaviour
             _cachedNz = nz;
         }
 
-        // Read each Z slice
+        //Read each Z slice
         var tempRT = RenderTexture.GetTemporary(nx, ny, 0, RenderTextureFormat.RFloat);
         var tempTex = new Texture2D(nx, ny, TextureFormat.RFloat, false);
 
@@ -148,8 +142,8 @@ public class VoxelNormalGizmos : MonoBehaviour
         RenderTexture.ReleaseTemporary(tempRT);
         Destroy(tempTex);
 
-        // Collect AABB bounds of renderers on the target layers for filtering.
-        // When normalLayers == Everything (~0), skip the per-voxel check entirely.
+        //Collect AABB bounds of renderers on the target layers for filtering.
+        //When normalLayers == Everything (~0), skip the per-voxel check entirely.
         bool filterByLayer = normalLayers.value != ~0;
         List<Bounds> layerBounds = null;
         if (filterByLayer)
@@ -167,7 +161,7 @@ public class VoxelNormalGizmos : MonoBehaviour
             }
         }
 
-        // Build normal lines from surface voxels
+        //Build normal lines from surface voxels
         float unit = voxelSystem.ActiveVoxelSize;
         float halfUnit = unit * 0.5f;
         Vector3 start = voxelSystem.ActiveGridMin;
@@ -189,7 +183,7 @@ public class VoxelNormalGizmos : MonoBehaviour
 
                     if (surfaceOnly)
                     {
-                        // Check if it has at least one empty neighbor (6-connected)
+                        //Check if it has at least one empty neighbor (6-connected)
                         bool isSurface = false;
                         if (x == 0 || GetFill(x - 1, y, z, nx, ny, nz) < 0.5f) isSurface = true;
                         else if (x == nx - 1 || GetFill(x + 1, y, z, nx, ny, nz) < 0.5f) isSurface = true;
@@ -201,7 +195,7 @@ public class VoxelNormalGizmos : MonoBehaviour
                         if (!isSurface) continue;
                     }
 
-                    // Compute gradient normal from fill field (central differences)
+                    //Compute gradient normal from fill field (central differences)
                     float gx = GetFill(Mathf.Min(x + 1, nx - 1), y, z, nx, ny, nz)
                               - GetFill(Mathf.Max(x - 1, 0), y, z, nx, ny, nz);
                     float gy = GetFill(x, Mathf.Min(y + 1, ny - 1), z, nx, ny, nz)
@@ -213,7 +207,7 @@ public class VoxelNormalGizmos : MonoBehaviour
                     float len2 = grad.sqrMagnitude;
                     if (len2 < 1e-8f) continue;
 
-                    // Outward normal = -gradient (gradient points from filled to empty)
+                    //Outward normal = -gradient (gradient points from filled to empty)
                     Vector3 normal = -grad / Mathf.Sqrt(len2);
 
                     Vector3 center = new Vector3(
@@ -222,7 +216,7 @@ public class VoxelNormalGizmos : MonoBehaviour
                         start.z + unit * z + halfUnit
                     );
 
-                    // Skip voxels not overlapping any renderer on the target layers
+                    //Skip voxels not overlapping any renderer on the target layers
                     if (filterByLayer && !IsInsideAnyBounds(center, layerBounds))
                         continue;
 
@@ -231,7 +225,7 @@ public class VoxelNormalGizmos : MonoBehaviour
                     _lineCount++;
                 }
 
-        // Build mesh from line data
+        //Build mesh from line data
         BuildLineMesh();
     }
 

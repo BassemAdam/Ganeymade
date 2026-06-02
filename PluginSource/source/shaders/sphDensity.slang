@@ -59,7 +59,7 @@ void computeMain(uint3 threadId: SV_DispatchThreadID)
       while (idx < n && hashKeys[idx] == key)
       {
          uint j = indices[idx];
-         // Skip boundary particles — they don't contribute to fluid density
+         // Skip boundary particles. they don't contribute to fluid density
          if (particlesIn[j].phase == 2) { idx++; continue; }
          float3 diff = p.position - particlesIn[j].position;
          float r2 = dot(diff, diff);

@@ -1,11 +1,11 @@
 using UnityEngine;
 
-/// <summary>
-/// Marker component: attach to any GameObject to mark it as a fluid particle source.
-/// The external sim module reads registered sources to spawn SPH particles.
-/// The voxelizer writes fluid phase into voxels overlapping this object's effect radius.
-/// Self-registers with VoxelTracerSystem.
-/// </summary>
+
+// Marker component: attach to any GameObject to mark it as a fluid particle source.
+//The external sim module reads registered sources to spawn SPH particles.
+//The voxelizer writes fluid phase into voxels overlapping this object's effect radius.
+//Self-registers with VoxelTracerSystem.
+
 public sealed class VoxelFluidSource : MonoBehaviour
 {
     [Tooltip("Initial temperature of emitted fluid particles")]
