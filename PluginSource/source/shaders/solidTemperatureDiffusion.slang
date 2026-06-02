@@ -43,7 +43,7 @@ void computeMain(uint3 threadId : SV_DispatchThreadID)
         return;
     }
 
-    // 6 neighbors — clamp to boundary (zero-flux / Neumann condition)
+    // 6 neighbors, clamp to boundary (zero-flux / Neumann condition)
     uint xL = (x > 0) ? idx - 1 : idx;
     uint xR = (x < params.gridWidth  - 1) ? idx + 1 : idx;
     uint yU = (y > 0) ? idx - params.gridWidth : idx;

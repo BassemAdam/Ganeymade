@@ -76,7 +76,7 @@ public class FluidForceApplicator : MonoBehaviour
             _hasValidReadback = false;
         }
 
-        // Readback on interval — single sync call to native plugin
+        // Readback on interval single sync call to native plugin
         if (_frameCounter % updateInterval == 0)
         {
             GetComputeResult(_readbackBuffer, _particleCount);

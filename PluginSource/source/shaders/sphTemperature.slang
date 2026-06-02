@@ -121,7 +121,7 @@ void computeMain(uint3 threadId: SV_DispatchThreadID)
         deltaT = conduction - cooling;
     }
 
-    // ── Latent heat model: absorb/release energy at boiling point ──
+    // Latent heat model: absorb/release energy at boiling point
     // Per-particle random factor for condensation variation (stable per particle index)
     float randHash = frac(sin(float(i) * 12.9898 + 78.233) * 43758.5453);
     float randScale = 0.5 + randHash; // range [0.5, 1.5]
