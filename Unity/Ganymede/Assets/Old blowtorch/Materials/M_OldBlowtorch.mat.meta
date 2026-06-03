@@ -1,0 +1,15 @@
+fileFormatVersion: 2
+guid: e621d2ad62a6b1249a4894e46c22e88b
+NativeFormatImporter:
+  externalObjects: {}
+  mainObjectFileID: 2100000
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 368334
+  packageName: Old blowtorch
+  packageVersion: 1.0
+  assetPath: Assets/Old blowtorch/Materials/M_OldBlowtorch.mat
+  uploadId: 884266

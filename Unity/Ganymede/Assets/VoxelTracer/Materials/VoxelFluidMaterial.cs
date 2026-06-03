@@ -1,15 +1,12 @@
 using UnityEngine;
 
-/// <summary>
-/// Attachable material properties for fluid volumes and sources.
-/// Exposes all SPH simulation parameters from the SimParams struct so each
-/// fluid body/source can define its own physical behaviour.
-///
-/// Attach to a VoxelFluidSource (particle emitter) or VoxelWaterBody (static volume).
-/// The external sim module reads these properties when initialising particles
-/// and building the per-frame SimParams buffer.
-/// Self-registers with VoxelTracerSystem.
-/// </summary>
+// Attachable material properties for fluid volumes and sources.
+// Exposes all SPH simulation parameters from the SimParams struct so each
+// fluid body/source can define its own physical behaviour.
+// Attach to a VoxelFluidSource (particle emitter) or VoxelWaterBody (static volume).
+// The external sim module reads these properties when initialising particles
+// and building the per-frame SimParams buffer.
+// Self-registers with VoxelTracerSystem.
 public sealed class VoxelFluidMaterial : MonoBehaviour
 {
     [Header("SPH Parameters")]

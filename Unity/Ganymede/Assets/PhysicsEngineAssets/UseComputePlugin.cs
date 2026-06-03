@@ -5,15 +5,14 @@ using UnityEngine;
 using System.Linq;
 using Unity.Collections;
 
-/// <summary>
-/// Minimal C# wrapper for the native Vulkan compute plugin (RenderingPlugin.dll).
-/// Responsibilities:
-/// - Creates initial particle data and uploads it once via SetComputeData.
-/// - Sends per-frame simulation parameters (push constants) via SetSimParams.
-/// - Triggers the native dispatch each frame using GL.IssuePluginEvent.
-///
-/// This script is a dependency of ParticleRenderer.cs and FirstPersonCamera.cs.
-/// </summary>
+
+// Minimal C# wrapper for the native Vulkan compute plugin (RenderingPlugin.dll).
+// Responsibilities:
+// - Creates initial particle data and uploads it once via SetComputeData.
+// - Sends per-frame simulation parameters (push constants) via SetSimParams.
+// - Triggers the native dispatch each frame using GL.IssuePluginEvent.
+// This script is a dependency of ParticleRenderer.cs and FirstPersonCamera.cs.
+
 [DefaultExecutionOrder(100)]
 public class UseComputePlugin : MonoBehaviour
 {
@@ -282,14 +281,14 @@ public class UseComputePlugin : MonoBehaviour
     private int _boundaryDynamicFrameCounter;
     private bool _boundaryInitialized;
 
-    /// <summary>Number of fluid/gas particles (excluding boundary). SpawnManager should use this for its pool.</summary>
+    //>Number of fluid/gas particles (excluding boundary). SpawnManager should use this for its pool.
     public int FluidParticleCount => _boundaryStartIndex > 0 ? _boundaryStartIndex : particleCount;
 
-    /// <summary>
-    /// Reads back particle data from the GPU and computes average temperature
-    /// of active (non-dormant) fluid particles. Returns ambient if no data available.
-    /// WARNING: Causes a synchronous GPU→CPU readback stall. Do not call every frame.
-    /// </summary>
+
+    // Reads back particle data from the GPU and computes average temperature
+    // of active (non-dormant) fluid particles. Returns ambient if no data available.
+    // WARNING: Causes a synchronous GPU→CPU readback stall. Do not call every frame.
+
     public float GetAverageFluidTemperature()
     {
         if (!initialized || readbackData == null) return ambientTemperature;
@@ -384,7 +383,7 @@ public class UseComputePlugin : MonoBehaviour
             return;
 
         // Keep native-side toggles in sync (cheap calls)
-        //SetPerfTestMode(perfTestMode);
+        // SetPerfTestMode(perfTestMode);
 
         int stepsToRun = Mathf.Max(1, subStepCount);
         float dtForStep = Mathf.Max(Time.deltaTime, 0.0001f);
@@ -429,7 +428,7 @@ public class UseComputePlugin : MonoBehaviour
         if (enableSDF && sdfDynamicUpdateInterval > 0)
         {
             // Always pump completion of any pending readback so the latest snapshot
-            // is uploaded as soon as the GPU finishes \u2014 not stalled until the next
+            // is uploaded as soon as the GPU finishes not stalled until the next
             // request would be due.
             PollSDFReadback();
 
@@ -494,9 +493,9 @@ public class UseComputePlugin : MonoBehaviour
         }
     }
 
-    /// <summary>
-    /// Returns the simulation container bounds in world-space.
-    /// </summary>
+
+    // Returns the simulation container bounds in world-space.
+
     public void GetBoundsWS(out Vector3 boundsMinWS, out Vector3 boundsMaxWS)
     {
         Vector3 a = boundsMin;
@@ -541,7 +540,7 @@ public class UseComputePlugin : MonoBehaviour
         p.viscosity = viscosity;
         p.smoothingRadius = h;
         // Only advertise SDF as enabled to the shader once a snapshot has actually been
-        // uploaded — otherwise the shader samples an empty/stale buffer with zero dims
+        // uploaded otherwise the shader samples an empty/stale buffer with zero dims
         // and treats every particle as deeply penetrating, which freezes the simulation.
         bool sdfReady = enableSDF && _sdfUploaded && _sdfDimX > 0 && _sdfDimY > 0 && _sdfDimZ > 0;
         p.sdfVoxelSize = sdfReady ? _sdfCellSize : 0f;
@@ -593,7 +592,7 @@ public class UseComputePlugin : MonoBehaviour
         Particle[] particles = new Particle[count];
         int idx = 0;
 
-        // ── Spawn-pool sphere(s) ──────────────────────────────────────────
+        // Spawn-pool sphere(s)
         if (reservedForSpawn > 0)
         {
             WaterSource[] sources = FindObjectsByType<WaterSource>(FindObjectsSortMode.None);
@@ -617,7 +616,7 @@ public class UseComputePlugin : MonoBehaviour
                     if (thisCount <= 0)
                         continue;
 
-                    // ── TAP MODE ─────────────────────────────────────────────
+                    // TAP MODE: Particles are emitted from a circular area with initial velocity. Park them as dormant at the emission point so SpawnManager can activate them with the correct velocity and direction.
                     if (sources[s].spawnMode == WaterSource.SpawnMode.Tap)
                     {
                         Vector3 dir = sources[s].emissionDirection.normalized;
@@ -646,8 +645,7 @@ public class UseComputePlugin : MonoBehaviour
                         for (int k = tapStartIdx; k < idx; k++)
                             TapReservedSlots.Add(k);
                     }
-                    // ── LATTICE MODE ─────────────────────────────────────────
-                    // Park as dormant; SpawnManager.TryBulkSpawn places them at grid positions.
+                    // LATTICE MODE: Park as dormant; SpawnManager.TryBulkSpawn places them at grid positions.
                     else if (sources[s].spawnMode == WaterSource.SpawnMode.Lattice)
                     {
                         for (int k = 0; k < thisCount && idx < count; k++)
@@ -659,7 +657,7 @@ public class UseComputePlugin : MonoBehaviour
                             particles[idx++] = p;
                         }
                     }
-                    // ── SPHERE MODE ───────────────────────────────────────────
+                    // SPHERE MODE: Particles are emitted from a spherical volume. Park them as dormant at the emission point so SpawnManager can activate them with the correct velocity and direction.
                     else
                     {
                         Vector3 centre = sources[s].transform.position;
@@ -672,7 +670,7 @@ public class UseComputePlugin : MonoBehaviour
             }
         }
 
-        // ── Background lattice for any remaining slots ────────────────────
+        // Background lattice for any remaining slots
         // If the user sets spawnPoolReserve < particleCount, the leftover slots are filled with the usual bounds-filling lattice.
         if (latticeCount > 0)
         {
@@ -732,7 +730,7 @@ public class UseComputePlugin : MonoBehaviour
         float sy = Mathf.Max(boundsSize.y, 0.0001f);
         float sz = Mathf.Max(boundsSize.z, 0.0001f);
 
-        float sGeo = Mathf.Pow(sx * sy * sz, 1f / 3f);
+        float sGeo = Mathf.Pow(sx * sy * sz, 1f / 3f); // Geometric mean of the bounds used to normalize aspect ratio comparison
         Vector3 sNorm = new Vector3(sx / sGeo, sy / sGeo, sz / sGeo);
 
         float bestError = float.MaxValue;
@@ -826,7 +824,7 @@ public class UseComputePlugin : MonoBehaviour
         for (int i = 0; i < count; i++)
         {
             _cachedSourceColliders[i] = _cachedSources[i].GetComponent<Collider>();
-            _lastSourcePositions[i] = Vector3.one * float.MaxValue; 
+            _lastSourcePositions[i] = Vector3.one * float.MaxValue;
         }
     }
 
@@ -926,7 +924,7 @@ public class UseComputePlugin : MonoBehaviour
 
         // Cap must match VoxelTracerSystem's budget (maxVoxelCountMillions).
         // The old hard-coded 4M limit silently disabled SDF collision whenever
-        // the grid grew beyond ~159³ — e.g. when a dynamic object expanded
+        // the grid grew beyond ~159³ e.g. when a dynamic object expanded
         // the auto-fit bounds. 8M is a safe CPU-side memory limit (~32 MB for
         // the float array) and comfortably covers typical static-only grids
         // now that dynamic objects no longer inflate grid bounds.
@@ -936,7 +934,7 @@ public class UseComputePlugin : MonoBehaviour
             return;
         }
 
-        // Don't issue a second request while one is still in-flight — otherwise
+        // Don't issue a second request while one is still in-flight otherwise
         // we'd churn GPU work and waste memory. The interval throttle still
         // governs how often this is called; this just guards against a slow GPU.
         if (_sdfReadbackPending) return;
@@ -981,7 +979,7 @@ public class UseComputePlugin : MonoBehaviour
         _sdfData[3] = 0f;
 
         // For 3D textures, AsyncGPUReadback returns one layer (slice) per GetData call.
-        // We must iterate every depth slice — calling GetData<T>() with no args only
+        // We must iterate every depth slice calling GetData<T>() with no args only
         // returns slice 0, which would silently leave the rest of the SDF as zeros
         // (and therefore make the shader think every particle is on the surface).
         int sliceCount = _sdfReadbackRequest.layerCount;
@@ -1190,7 +1188,7 @@ public class UseComputePlugin : MonoBehaviour
         int boundarySlots = Mathf.Min(surfacePositions.Count, maxBoundary);
         if (boundarySlots <= 0)
         {
-            Debug.LogWarning("[Boundary] Cannot fit boundary particles — buffer at max capacity.");
+            Debug.LogWarning("[Boundary] Cannot fit boundary particles buffer at max capacity.");
             _boundaryInitialized = true;
             return;
         }
@@ -1289,8 +1287,8 @@ public class UseComputePlugin : MonoBehaviour
     [DllImport(PluginName)]
     private static extern void PatchParticles([In] int[] indices, [In] Particle[] data, int count);
 
-    /// <summary>Build the boundary collider Bounds[] in a reusable scratch array,
-    /// returning null if no valid colliders were found. Avoids per-frame allocations.</summary>
+    //Build the boundary collider Bounds[] in a reusable scratch array,
+    // returning null if no valid colliders were found. Avoids per-frame allocations
     Bounds[] CollectBoundaryBounds(IReadOnlyCollection<VoxelBoundaryCollider> colliders,
         out bool useNormalFilter, out Vector3 filterDirection, out float filterThreshold)
     {

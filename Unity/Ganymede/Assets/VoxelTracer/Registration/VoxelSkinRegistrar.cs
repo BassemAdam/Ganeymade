@@ -1,11 +1,9 @@
 using UnityEngine;
 
-/// <summary>
-/// Auto-registers SkinnedMeshRenderers with VoxelTracerSystem.
-/// Attach to any GameObject with a SkinnedMeshRenderer, or add
-/// RequireComponent in your character setup. Avoids per-frame
-/// FindObjectsByType scene scans.
-/// </summary>
+//Auto-registers SkinnedMeshRenderers with VoxelTracerSystem.
+//Attach to any GameObject with a SkinnedMeshRenderer, or add
+//RequireComponent in your character setup. Avoids per-frame
+//FindObjectsByType scene scans.
 [RequireComponent(typeof(SkinnedMeshRenderer))]
 public sealed class VoxelSkinRegistrar : MonoBehaviour
 {

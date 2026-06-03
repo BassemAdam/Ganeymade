@@ -19,38 +19,38 @@
 #pragma kernel ComputeSDFNormals
 #pragma kernel WriteHeatSources
 
-// ---- Grid ----
+//  Grid 
 int _Width, _Height, _Depth;
 float3 _Start;
 float  _Unit, _HalfUnit;
 
-// ---- Triangle input ----
+//  Triangle input 
 struct Tri { float3 a, b, c; };
 StructuredBuffer<Tri> _Tris;
 int _TriCount;
 
-// ---- Voxel buffers ----
+//  Voxel buffers 
 // Packed: bit 0 = surface, bit 1 = confirmed outside (flood)
 RWStructuredBuffer<uint> _VoxelBuffer;  // working buffer
 StructuredBuffer<uint>   _StaticVoxelBuffer; // cached static (read-only)
 int _FillVolume; // 1 = use flood fill, 0 = surface only
 int _TotalVoxels; // Width * Height * Depth (for linear dispatches)
 
-// ---- Sweep parameters ----
+//  Sweep parameters 
 int _SweepAxis; // 0=X, 1=Y, 2=Z
 
-// ---- Region offset (dirty-region dispatch) ----
+//  Region offset (dirty-region dispatch) 
 // When dispatching over a sub-region, id=(0,0,0) maps to _RegionMin.
 // For full-grid dispatches, set to (0,0,0).
 int _RegionMinX, _RegionMinY, _RegionMinZ;
 
-// ---- Output 3D textures ----
+//  Output 3D textures 
 RWTexture3D<float>  _FillTex;
 RWTexture3D<float>  _BlurredFillTex;
 RWTexture3D<float4> _NormalTex;
 RWTexture3D<float> _HeatSourceTex;
 
-// ========================= Helpers =========================
+//  Helpers 
 
 int VoxelIndex(int x, int y, int z)
 {
@@ -111,7 +111,7 @@ bool TriAABBIntersect(float3 va, float3 vb, float3 vc, float3 center, float3 ext
     return abs(s) <= r;
 }
 
-// ========================= Kernels =========================
+//  Kernels 
 
 // 0: Clear voxel buffer + fill texture
 [numthreads(8, 8, 8)]
@@ -142,9 +142,9 @@ void Surface(uint3 id : SV_DispatchThreadID)
 
     // Inflate half-extents by a tiny epsilon to prevent boundary-aligned
     // triangles from being missed due to float32 rounding in the SAT test.
-    // Without this, a face that aligns exactly with a voxel boundary can
+    // without this, a face that aligns exactly with a voxel boundary can
     // fail the plane test (abs(s) <= r), leaving a gap in the surface shell
-    // that the flood fill leaks through — producing U-shaped hollow artifacts.
+    // that the flood fill leaks through , producing U-shaped hollow artifacts.
     float surfaceEps = _HalfUnit * 1e-4;
     float3 ext = float3(_HalfUnit + surfaceEps, _HalfUnit + surfaceEps, _HalfUnit + surfaceEps);
 
@@ -161,7 +161,7 @@ void Surface(uint3 id : SV_DispatchThreadID)
     }
 }
 
-// Axis-sweep flood fill (both directions per axis in one dispatch)
+// 2: Axis-sweep flood fill (both directions per axis in one dispatch)
 // Dispatched over a 2D plane perpendicular to _SweepAxis.
 // Each thread sweeps one line forward then backward,
 // propagating "outside" from both boundary faces, stopping at surfaces.
@@ -328,7 +328,7 @@ void CopyAndClearFlood(uint3 id : SV_DispatchThreadID)
     _VoxelBuffer[idx] = _StaticVoxelBuffer[idx] & 1u;
 }
 
-// 6: Linear version — perfect memory coalescing for full-grid
+// 6: Linear version , perfect memory coalescing for full-grid
 [numthreads(256, 1, 1)]
 void CopyAndClearFloodLinear(uint3 id : SV_DispatchThreadID)
 {
@@ -337,7 +337,7 @@ void CopyAndClearFloodLinear(uint3 id : SV_DispatchThreadID)
     _VoxelBuffer[idx] = _StaticVoxelBuffer[idx] & 1u;
 }
 
-// 7: Restore FULL static state (surface + flood) — for non-dynamic restoration frames
+// 7: Restore FULL static state (surface + flood) , for non-dynamic restoration frames
 [numthreads(8, 8, 8)]
 void RestoreStaticFull(uint3 id : SV_DispatchThreadID)
 {
@@ -377,7 +377,7 @@ void CopyWorkingToStatic(uint3 id : SV_DispatchThreadID)
     _DstBuffer[idx] = _VoxelBuffer[idx];
 }
 
-// ========================= Material Properties =========================
+//  Material Properties 
 
 // GPU struct matching C# MaterialSource (StructLayout.Sequential)
 struct MaterialSource
@@ -416,7 +416,7 @@ void WriteMaterialProperties(uint3 id : SV_DispatchThreadID)
     float diff  = fill > 0.5 ? _DefaultSolidDiffusivity : 0.0;
     float phase = 0.0; // 0 = solid (or empty)
 
-    // Stamp sources — later sources override earlier ones
+    // Stamp sources , later sources override earlier ones
     for (int i = 0; i < _MaterialSourceCount; i++)
     {
         MaterialSource src = _MaterialSources[i];
@@ -446,7 +446,7 @@ void WriteMaterialProperties(uint3 id : SV_DispatchThreadID)
     _PhaseTex[p]       = phase;
 }
 
-// ========================= SDF via Jump Flood Algorithm =========================
+//  SDF via Jump Flood Algorithm 
 // JFA buffer stores the closest surface voxel coordinate for each voxel.
 // Encoded as a single uint: (x | y<<10 | z<<20), with 0xFFFFFFFF meaning "no seed".
 // Max grid dimension = 1024 per axis (10 bits each), well above our 256 cap.
@@ -466,7 +466,7 @@ int3 DecodeJFA(uint packed)
     return int3(packed & 0x3FF, (packed >> 10) & 0x3FF, (packed >> 20) & 0x3FF);
 }
 
-// 12: Seed JFA buffer from fill texture — surface voxels seed themselves
+// 12: Seed JFA buffer from fill texture , surface voxels seed themselves
 [numthreads(8, 8, 8)]
 void SDFSeed(uint3 id : SV_DispatchThreadID)
 {
@@ -491,7 +491,7 @@ void SDFSeed(uint3 id : SV_DispatchThreadID)
     _JFABuffer[idx] = isSurface ? EncodeJFA(p.x, p.y, p.z) : 0xFFFFFFFFu;
 }
 
-// 13: JFA stepping — read from _JFABuffer, write to _JFABufferB
+// 13: JFA stepping , read from _JFABuffer, write to _JFABufferB
 // Caller must ping-pong by swapping buffer bindings each step.
 [numthreads(8, 8, 8)]
 void SDFJumpFlood(uint3 id : SV_DispatchThreadID)
@@ -541,7 +541,7 @@ void SDFJumpFlood(uint3 id : SV_DispatchThreadID)
     _JFABufferB[idx] = bestPacked;
 }
 
-// 14: Finalize SDF — compute signed distance from JFA result
+// 14: Finalize SDF , compute signed distance from JFA result
 // Positive = outside geometry, Negative = inside geometry
 [numthreads(8, 8, 8)]
 void SDFFinalize(uint3 id : SV_DispatchThreadID)
@@ -561,7 +561,7 @@ void SDFFinalize(uint3 id : SV_DispatchThreadID)
     }
     else
     {
-        // No nearest surface found — far from any geometry
+        // No nearest surface found , far from any geometry
         dist = 9999.0;
     }
 
@@ -574,7 +574,7 @@ void SDFFinalize(uint3 id : SV_DispatchThreadID)
     _SDFTex[p] = dist * _Unit;
 }
 
-// 15: Compute normals from SDF gradient — accurate everywhere in the volume
+// 15: Compute normals from SDF gradient , accurate everywhere in the volume
 [numthreads(8, 8, 8)]
 void ComputeSDFNormals(uint3 id : SV_DispatchThreadID)
 {
@@ -633,7 +633,7 @@ void WriteHeatSources(uint3 id : SV_DispatchThreadID)
             float3 d = abs(worldPos - src.position) - src.extents;
             inside = all(d <= 0.0);
         }
-        else                   // sphere
+        else  // sphere
         {
             float3 delta = worldPos - src.position;
             inside = dot(delta, delta) <= src.extents.x * src.extents.x;

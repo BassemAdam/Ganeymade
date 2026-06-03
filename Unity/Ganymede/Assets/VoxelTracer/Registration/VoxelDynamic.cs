@@ -1,14 +1,11 @@
 using UnityEngine;
 
-/// <summary>
-/// Marker component: attach to any GameObject to flag its MeshRenderer
-/// as dynamic for the voxelizer. Dynamic objects are re-voxelized every
-/// frame while static objects are voxelized once and cached on the GPU.
-/// Self-registers with VoxelTracerSystem to avoid per-frame scene scans.
-/// 
-/// Also controls fluid interaction: buoyancy, drag, and two-way coupling
-/// with SPH particles when a Rigidbody is present.
-/// </summary>
+//Marker component: attach to any GameObject to flag its MeshRenderer
+// as dynamic for the voxelizer. Dynamic objects are re-voxelized every
+//frame while static objects are voxelized once and cached on the GPU.
+//Self-registers with VoxelTracerSystem to avoid per-frame scene scans.
+//Also controls fluid interaction: buoyancy, drag, and two-way coupling
+// with SPH particles when a Rigidbody is present.
 public sealed class VoxelDynamic : MonoBehaviour
 {
     public enum BuoyancyMode { Analytical, GPUParticleSum }
@@ -147,9 +144,9 @@ public sealed class VoxelDynamic : MonoBehaviour
         _boundsCacheInit = true;
     }
 
-    /// <summary>
-    /// Refresh cached world bounds from renderer or collider.
-    /// </summary>
+
+    // Refresh cached world bounds from renderer or collider.
+
     public void RefreshBounds()
     {
         if (!_boundsCacheInit) CacheBoundsSource();
@@ -162,9 +159,9 @@ public sealed class VoxelDynamic : MonoBehaviour
             worldBounds = new Bounds(transform.position, Vector3.one);
     }
 
-    /// <summary>
-    /// Approximate volume in m³ from mesh bounds.
-    /// </summary>
+
+    // Approximate volume in m^3 from mesh bounds.
+
     public float ApproximateVolume()
     {
         RefreshBounds();

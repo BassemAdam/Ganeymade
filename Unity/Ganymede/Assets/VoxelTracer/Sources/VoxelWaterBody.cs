@@ -1,11 +1,11 @@
 using UnityEngine;
 
-/// <summary>
-/// Defines an axis-aligned water body volume in world space.
-/// Voxels inside this volume are marked as fluid phase with the specified temperature.
-/// The volume is drawn in the scene view as a wireframe box filled with voxel dots.
-/// Self-registers with VoxelTracerSystem.
-/// </summary>
+
+// Defines an axis-aligned water body volume in world space.
+// Voxels inside this volume are marked as fluid phase with the specified temperature.
+//The volume is drawn in the scene view as a wireframe box filled with voxel dots.
+//Self-registers with VoxelTracerSystem.
+
 public sealed class VoxelWaterBody : MonoBehaviour
 {
     [Tooltip("Size of the water body volume in world units")]
@@ -14,10 +14,10 @@ public sealed class VoxelWaterBody : MonoBehaviour
     [Tooltip("Initial temperature of the water body")]
     public float initialTemperature = 25f;
 
-    /// <summary>World-space AABB min corner.</summary>
+    // World-space AABB min corner
     public Vector3 WorldMin => transform.position - size * 0.5f;
 
-    /// <summary>World-space AABB max corner.</summary>
+    //World-space AABB max corner
     public Vector3 WorldMax => transform.position + size * 0.5f;
 
     void OnEnable() => VoxelTracerSystem.RegisterWaterBody(this);
