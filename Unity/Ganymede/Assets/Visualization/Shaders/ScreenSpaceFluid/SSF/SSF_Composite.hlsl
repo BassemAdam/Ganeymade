@@ -1,8 +1,10 @@
 #ifndef SSF_COMPOSITE_INCLUDED
 #define SSF_COMPOSITE_INCLUDED
 
+#include "SSF_SSR.hlsl"
+
+// _WaterSSFSceneCopy + sampler are declared in SSF_SSR.hlsl (included above).
 TEXTURE2D(_WaterSSFDepthSmooth);
-TEXTURE2D(_WaterSSFSceneCopy);   SAMPLER(sampler_WaterSSFSceneCopy);
 TEXTURE2D(_WaterSSFThickness);   SAMPLER(sampler_WaterSSFThickness);
 TEXTURE2D(_WaterSSFNormals);     SAMPLER(sampler_WaterSSFNormals);
 
@@ -84,7 +86,20 @@ CompositeOut fragSSFComposite(Varyings IN)
 
     if (R_WS.y < 0.0) fresnel *= 0.1;
 
-    half3 result = lerp(refrColor, reflColor * _ReflectionStrength, fresnel);
+    // Screen-Space Reflection: trace a ray from the fluid surface in the
+    // reflection direction.  If it hits scene geometry, blend its colour
+    // over the env-probe reflection.  Misses fall back to the probe.
+    SSFSSRResult ssr = TraceSSFSSR(pWS, R_WS, uv);
+    half3 finalRefl = reflColor * _ReflectionStrength;
+    if (ssr.hit)
+        finalRefl = lerp(finalRefl, ssr.hitColor, ssr.blendWeight);
+
+    half3 result = lerp(refrColor, finalRefl, fresnel);
+
+    // Debug: replace output with pure reflection (SSR hit or probe fallback)
+    // to verify SSR coverage without full composite noise.
+    if (_SSF_SSR_DebugVis > 0.5)
+        result = finalRefl;
 
     CompositeOut o;
     o.color = half4(result, 1.0);

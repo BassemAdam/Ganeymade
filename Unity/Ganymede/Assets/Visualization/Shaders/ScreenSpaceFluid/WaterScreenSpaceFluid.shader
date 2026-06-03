@@ -18,6 +18,16 @@ Shader "Custom/WaterScreenSpaceFluid"
         _ReflectionStrength       ("Reflection Strength",          Range(0,1)) = 1.0
         _RefractionStrength       ("Refraction Strength",          Range(0,8)) = 3.0
 
+        [Header(Screen Space Reflections)]
+        _SSF_SSR_Strength         ("SSR Blend Strength",           Range(0,2)) = 1.0
+        _SSF_SSR_ColorBoost       ("SSR Color Boost",              Range(0,4)) = 1.0
+        _SSF_SSR_StepSize         ("SSR Step Size (WS)",           Range(0.005,1)) = 0.05
+        _SSF_SSR_MaxDistance      ("SSR Max Distance (WS)",        Range(0.1,40)) = 10.0
+        _SSF_SSR_MaxSteps         ("SSR Max Steps",                Range(8,128)) = 64
+        _SSF_SSR_Thickness        ("SSR Thickness Tolerance",      Range(0.001,2)) = 0.08
+        _SSF_SSR_EdgeFadeWidth    ("SSR Edge Fade Width",          Range(0.01,0.5)) = 0.08
+        _SSF_SSR_DebugVis         ("SSR Debug (0=off 1=refl-only)", Range(0,1)) = 0
+
     }
 
     SubShader

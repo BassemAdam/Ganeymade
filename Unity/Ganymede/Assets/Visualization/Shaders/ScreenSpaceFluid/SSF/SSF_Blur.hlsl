@@ -43,10 +43,11 @@ half4 fragSSFBlur(Varyings IN) : SV_Target
 
         float wN = gw, wP = gw;
 
-        if (dN < 1e-4 || dN < threshLowN)
-        {
-            wN = 0.0;
-        }
+        // Background gap (no particle rendered there) → fill with mu-snapped depth
+        // so the blur can bridge the empty space between spheres.
+        // Real back-faces (below NRF lower bound but not empty) are still discarded.
+        if (dN < 1e-4)          { dN = higherBound; }
+        else if (dN < threshLowN) { wN = 0.0; }
         else if (dN > threshHighN)
         {
             dN = higherBound;
@@ -57,10 +58,8 @@ half4 fragSSFBlur(Varyings IN) : SV_Target
             threshHighN = max(threshHighN, dN + depthThresh);
         }
 
-        if (dP < 1e-4 || dP < threshLowP)
-        {
-            wP = 0.0;
-        }
+        if (dP < 1e-4)          { dP = higherBound; }
+        else if (dP < threshLowP) { wP = 0.0; }
         else if (dP > threshHighP)
         {
             dP = higherBound;
