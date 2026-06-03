@@ -144,9 +144,9 @@ public sealed class VoxelDynamic : MonoBehaviour
         _boundsCacheInit = true;
     }
 
-    /// <summary>
-    /// Refresh cached world bounds from renderer or collider.
-    /// </summary>
+
+    // Refresh cached world bounds from renderer or collider.
+
     public void RefreshBounds()
     {
         if (!_boundsCacheInit) CacheBoundsSource();
@@ -159,9 +159,9 @@ public sealed class VoxelDynamic : MonoBehaviour
             worldBounds = new Bounds(transform.position, Vector3.one);
     }
 
-    /// <summary>
-    /// Approximate volume in m³ from mesh bounds.
-    /// </summary>
+
+    // Approximate volume in m^3 from mesh bounds.
+
     public float ApproximateVolume()
     {
         RefreshBounds();

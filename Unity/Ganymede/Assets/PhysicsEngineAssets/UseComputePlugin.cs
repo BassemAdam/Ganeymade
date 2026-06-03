@@ -5,15 +5,14 @@ using UnityEngine;
 using System.Linq;
 using Unity.Collections;
 
-/// <summary>
-/// Minimal C# wrapper for the native Vulkan compute plugin (RenderingPlugin.dll).
-/// Responsibilities:
-/// - Creates initial particle data and uploads it once via SetComputeData.
-/// - Sends per-frame simulation parameters (push constants) via SetSimParams.
-/// - Triggers the native dispatch each frame using GL.IssuePluginEvent.
-///
-/// This script is a dependency of ParticleRenderer.cs and FirstPersonCamera.cs.
-/// </summary>
+
+// Minimal C# wrapper for the native Vulkan compute plugin (RenderingPlugin.dll).
+// Responsibilities:
+// - Creates initial particle data and uploads it once via SetComputeData.
+// - Sends per-frame simulation parameters (push constants) via SetSimParams.
+// - Triggers the native dispatch each frame using GL.IssuePluginEvent.
+// This script is a dependency of ParticleRenderer.cs and FirstPersonCamera.cs.
+
 [DefaultExecutionOrder(100)]
 public class UseComputePlugin : MonoBehaviour
 {
@@ -282,14 +281,14 @@ public class UseComputePlugin : MonoBehaviour
     private int _boundaryDynamicFrameCounter;
     private bool _boundaryInitialized;
 
-    /// <summary>Number of fluid/gas particles (excluding boundary). SpawnManager should use this for its pool.</summary>
+    //>Number of fluid/gas particles (excluding boundary). SpawnManager should use this for its pool.
     public int FluidParticleCount => _boundaryStartIndex > 0 ? _boundaryStartIndex : particleCount;
 
-    /// <summary>
-    /// Reads back particle data from the GPU and computes average temperature
-    /// of active (non-dormant) fluid particles. Returns ambient if no data available.
-    /// WARNING: Causes a synchronous GPU→CPU readback stall. Do not call every frame.
-    /// </summary>
+
+    // Reads back particle data from the GPU and computes average temperature
+    // of active (non-dormant) fluid particles. Returns ambient if no data available.
+    // WARNING: Causes a synchronous GPU→CPU readback stall. Do not call every frame.
+
     public float GetAverageFluidTemperature()
     {
         if (!initialized || readbackData == null) return ambientTemperature;
@@ -494,9 +493,9 @@ public class UseComputePlugin : MonoBehaviour
         }
     }
 
-    /// <summary>
-    /// Returns the simulation container bounds in world-space.
-    /// </summary>
+
+    // Returns the simulation container bounds in world-space.
+
     public void GetBoundsWS(out Vector3 boundsMinWS, out Vector3 boundsMaxWS)
     {
         Vector3 a = boundsMin;
@@ -825,7 +824,7 @@ public class UseComputePlugin : MonoBehaviour
         for (int i = 0; i < count; i++)
         {
             _cachedSourceColliders[i] = _cachedSources[i].GetComponent<Collider>();
-            _lastSourcePositions[i] = Vector3.one * float.MaxValue; 
+            _lastSourcePositions[i] = Vector3.one * float.MaxValue;
         }
     }
 
@@ -1288,8 +1287,8 @@ public class UseComputePlugin : MonoBehaviour
     [DllImport(PluginName)]
     private static extern void PatchParticles([In] int[] indices, [In] Particle[] data, int count);
 
-    /// <summary>Build the boundary collider Bounds[] in a reusable scratch array,
-    /// returning null if no valid colliders were found. Avoids per-frame allocations.</summary>
+    //Build the boundary collider Bounds[] in a reusable scratch array,
+    // returning null if no valid colliders were found. Avoids per-frame allocations
     Bounds[] CollectBoundaryBounds(IReadOnlyCollection<VoxelBoundaryCollider> colliders,
         out bool useNormalFilter, out Vector3 filterDirection, out float filterThreshold)
     {
