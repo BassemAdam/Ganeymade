@@ -35,7 +35,7 @@ Material:
     - _NormalStepPixels: 1
     - _ParticleRadius: 0.1
     - _ReflectionStrength: 1
-    - _RefractionStrength: 3
+    - _RefractionStrength: 8
     - _ThicknessAbsorption: 1.75
     m_Colors:
     - _FluidColor: {r: 0.549, g: 0.863, b: 0.941, a: 1}

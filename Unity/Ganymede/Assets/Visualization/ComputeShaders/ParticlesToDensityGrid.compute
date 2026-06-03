@@ -181,7 +181,7 @@ void SplatParticles(uint id : SV_DispatchThreadID)
                 float  dist2 = dot(d, d);
 
                 float t = saturate(1.0 - dist2 * invH2);
-                float w = t * t * t;
+                float w = t ;
 
                 uint amt = (uint)round(baseAmount * w);
                 if (amt == 0)
