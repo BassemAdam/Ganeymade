@@ -6,6 +6,7 @@ using UnityEngine;
 /// It validates configuration, keeps shared helpers alive, and orchestrates the
 /// per-frame flow: native GPU particle output -> density pipeline -> active renderer.
 /// </summary>
+[DefaultExecutionOrder(-10)] // Ensures Awake runs before ParticleRenderer.Start so computePlugin is wired in time
 [DisallowMultipleComponent]
 [RequireComponent(typeof(UseComputePlugin))]
 [RequireComponent(typeof(MeshFilter), typeof(MeshRenderer))]
@@ -14,9 +15,9 @@ public class PhysicsWaterPhaseBridge : MonoBehaviour
     [SerializeField] private WaterPhaseBridgeSettings settings = new WaterPhaseBridgeSettings();
 
     [Header("Debug")]
-    [Tooltip("Enable to overlay raw particle spheres on top of the active render mode (useful for debugging density/surface accuracy).")]
+    [Tooltip("Switches the active renderer to raw particle spheres. Raymarching pauses completely. Toggle off to return to raymarching.")]
     [SerializeField] private bool _showDebugParticles = false;
-    [Tooltip("Reference to the ParticleRenderer component to use as the debug overlay.")]
+    [Tooltip("ParticleRenderer component to use as the debug view.")]
     [SerializeField] private ParticleRenderer _debugParticleRenderer;
 
     [HideInInspector] public Transform visualProxyTransform;
@@ -40,6 +41,10 @@ public class PhysicsWaterPhaseBridge : MonoBehaviour
         CacheComponents();
         CreateHelpers();
         _particleStride = Marshal.SizeOf<Particle>();
+
+        // Wire computePlugin before ParticleRenderer.Start() runs so it can initialize its GPU buffers.
+        if (_debugParticleRenderer != null && _debugParticleRenderer.computePlugin == null)
+            _debugParticleRenderer.computePlugin = _computePlugin;
     }
 
     private void OnEnable()
@@ -82,8 +87,6 @@ public class PhysicsWaterPhaseBridge : MonoBehaviour
 
         PrimeResources();
 
-        SyncDebugParticleRenderer();
-
         _renderAction = settings.Rendering.mode switch
         {
             WaterSurfaceRenderMode.RaymarchVolume    => RenderRaymarch,
@@ -92,15 +95,22 @@ public class PhysicsWaterPhaseBridge : MonoBehaviour
         };
     }
 
-    private void LateUpdate()
+    private void Update()
     {
         PrimeResources();
         _computePlugin.GetBoundsWS(out Vector3 boundsMin, out Vector3 boundsMax);
 
-        if (_usesDensityPipeline)
-            _densityPipeline.Execute(_computePlugin, settings, _resources, boundsMin, boundsMax);
+        // In debug mode skip the density pipeline and renderer entirely — we only want particles.
+        if (!_showDebugParticles)
+        {
+            if (_usesDensityPipeline)
+                _densityPipeline.Execute(_computePlugin, settings, _resources, boundsMin, boundsMax);
 
-        _renderAction(boundsMin, boundsMax);
+            _renderAction(boundsMin, boundsMax);
+        }
+
+        // Safe to set enabled here: by the time LateUpdate runs all Start()s have already fired.
+        SyncDebugParticleRenderer();
     }
 
     private void OnDestroy()
@@ -261,6 +271,14 @@ public class PhysicsWaterPhaseBridge : MonoBehaviour
     {
         if (_debugParticleRenderer != null)
             _debugParticleRenderer.enabled = _showDebugParticles;
+
+        // Show/hide the raymarching proxy so it doesn't occlude the debug view.
+        if (settings.Rendering.mode == WaterSurfaceRenderMode.RaymarchVolume && visualProxyTransform != null)
+        {
+            var proxyMr = visualProxyTransform.GetComponent<MeshRenderer>();
+            if (proxyMr != null)
+                proxyMr.enabled = !_showDebugParticles;
+        }
     }
 
     private static void ValidateAdaptiveSmoothing(WaterPhaseAdaptiveSmoothingSettings smoothing)
