@@ -19,7 +19,7 @@ Before opening the project, ensure the following minimum hardware is available:
 
 1. Download **Unity Hub** from https://unity.com/download and run the installer.
 2. Open Unity Hub and sign in or create a free Unity account.
-3. Go to **Installs → Install Editor**.
+3. Go to **Installs -> Install Editor**.
 4. Select **Unity 6 (6000.4.1f1)**. If it does not appear in the list, choose **Archive** and locate it at https://unity.com/releases/editor/archive.
 5. During installation, enable the **Windows Build Support (IL2CPP)** module. No other platform modules are required.
 6. Complete the installation and confirm the editor appears in the Installs list.
@@ -28,7 +28,7 @@ Before opening the project, ensure the following minimum hardware is available:
 
 ## 2. Open the Project
 
-1. In Unity Hub, go to **Projects → Add → Add project from disk**.
+1. In Unity Hub, go to **Projects -> Add -> Add project from disk**.
 2. Navigate to the `Ganymede/` folder inside the repository root and click **Select Folder**.
 3. The project will appear labelled **Ganymede** with editor version **6000.4.1f1**. Click it to open.
 4. Unity will import all assets on first launch — this takes several minutes.
@@ -41,15 +41,15 @@ All five assets are free. For each one: open the link below, click **Add to My A
 
 | Asset | Store Link |
 |---|---|
-| Functional Washing Machines – Stylized Low Poly Props | https://assetstore.unity.com/packages/3d/props/electronics/functional-washing-machines-stylized-low-poly-props-free-314619 |
+| Functional Washing Machines - Stylized Low Poly Props | https://assetstore.unity.com/packages/3d/props/electronics/functional-washing-machines-stylized-low-poly-props-free-314619 |
 | Terrain Sample Asset Pack | https://assetstore.unity.com/packages/3d/environments/landscapes/terrain-sample-asset-pack-145808 |
-| AllSky Free – 10 Sky / Skybox Set | https://assetstore.unity.com/packages/2d/textures-materials/sky/allsky-free-10-sky-skybox-set-146014 |
+| AllSky Free - 10 Sky / Skybox Set | https://assetstore.unity.com/packages/2d/textures-materials/sky/allsky-free-10-sky-skybox-set-146014 |
 | Modular Blacksmith Pack | https://assetstore.unity.com/packages/3d/props/exterior/modular-blacksmith-pack-294735 |
-| Free Kitchen – Cabinets and Equipment | https://assetstore.unity.com/packages/3d/props/interior/free-kitchen-cabinets-and-equipment-245554 |
+| Free Kitchen - Cabinets and Equipment | https://assetstore.unity.com/packages/3d/props/interior/free-kitchen-cabinets-and-equipment-245554 |
 
 ### 3.1 Importing an asset
 
-1. In the Unity editor, open **Window → Package Manager**.
+1. In the Unity editor, open **Window -> Package Manager**.
 2. In the top-left dropdown, select **My Assets**.
 3. Search for the asset by name, select it, and click **Download**. Once downloaded, click **Import**.
 4. In the Import dialog, leave all items checked and click **Import**.
@@ -61,7 +61,7 @@ All five assets are free. For each one: open the link below, click **Add to My A
 
 After importing all assets, convert any remaining Built-in materials to URP in one pass:
 
-1. Open **Window → Rendering → Render Pipeline Converter**.
+1. Open **Window -> Rendering -> Render Pipeline Converter**.
 2. Set the **Source Pipeline** dropdown to **Built-in**.
 3. Set the **Target Pipeline** dropdown to **Universal Render Pipeline**.
 4. Check the box next to **Material Upgrade**.
@@ -74,7 +74,7 @@ After importing all assets, convert any remaining Built-in materials to URP in o
 
 Some imported assets ship with Read/Write disabled, which causes errors at runtime:
 
-1. Open **Tools → Voxel → Enable Read/Write on All Meshes** from the menu bar.
+1. Open **Tools -> Voxel -> Enable Read/Write on All Meshes** from the menu bar.
 2. Wait for the asset re-import to complete before entering Play mode.
 
 ---

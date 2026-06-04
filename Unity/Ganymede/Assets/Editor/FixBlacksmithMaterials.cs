@@ -279,7 +279,7 @@ public static class FixBlacksmithMaterials
                     m.SetColor("_Color", Color.black);
                     m.SetFloat("_Smoothness", 0.5f);
                     EditorUtility.SetDirty(m);
-                    Debug.Log("[RestoreBlackGap] Restored to black.");
+                    Debug.Log("RestoreBlackGap: Restored to black.");
                 }
             }
         }
@@ -324,7 +324,7 @@ public static class FixBlacksmithMaterials
                 Transform ingotMesh = root.transform.Find("Ingot"); 
                 if (ingotMesh == null)
                 {
-                    Debug.LogWarning($"[Ingot] Could not find child 'ingot' on {name}");
+                    Debug.LogWarning($"Ingot: Could not find child 'ingot' on {name}");
                 }
                 else
                 {
@@ -333,7 +333,7 @@ public static class FixBlacksmithMaterials
                 }
             }
 
-            Debug.Log($"[Ingot] Collider + VoxelSolidMaterial applied to: {path}");
+            Debug.Log($"Ingot: Collider + VoxelSolidMaterial applied to: {path}");
         }
     }
 
@@ -354,7 +354,7 @@ public static class FixBlacksmithMaterials
             col.size = size;
         }
 
-        Debug.Log($"[BoxCollider] Added to: {path}");
+        Debug.Log($"BoxCollider: Added to: {path}");
     }
 
     static string FindPrefabPath(string prefabName)
@@ -362,7 +362,7 @@ public static class FixBlacksmithMaterials
         string[] guids = AssetDatabase.FindAssets($"{prefabName} t:Prefab");
         if (guids.Length == 0)
         {
-            Debug.LogWarning($"[BoxCollider] Could not find prefab: '{prefabName}'");
+            Debug.LogWarning($"BoxCollider: Could not find prefab: '{prefabName}'");
             return null;
         }
         return AssetDatabase.GUIDToAssetPath(guids[0]);

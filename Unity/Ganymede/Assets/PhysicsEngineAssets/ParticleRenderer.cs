@@ -98,7 +98,7 @@ public class ParticleRenderer : MonoBehaviour
             particleMaterial.enableInstancing = true;
 
         // Set up default gradient if none was configured in the Inspector
-        // Temperature gradient: Blue (cold) → Red (hot)
+        // Temperature gradient: Blue (cold) -> Red (hot)
         bool allWhite = true;
         foreach (var key in valueGradient.colorKeys)
             if (key.color != Color.white) 

@@ -51,7 +51,6 @@ void computeMain(uint3 threadId: SV_DispatchThreadID)
     float weightSum = 0.0;
 
     // Check if this particle is inside any heat source
-    // heat sources act as temperature boundary conditions in both directions:
     // they heat cold particles and cool hot particles toward the source temperature.
     bool insideHeatSource = false;
     bool nearHeatSource = false;
@@ -65,7 +64,7 @@ void computeMain(uint3 threadId: SV_DispatchThreadID)
         float r2 = heatSources[s].radius * heatSources[s].radius;
         if (dist2 <= r2)
         {
-            // bidirectional: lerp toward source temperature each frame for smooth response
+            // lerp toward source temperature each frame for smooth response
             float rate = clamp(params.thermalDiffusivity * params.dt * 10.0, 0.0, 1.0);
             p.temperature = lerp(p.temperature, heatSources[s].temperature, rate);
             insideHeatSource = true;
@@ -133,7 +132,7 @@ void computeMain(uint3 threadId: SV_DispatchThreadID)
     float randHash = frac(sin(float(i) * 12.9898 + 78.233) * 43758.5453);
     float randScale = 0.5 + randHash; // range [0.5, 1.5]
 
-    // effective boiling point rises with local pressure (Clausius-Clapeyron approximation):
+    // the effective boiling point increases with local pressure (Clausius-Clapeyron approximation):
     // deep/high-pressure particles are harder to boil than surface/low-pressure particles.
     float effectiveBoilingTemp = params.boilingTemperature + max(p.pressure, 0.0) * params.pressureBoilingScale;
 
@@ -146,10 +145,9 @@ void computeMain(uint3 threadId: SV_DispatchThreadID)
         }
         else
         {
-            // surface particle: apply stochastic nucleation driven by superheat.
+            // surface particle: apply stochastic nucleation 
             float superheat = (p.temperature + deltaT) - effectiveBoilingTemp;
 
-            // nucleation probability scales with superheat relative to boiling temp
             // A particle far above boiling snaps to gas quickly while one just at the threshold waits.
             float nucleationChance = clamp(superheat / max(effectiveBoilingTemp, 1e-6), 0.0, 1.0) * params.dt * 10.0;
 
@@ -183,7 +181,7 @@ void computeMain(uint3 threadId: SV_DispatchThreadID)
         // Base drain from ambient cooling
         float coolingDrain = params.coolingRate * (effectiveBoilingTemp - params.ambientTemperature) * params.dt * randScale;
 
-        // Cold source accelerates condensation proportional to how far below boiling it pulls the particle
+        // Cold source accelerates condensation according to how far below boiling it pulls the particle
         if (insideHeatSource && p.temperature < effectiveBoilingTemp)
         {
             float coldDelta = effectiveBoilingTemp - p.temperature;

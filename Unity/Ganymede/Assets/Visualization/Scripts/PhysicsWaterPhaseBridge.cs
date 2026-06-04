@@ -4,7 +4,7 @@ using UnityEngine;
 /// <summary>
 /// Scene-facing coordinator for the water phase bridge.
 /// It validates configuration, keeps shared helpers alive, and orchestrates the
-/// per-frame flow: native GPU particle output → density pipeline → active renderer.
+/// per-frame flow: native GPU particle output -> density pipeline -> active renderer.
 /// </summary>
 [DisallowMultipleComponent]
 [RequireComponent(typeof(UseComputePlugin))]

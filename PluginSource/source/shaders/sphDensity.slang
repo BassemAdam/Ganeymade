@@ -77,7 +77,7 @@ void computeMain(uint3 threadId: SV_DispatchThreadID)
    p.density = max(p.density, params.restDensity * 0.01);
    p.neighborCount = float(splashCount);
 
-   // Phase-dependent rest density: gas uses much lower rest density → high expansion pressure
+   // Phase-dependent rest density: gas uses much lower rest density -> high expansion pressure
    float rd = (p.phase == 1) ? params.gasRestDensity : params.restDensity;
    p.pressure = params.gasStiffness * (p.density - rd);
    // Liquid: allow negative pressure scaled by tensileK for cohesive attraction.

@@ -27,10 +27,10 @@
        float  thermalDiffusivity;
        float  ambientTemperature;
        float  coolingRate;
-       float  boilingTemperature;   // temperature threshold for liquid→gas
+       float  boilingTemperature;   // temperature threshold for liquid->gas
        float  latentHeat;           // energy required for full phase transition
        float  gasRestDensity;         // rest density for gas phase (much lower than liquid)
-       float  gasViscosity;           // viscosity for gas phase (lower → turbulent)
+       float  gasViscosity;           // viscosity for gas phase (lower -> turbulent)
        float  gasBuoyancy;            // upward acceleration for gas particles
        float  pressureBoilingScale;   // how much local pressure raises the effective boiling point
        float  cohesionStrength;       // attractive force between nearby liquid particles (surface tension)

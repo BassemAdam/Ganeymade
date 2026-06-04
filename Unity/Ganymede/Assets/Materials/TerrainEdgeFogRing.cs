@@ -38,7 +38,7 @@ public class TerrainEdgeFogRing : MonoBehaviour
     [Header("Look")]
     public Color fogColor = new Color(0.62f, 0.70f, 0.78f, 1f);
     [Range(0f, 1f)] public float maxAlpha = 1f;
-    [Tooltip("Atmospheric density per 100 m. Higher = thicker fog. Try 0.5–3.")]
+    [Tooltip("Atmospheric density per 100 m. Higher = thicker fog. Try 0.5-3.")]
     [Range(0f, 5f)] public float density = 1.5f;
 
     [Header("Mesh")]

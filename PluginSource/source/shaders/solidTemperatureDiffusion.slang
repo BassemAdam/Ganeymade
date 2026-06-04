@@ -41,7 +41,7 @@ void computeMain(uint3 threadId : SV_DispatchThreadID)
         outputData[idx] = 0.0;
         return;
     }
-    // pin heat source voxels such that the neighbors read the pinned value next frame
+    // pin heat source voxels 
     float pin = heatSourcePins[idx];
     if (pin > 0.0)
     {
