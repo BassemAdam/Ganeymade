@@ -35,29 +35,8 @@ Before opening the project, ensure the following minimum hardware is available:
 
 ---
 
-## 3. Install Required Assets
 
-All five assets are free. For each one: open the link below, click **Add to My Assets**, then follow the import steps in section 3.1.
-
-| Asset | Store Link |
-|---|---|
-| Functional Washing Machines - Stylized Low Poly Props | https://assetstore.unity.com/packages/3d/props/electronics/functional-washing-machines-stylized-low-poly-props-free-314619 |
-| Terrain Sample Asset Pack | https://assetstore.unity.com/packages/3d/environments/landscapes/terrain-sample-asset-pack-145808 |
-| AllSky Free - 10 Sky / Skybox Set | https://assetstore.unity.com/packages/2d/textures-materials/sky/allsky-free-10-sky-skybox-set-146014 |
-| Modular Blacksmith Pack | https://assetstore.unity.com/packages/3d/props/exterior/modular-blacksmith-pack-294735 |
-| Free Kitchen - Cabinets and Equipment | https://assetstore.unity.com/packages/3d/props/interior/free-kitchen-cabinets-and-equipment-245554 |
-
-### 3.1 Importing an asset
-
-1. In the Unity editor, open **Window -> Package Manager**.
-2. In the top-left dropdown, select **My Assets**.
-3. Search for the asset by name, select it, and click **Download**. Once downloaded, click **Import**.
-4. In the Import dialog, leave all items checked and click **Import**.
-5. Repeat for each asset in the table above.
-
----
-
-## 4. Convert Materials to URP
+## 3. Convert Materials to URP
 
 After importing all assets, convert any remaining Built-in materials to URP in one pass:
 
@@ -70,7 +49,7 @@ After importing all assets, convert any remaining Built-in materials to URP in o
 
 ---
 
-## 5. Enable Read/Write on All Meshes
+## 4. Enable Read/Write on All Meshes
 
 Some imported assets ship with Read/Write disabled, which causes errors at runtime:
 
@@ -79,19 +58,16 @@ Some imported assets ship with Read/Write disabled, which causes errors at runti
 
 ---
 
-## 6. Running the Demo Scenes
+## 5. Running the Demo Scenes
 
 All demo scenes are located under `Assets/Scenes/Demo Scenes/`. Double-click a scene in the Project window to open it, then press **Play**.
 
 | Scene | Description |
 |---|---|
 | `MainMenu.unity` | Start here — provides a menu to launch any other scene |
-| `Dam.unity` | Dam-break scenario; fluid released against a terrain environment |
-| `Kitchen Scene.unity` | Fluid interaction within a kitchen environment |
-| `Blacksmith Scene.unity` | Fluid and thermal simulation in the blacksmith exterior |
 | `Free Play.unity` | Open sandbox with adjustable simulation parameters |
 
-### 6.1 Simulation parameters
+### 5.1 Simulation parameters
 
 Select the **Physics** GameObject in the Hierarchy to expose the following settings in the Inspector:
 
