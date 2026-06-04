@@ -13,6 +13,12 @@ public class PhysicsWaterPhaseBridge : MonoBehaviour
 {
     [SerializeField] private WaterPhaseBridgeSettings settings = new WaterPhaseBridgeSettings();
 
+    [Header("Debug")]
+    [Tooltip("Enable to overlay raw particle spheres on top of the active render mode (useful for debugging density/surface accuracy).")]
+    [SerializeField] private bool _showDebugParticles = false;
+    [Tooltip("Reference to the ParticleRenderer component to use as the debug overlay.")]
+    [SerializeField] private ParticleRenderer _debugParticleRenderer;
+
     [HideInInspector] public Transform visualProxyTransform;
 
     private UseComputePlugin _computePlugin;
@@ -75,6 +81,8 @@ public class PhysicsWaterPhaseBridge : MonoBehaviour
             visualProxyTransform = _raymarchRenderer.EnsureProxy(visualProxyTransform);
 
         PrimeResources();
+
+        SyncDebugParticleRenderer();
 
         _renderAction = settings.Rendering.mode switch
         {
@@ -244,6 +252,15 @@ public class PhysicsWaterPhaseBridge : MonoBehaviour
         ValidateAdaptiveSmoothing(settings.MarchingCubesSmoothing);
 
         settings.Rendering.marchingCubesIsoLevel = Mathf.Clamp01(settings.Rendering.marchingCubesIsoLevel);
+
+        if (Application.isPlaying)
+            SyncDebugParticleRenderer();
+    }
+
+    private void SyncDebugParticleRenderer()
+    {
+        if (_debugParticleRenderer != null)
+            _debugParticleRenderer.enabled = _showDebugParticles;
     }
 
     private static void ValidateAdaptiveSmoothing(WaterPhaseAdaptiveSmoothingSettings smoothing)
