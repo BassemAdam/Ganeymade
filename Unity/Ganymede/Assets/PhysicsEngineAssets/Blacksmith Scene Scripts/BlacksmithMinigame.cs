@@ -4,7 +4,7 @@ using UnityEngine.UI;
 using TMPro;
 
 // Moves a plain Camera through a sequence of waypoint stations using a quadratic Bezier curve for smooth animated transitions.
-// Creates its own Next/Previous UI buttons at runtime 
+// Creates its own Next UI buttons at runtime 
 
 
 public class BlacksmithMinigame : MonoBehaviour
@@ -34,28 +34,25 @@ public class BlacksmithMinigame : MonoBehaviour
     [Tooltip("Duration of each camera move in seconds.")]
     public float travelDuration = 1.8f;
 
-    [Tooltip("Speed curve along the path. Ease-in/out gives a natural feel.")]
+    [Tooltip("Speed curve along the path. Ease-in/out gives a natural feel")]
     public AnimationCurve travelCurve = AnimationCurve.EaseInOut(0f, 0f, 1f, 1f);
 
     [Header("UI Settings")]
-    [Tooltip("Show a Previous button as well as Next.")]
-    public bool showPreviousButton = false;
 
-    [Tooltip("Font size for the buttons and label.")]
+    [Tooltip("Font size for the buttons and label")]
     public int uiFontSize = 18;
 
-    [Tooltip("Tint color of the Next/Previous buttons.")]
+    [Tooltip("Tint color of the Next button")]
     public Color buttonColor = new Color(0.15f, 0.15f, 0.15f, 0.85f);
 
-    [Tooltip("Color of the button label text.")]
+    [Tooltip("Color of the button label text")]
     public Color buttonTextColor = Color.white;
 
-    [Tooltip("Color of the station label text.")]
+    [Tooltip("Color of the station label text")]
     public Color stationLabelColor = Color.white;
 
     [Header("Ingot Interaction")]
-    [Tooltip("Assign the IngotInteraction component. The navigator calls placement " +
-             "methods on arrival and locks the Next button until each stage is ready.")]
+    [Tooltip("Assign the IngotInteraction component")]
     public IngotInteraction ingotInteraction;
 
     // Runtime State 
@@ -73,8 +70,7 @@ public class BlacksmithMinigame : MonoBehaviour
 
     private Canvas _canvas;
     private Button _nextButton;
-    private Button _prevButton;
-    private TMP_Text _stationLabel;   // falls back to Text if TMP unavailable
+    private TMP_Text _stationLabel;   // falls back 
 
     // Unity Lifecycle 
 
@@ -107,16 +103,10 @@ public class BlacksmithMinigame : MonoBehaviour
 
     private void Update()
     {
-        // Space or Enter = Next station 
+        // Space or Enter -> Next station 
         if (Input.GetKeyDown(KeyCode.Space) || Input.GetKeyDown(KeyCode.Return))
             GoToNextStation();
-
-        // Backspace = Previous station 
-        if (showPreviousButton && Input.GetKeyDown(KeyCode.Backspace))
-            GoToPreviousStation();
     }
-
-    //  Public functions 
 
     public void GoToNextStation()
     {
@@ -126,14 +116,6 @@ public class BlacksmithMinigame : MonoBehaviour
             ingotInteraction.NotifyNextPressed();
         int next = (currentStationIndex + 1) % stations.Length;
         TravelToStation(next);
-    }
-
-    public void GoToPreviousStation()
-    {
-        if (isMoving) 
-            return;
-        int prev = (currentStationIndex - 1 + stations.Length) % stations.Length;
-        TravelToStation(prev);
     }
 
     public void GoToStation(int index)
@@ -172,20 +154,13 @@ public class BlacksmithMinigame : MonoBehaviour
 
         canvasGO.AddComponent<GraphicRaycaster>();
 
-        // Station label (top-center) 
+        // Station label 
         _stationLabel = CreateLabel(canvasGO,"StationLabel","", new Vector2(0.5f, 1f), new Vector2(0f, -40f),new Vector2(400f, 50f),
             uiFontSize + 2, stationLabelColor);
 
-        // Next button (bottom-right) 
+        // Next button 
         _nextButton = CreateButton(canvasGO,"NextButton", "Next ->",new Vector2(1f, 0f),new Vector2(-160f, 60f),new Vector2(140f, 50f));
         _nextButton.onClick.AddListener(GoToNextStation);
-
-        // Previous button (bottom-left)
-        if (showPreviousButton)
-        {
-            _prevButton = CreateButton(canvasGO,"PrevButton","<-  Back",new Vector2(0f, 0f),new Vector2(160f, 60f), new Vector2(140f, 50f));
-            _prevButton.onClick.AddListener(GoToPreviousStation);
-        }
     }
 
     // Create a TextMeshPro label 
@@ -272,9 +247,6 @@ public class BlacksmithMinigame : MonoBehaviour
 
         if (_nextButton != null)
             _nextButton.interactable = nextAllowed;
-
-        if (_prevButton != null)
-            _prevButton.interactable = !isMoving;
     }
 
     private string GetInstructionText()
@@ -308,7 +280,7 @@ public class BlacksmithMinigame : MonoBehaviour
         }
     }
 
-    // Returns true when the ingot workflow has completed whatever is needed at the current station and the user may press Next.
+    // return true when the ingot workflow has completed whatever is needed at the current station and the user may press Next.
     // 0 = Table : locked until user picks an ingot 
     // 1 = Forge : always unlocked 
     // 2 = Table : locked while ReturnIngotToTable animation plays (Returning stage)

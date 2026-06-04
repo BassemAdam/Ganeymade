@@ -1,14 +1,7 @@
 using UnityEngine;
 
-/// <summary>
-/// Feeds the live Texture3D and voxel grid bounds from ThermalReceiver into
-/// a material using Custom/TempTextureShader_URP.
-///
-/// Usage:
-///   1. Add this to any GameObject that has a Renderer with the thermal material.
-///   2. Assign ThermalReceiver.
-///   3. Press Play.
-/// </summary>
+// feed the live Texture3D and voxel grid bounds from ThermalReceiver into  a material using Custom/TempTextureShader_URP.
+
 [RequireComponent(typeof(Renderer))]
 public class ThermalMaterialBridge : MonoBehaviour
 {
@@ -48,7 +41,7 @@ public class ThermalMaterialBridge : MonoBehaviour
         var vt = thermalReceiver.voxelTracer;
         if (vt == null) return;
 
-        // ── Texture ───────────────────────────────────────────────────────
+        // Texture
         var tex = thermalReceiver.tempTexture;
         if (tex != null && tex != _lastAssignedTex)
         {
@@ -56,7 +49,7 @@ public class ThermalMaterialBridge : MonoBehaviour
             _lastAssignedTex = tex;
         }
 
-        // ── Grid bounds (world space) ─────────────────────────────────────
+        // Grid bounds (world space)
         // ActiveGridMin is the world-space corner of voxel (0,0,0).
         // The far corner is min + (cellCount * voxelSize) per axis.
         Vector3 gridMin = vt.ActiveGridMin;
@@ -65,7 +58,7 @@ public class ThermalMaterialBridge : MonoBehaviour
         _material.SetVector(GridMinID, gridMin);
         _material.SetVector(GridMaxID, gridMax);
 
-        // ── Temperature range ─────────────────────────────────────────────
+        // Temperature range
         if (syncTempRange)
         {
             _material.SetFloat(MinTempID, thermalReceiver.minDisplayTemp);

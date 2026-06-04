@@ -145,16 +145,14 @@ public class IngotInteraction : MonoBehaviour
         RaycastHit[] allHits = Physics.RaycastAll(ray, 50f);
         if (allHits.Length == 0)
         {
-            Debug.LogWarning("IngotInteraction: RaycastAll hit NOTHING in 50 units. " +
-                             "Check that your objects have colliders enabled and are " +
-                             "not on a layer set to ignore raycasts.");
+            Debug.LogWarning("IngotInteraction: RaycastAll hit NOTHING in 50 units");
 
-            // List every collider in the scene so you can cross-reference
+            // List every collider in the scene 
             var allCols = FindObjectsOfType<Collider>();
             foreach (var c in allCols)
                 Debug.Log($"Collider in scene: '{c.gameObject.name}'  " +
-                          $"enabled={c.enabled}  layer={LayerMask.LayerToName(c.gameObject.layer)}  " +
-                          $"pos={c.transform.position:F2}");
+                    $"enabled={c.enabled}  layer={LayerMask.LayerToName(c.gameObject.layer)}  " +
+                    $"pos={c.transform.position:F2}");
             return;
         }
 
@@ -240,18 +238,16 @@ public class IngotInteraction : MonoBehaviour
         OnPliersPickedUp?.Invoke();
     }
 
-    //  pick up ingot 
-
     private void PickUpIngot(int index)
     {
         _heldIngotIndex = index;
         _heldIngot = ingots[index];
 
-        // Disable only the picked ingot's collider (others stay enabled for swapping)
+        // disable only the picked ingot's collider
         foreach (var col in _heldIngot.GetComponentsInChildren<Collider>())
             col.enabled = false;
 
-        // Parent ingot to the grip point so it sits at the pliers head
+        // parent ingot to the grip point so it sits at the pliers head
         _heldIngot.transform.SetParent(_ingotGripPoint, true);
 
         Stage = WorkflowStage.IngotHeld;
@@ -262,15 +258,15 @@ public class IngotInteraction : MonoBehaviour
 
     private void SwapIngot(int newIndex)
     {
-        // Return the current ingot to its home instantly
+        // return the current ingot to its home
         _heldIngot.transform.SetParent(null, true);
         _heldIngot.transform.position = _ingotHomePositions[_heldIngotIndex];
         _heldIngot.transform.rotation = _ingotHomeRotations[_heldIngotIndex];
 
-        // Re-enable colliders on all ingots so the unchosen ones remain clickable
+        // re-enable colliders on all ingots so the unchosen ones remain clickable
         SetIngotCollidersEnabled(true);
 
-        // Pick up the new one
+        // pick up the new ingot
         PickUpIngot(newIndex);
     }
 
@@ -295,14 +291,14 @@ public class IngotInteraction : MonoBehaviour
         if (_heldIngot == null) return;
         Stage = WorkflowStage.Returning;
 
-        // Return pliers to their own cached home position/rotation
+        // Return pliers to their cached position
         if (pliers != null)
         {
             pliers.transform.SetParent(null, true);
             StartCoroutine(MoveToWorld(pliers.transform,_pliersHomePosition,_pliersHomeRotation,placeDuration));
         }
 
-        // Use cached index before clearing state
+        // use cached index before clearing state
         int returnIndex = _heldIngotIndex;
         _heldIngot.transform.SetParent(null, true); 
 
@@ -320,7 +316,6 @@ public class IngotInteraction : MonoBehaviour
         }));
     }
 
-    //  helpers 
 
     // Move an object to a world-space slot transform.
     private IEnumerator PlaceAtSlot(Transform slot, System.Action onDone)
