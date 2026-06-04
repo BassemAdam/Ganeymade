@@ -139,13 +139,24 @@ SSFSSRResult TraceSSFSSR(float3 posWS, float3 reflDirWS, float2 screenUV)
             }
 
             float  edgeFade = SSFSSREdgeFade(hitUV, _SSF_SSR_EdgeFadeWidth);
+            
+            // Smoothly fade out reflections at boundaries to avoid harsh/noisy edges
+            float  distFade = saturate((maxDist - dist) / max(maxDist * 0.2, 1e-4));
+            float  stepFade = saturate(((float)maxSteps - (float)i) / max((float)maxSteps * 0.2, 1.0));
+            float  depthFade = 1.0;
+            if (!crossed)
+            {
+                depthFade = saturate((thick - delta) / max(thick * 0.25, 1e-4));
+            }
+            float  fade = edgeFade * min(distFade, min(stepFade, depthFade));
+
             half3  hitCol   = SAMPLE_TEXTURE2D(_WaterSSFSceneCopy, sampler_WaterSSFSceneCopy, hitUV).rgb
                               * max(_SSF_SSR_ColorBoost, 0.0);
 
             result.hit         = true;
             result.hitUV       = hitUV;
             result.hitColor    = hitCol;
-            result.blendWeight = saturate(_SSF_SSR_Strength * edgeFade);
+            result.blendWeight = saturate(_SSF_SSR_Strength * fade);
             return result;
         }
 

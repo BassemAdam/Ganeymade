@@ -90,11 +90,15 @@ CompositeOut fragSSFComposite(Varyings IN)
     // reflection direction.  If it hits scene geometry, blend its colour
     // over the env-probe reflection.  Misses fall back to the probe.
     SSFSSRResult ssr = TraceSSFSSR(pWS, R_WS, uv);
-    half3 finalRefl = reflColor * _ReflectionStrength;
+    half3 finalRefl = reflColor;
     if (ssr.hit)
         finalRefl = lerp(finalRefl, ssr.hitColor, ssr.blendWeight);
 
-    half3 result = lerp(refrColor, finalRefl, fresnel);
+    // Scale the fresnel blend weight by _ReflectionStrength so that
+    // strength == 0 falls back to pure refraction (no black surface).
+    float effectiveFresnel = fresnel * saturate(_ReflectionStrength);
+
+    half3 result = lerp(refrColor, finalRefl, effectiveFresnel);
 
     // Debug: replace output with pure reflection (SSR hit or probe fallback)
     // to verify SSR coverage without full composite noise.

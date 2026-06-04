@@ -25,25 +25,27 @@ Material:
     m_TexEnvs: []
     m_Ints: []
     m_Floats:
+    - _ColorBlurSigma: 0.81
     - _FluidSmoothness: 1
-    - _FresnelPower: 5
-    - _FresnelR0: 0.02
+    - _FresnelPower: 0
+    - _FresnelR0: 0
+    - _GaussianBlurSigma: 12.6
     - _NRF_DepthThreshold: 1.23
     - _NRF_MaxFilterSize: 20.2
     - _NRF_Mu: 2.56
     - _NRF_ProjectedParticleK: 100
     - _NormalStepPixels: 1
     - _ParticleRadius: 0.12
-    - _ReflectionStrength: 1
-    - _RefractionStrength: 3
+    - _ReflectionStrength: 0.134
+    - _RefractionStrength: 8
     - _SSF_SSR_ColorBoost: 4
     - _SSF_SSR_DebugVis: 0
-    - _SSF_SSR_EdgeFadeWidth: 0.089
-    - _SSF_SSR_MaxDistance: 13.8
-    - _SSF_SSR_MaxSteps: 72.2
+    - _SSF_SSR_EdgeFadeWidth: 0.5
+    - _SSF_SSR_MaxDistance: 23
+    - _SSF_SSR_MaxSteps: 72.9
     - _SSF_SSR_StepSize: 1
     - _SSF_SSR_Strength: 2
-    - _SSF_SSR_Thickness: 0.495
+    - _SSF_SSR_Thickness: 0.825
     - _ThicknessAbsorption: 1.75
     m_Colors:
     - _FluidColor: {r: 0.549, g: 0.863, b: 0.941, a: 1}
