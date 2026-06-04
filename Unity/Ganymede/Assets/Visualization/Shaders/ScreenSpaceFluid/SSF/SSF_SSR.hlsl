@@ -1,17 +1,6 @@
 #ifndef SSF_SSR_INCLUDED
 #define SSF_SSR_INCLUDED
 
-// ---------------------------------------------------------------------------
-// Screen-Space Reflection for the ScreenSpaceFluid composite pass.
-// Mirrors the logic in WaterRaymarchSSR.hlsl but works entirely within
-// the SSF coordinate / texture set — no blue-noise texture required.
-// _WaterSSFSceneCopy is used for hit colour (already declared in SSF_Composite).
-// SampleSceneDepth / LinearEyeDepth come from DeclareDepthTexture.hlsl
-// which is included at the shader HLSLINCLUDE level.
-// ---------------------------------------------------------------------------
-
-// Scene copy — declared here so SSF_SSR.hlsl is self-contained.
-// SSF_Composite.hlsl must NOT redeclare this pair.
 TEXTURE2D(_WaterSSFSceneCopy); SAMPLER(sampler_WaterSSFSceneCopy);
 
 float _SSF_SSR_Strength;
@@ -21,7 +10,6 @@ float _SSF_SSR_MaxDistance;
 float _SSF_SSR_MaxSteps;
 float _SSF_SSR_Thickness;
 float _SSF_SSR_EdgeFadeWidth;
-// Debug: 0 = normal composite, 1 = show finalRefl only
 float _SSF_SSR_DebugVis;
 
 struct SSFSSRResult
