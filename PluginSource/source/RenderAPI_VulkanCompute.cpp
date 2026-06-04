@@ -115,7 +115,7 @@ struct SimParams
     float thermalDiffusivity;   // how fast heat spreads between particles
     float ambientTemperature;   // temperature the fluid cools toward
     float coolingRate;          // how fast particles lose heat to the environment
-    float boilingTemperature;   // temperature threshold for liquid→gas
+    float boilingTemperature;   // temperature threshold for liquid->gas
     float latentHeat;           // energy required for full phase transition
     float gasRestDensity;          // rest density for gas phase
     float gasViscosity;            // viscosity for gas phase
@@ -3815,7 +3815,7 @@ static int g_HeatSourceCount = 0;
 static bool g_ComputeDone = false;
 static bool g_NeedsUpload = false; // true only when new data arrives from CPU
 static bool g_StagingReady = false; // true when staging buffer has valid output to read
-static bool g_PerfTestMode = false; // skip GPU→CPU staging copies for perf testing
+static bool g_PerfTestMode = false; // skip GPU->CPU staging copies for perf testing
 static int  g_SubStepCount = 1;    // sub-steps batched into a single dispatch call
 static bool g_ThermalEnabled = true; // enable/disable per-frame temperature pass
 static bool g_MaskUpload = false;   // true when the user sets a continuous heat source
@@ -3851,8 +3851,8 @@ static bool g_HeatSourcePinsNeedsUpload = false;
 static bool g_SolidReady = false;
 static std::mutex g_DataMutex;
 
-// Optional Unity-side GPU buffer to receive latest particle output (GPU→GPU copy).
-// This avoids the inefficient GPU→CPU readback + CPU→GPU upload path used by ParticleRenderer.
+// Optional Unity-side GPU buffer to receive latest particle output (GPU->GPU copy).
+// This avoids the inefficient GPU->CPU readback + CPU->GPU upload path used by ParticleRenderer.
 static void* g_UnityParticleOutputBuffer = nullptr;
 
 static SimParams g_SimParams = {0.016f, 1, 0.0f, 0, 0.0f, 0.0f, 0.0f, 0.0f, {0.0f, -9.81f, 0.0f}, 0.0f, {-5,-5,-5}, 0, {5,5,5}, 0,
@@ -3921,7 +3921,7 @@ IsComputeDone()
     return g_ComputeDone;
 }
 
-// Enable/disable perf-test mode: skips all GPU→staging→CPU copies
+// Enable/disable perf-test mode: skips all GPU->staging->CPU copies
 extern "C" void UNITY_INTERFACE_EXPORT UNITY_INTERFACE_API
 SetPerfTestMode(bool enabled)
 {
@@ -4900,7 +4900,7 @@ void VulkanComputePlugin::DispatchCompute()
         memcpy(g_OutputData, m_ReadbackStagingBuffer.mapped, g_ElementCount * sizeof(Particle));
     }
 
-    // Initial upload: CPU → staging → GPU
+    // Initial upload: CPU -> staging -> GPU
     if (g_NeedsUpload)
     {
         if (g_FullUploadNeeded)
@@ -5301,7 +5301,7 @@ void VulkanSolidThermalPlugin::ReadbackToCPU()
     range.size = VK_WHOLE_SIZE;
     vkInvalidateMappedMemoryRanges(m_Instance.device, 1, &range);
 
-    // Now safe to read GPU→CPU
+    // Now safe to read GPU->CPU
     memcpy(g_SolidTempOutput, m_ReadbackBuffer.mapped, g_SolidCellCount * sizeof(float));
 }
 

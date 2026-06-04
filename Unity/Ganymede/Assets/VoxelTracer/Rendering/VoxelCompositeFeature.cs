@@ -78,7 +78,7 @@ public class VoxelCompositeFeature : ScriptableRendererFeature
             // Ensure voxel colour RT exists at the right size
             _vtc.EnsureColorRT(w, h);
 
-            // ---- Step 1: Dispatch compute ray-march (unsafe – needs random write) ----
+            // ---- Step 1: Dispatch compute ray-march (unsafe - needs random write) ----
             using (var builder = renderGraph.AddUnsafePass<ComputePassData>(
                        "Voxel Ray March", out var computeData))
             {
@@ -116,7 +116,7 @@ public class VoxelCompositeFeature : ScriptableRendererFeature
                 });
             }
 
-            // ---- Step 3: Composite blit – sceneCopy (via Blitter → _BlitTexture) + _VoxTex → camera colour ----
+            // ---- Step 3: Composite blit - sceneCopy (via Blitter -> _BlitTexture) + _VoxTex -> camera colour ----
             _vtc.CompositeMaterial.SetTexture(_VoxTexId, _vtc.ColorRT);
 
             using (var builder = renderGraph.AddRasterRenderPass<BlitPassData>(

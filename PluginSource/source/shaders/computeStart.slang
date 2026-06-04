@@ -20,7 +20,7 @@ void computeMain(uint3 threadId: SV_DispatchThreadID)
 
    uint key = hashKeys[i];
 
-   // First particle or key differs from previous → this is a bucket start
+   // First particle or key differs from previous -> this is a bucket start
    if (i == 0 || key != hashKeys[i - 1])
       startIndices[key] = i;
 }

@@ -66,7 +66,7 @@ public class SpawnManager : MonoBehaviour
     private int _searchHead;
     private int _tapSearchHead = 0;
 
-    // Reusable patch arrays (re-allocated only when maxSpawnsPerFrame changes)
+    // Reusable patch arrays (reallocated only when maxSpawnsPerFrame changes)
     private int[] _patchIndices;
     private Particle[] _patchData;
     private int _patchCount;
@@ -155,15 +155,15 @@ public class SpawnManager : MonoBehaviour
             if (src == null || !src.isActive) 
                 continue;
             
-            // Tap mode: skip if this source has exhausted the pool
+            // tap mode: skip if this source has exhausted the pool
             if (src.spawnMode == WaterSource.SpawnMode.Tap && src.tapExhausted)
                 continue;
 
-            // Lattice mode is one-shot at Start via TryBulkSpawn; skip per-frame emission
+            // lattice mode is one-shot at Start via TryBulkSpawn; skip per-frame emission
             if (src.spawnMode == WaterSource.SpawnMode.Lattice)
                 continue;
 
-            // Accumulate fractional particles owed this frame
+            // accumulate fractional particles owed this frame
             _emitAccumulators[s] += src.emissionRate * dt;
             float maxAccum = src.emissionRate * Time.fixedDeltaTime * 2f;
             _emitAccumulators[s] = Mathf.Min(_emitAccumulators[s], maxAccum);

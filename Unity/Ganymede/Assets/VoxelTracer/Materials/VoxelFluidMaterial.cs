@@ -29,7 +29,7 @@ public sealed class VoxelFluidMaterial : MonoBehaviour
     [Tooltip("Mass per particle. Maps to particleMass in SimParams.")]
     [Range(0.001f, 100f)] public float particleMass = 1f;
 
-    [Tooltip("Per-frame velocity damping (0.9–1.0). 1.0 = no drag, lower = more drag. " +
+    [Tooltip("Per-frame velocity damping (0.9-1.0). 1.0 = no drag, lower = more drag. " +
              "Maps to damping in SimParams.")]
     [Range(0.9f, 1f)] public float damping = 0.998f;
 

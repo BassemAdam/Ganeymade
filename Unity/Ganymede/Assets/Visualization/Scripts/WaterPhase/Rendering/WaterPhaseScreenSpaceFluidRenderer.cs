@@ -3,8 +3,8 @@
 // simulation and WaterScreenSpaceFluidFeature.
 //
 // Subscribes to two draw events:
-//   OnDrawDepth     → particle depth pass  (sphere impostor, writes eye-depth)
-//   OnDrawThickness → particle thickness pass (additive sphere chord)
+//   OnDrawDepth -> particle depth pass  (sphere impostor, writes eye-depth)
+//   OnDrawThickness -> particle thickness pass (additive sphere chord)
 // ============================================================
 using UnityEngine;
 using UnityEngine.Rendering;

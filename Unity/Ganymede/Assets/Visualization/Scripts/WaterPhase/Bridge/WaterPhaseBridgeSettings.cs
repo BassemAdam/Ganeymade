@@ -71,7 +71,7 @@ public class WaterPhaseDensityGridSettings
     public float vapourSmoothingRadiusWS = 2.5f;
 
     [Tooltip("Hard cap on the splat loop half-size in voxels. The loop runs (2r+1)^3 times per particle, " +
-             "so r=4 → 729 taps, r=6 → 2197 taps, r=8 → 4913 taps. Larger radii get TRUNCATED to this " +
+             "so r=4 -> 729 taps, r=6 -> 2197 taps, r=8 -> 4913 taps. Larger radii get TRUNCATED to this " +
              "cap rather than blowing up the GPU cost. If the truncation looks too small, raise this carefully.")]
     [Range(1, 8)]
     public int maxKernelRadiusVoxels = 4;
@@ -109,10 +109,10 @@ public class WaterPhaseAdaptiveSmoothingSettings
     [Min(0f)]
     public float adaptiveDensityBulk = 300f;
 
-    [Tooltip("Gamma curve applied to the density→radius mapping.\n" +
+    [Tooltip("Gamma curve applied to the density->radius mapping.\n" +
              " 1.0  = linear interpolation (default).\n" +
              " < 1  = EXAGGERATE differences among LOW-density particles (splashes, lonely / moving particles, " +
-                     "thin sheets). Recommended 0.25–0.5 to give visible radius variation across particles whose " +
+                     "thin sheets). Recommended 0.25-n0.5 to give visible radius variation across particles whose " +
                      "densities cluster tightly just above the rest density.\n" +
              " > 1  = exaggerate differences among HIGH-density bulk particles instead.")]
     [Range(0.05f, 4f)]

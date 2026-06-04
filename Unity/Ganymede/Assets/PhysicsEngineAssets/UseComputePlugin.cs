@@ -118,7 +118,7 @@ public class UseComputePlugin : MonoBehaviour
     public Vector3 boundsMax = new Vector3(5f, 5f, 5f);
 
     [Header("Performance")]
-    [Tooltip("Skips GPU→CPU readback in the plugin (ParticleRenderer will show stale data)")]
+    [Tooltip("Skips GPU->CPU readback in the plugin (ParticleRenderer will show stale data)")]
     public bool perfTestMode = false;
 
     [Tooltip("How many SPH sub-steps to run per rendered frame")]
@@ -187,12 +187,12 @@ public class UseComputePlugin : MonoBehaviour
     public float pressureBoilingScale = 0.1f;
 
     [Tooltip("Cohesion (surface tension) strength between liquid particles. " +
-             "Higher values keep the fluid together when disturbed. ~0.001–0.01.")]
+             "Higher values keep the fluid together when disturbed. ~0.001-0.01.")]
     [Range(0f, 0.1f)]
     public float cohesionStrength = 0.005f;
 
     [Tooltip("Tensile instability correction (Monaghan). Allows negative pressure to attract " +
-             "spread-out particles back together. 0 = no tensile attraction, 0.1–0.5 typical.")]
+             "spread-out particles back together. 0 = no tensile attraction, 0.1-0.5 typical.")]
     [Range(0f, 1f)]
     public float tensileK = 0.2f;
 
@@ -287,7 +287,7 @@ public class UseComputePlugin : MonoBehaviour
 
     // Reads back particle data from the GPU and computes average temperature
     // of active (non-dormant) fluid particles. Returns ambient if no data available.
-    // WARNING: Causes a synchronous GPU→CPU readback stall. Do not call every frame.
+    // WARNING: Causes a synchronous GPU->CPU readback stall. Do not call every frame.
 
     public float GetAverageFluidTemperature()
     {
@@ -328,7 +328,7 @@ public class UseComputePlugin : MonoBehaviour
         {
             requestedCount = 1;
             if (verbose)
-                // Debug.LogWarning("[UseComputePlugin] particleCount must be >= 1. Auto-adjusted to 1.");
+                // Debug.LogWarning("UseComputePlugin: particleCount must be >= 1. Auto-adjusted to 1.");
                 ;
         }
         particleCount = requestedCount;
@@ -336,10 +336,10 @@ public class UseComputePlugin : MonoBehaviour
         int particleStride = Marshal.SizeOf<Particle>();
         int simParamsStride = Marshal.SizeOf<SimParams>();
         if (particleStride != 80)
-            // Debug.LogError($"[UseComputePlugin] Particle stride mismatch. Expected 80, got {particleStride}. Check struct layout.");
+            // Debug.LogError($"UseComputePlugin: Particle stride mismatch. Expected 80, got {particleStride}. Check struct layout.");
             ;
         if (simParamsStride != 180)
-            // Debug.LogError($"[UseComputePlugin] SimParams stride mismatch. Expected 180, got {simParamsStride}. Check struct layout.");
+            // Debug.LogError($"UseComputePlugin: SimParams stride mismatch. Expected 180, got {simParamsStride}. Check struct layout.");
             ;
 
         // Cache function pointer once
@@ -401,7 +401,7 @@ public class UseComputePlugin : MonoBehaviour
                 return;
 
             // Adaptive throttle: when frame time exceeds budget, scale down sub-steps
-            // to prevent the "spiral of death" (slow frame → more steps → slower frame → …).
+            // to prevent the "spiral of death" (slow frame -> more steps -> slower frame -> …).
             if (!perfTestMode && stepsToRun > 1 && Time.deltaTime > 1f / 55f)
             {
                 float scale = (1f / 60f) / Time.deltaTime;
@@ -585,14 +585,14 @@ public class UseComputePlugin : MonoBehaviour
     {
         GetBoundsWS(out Vector3 min, out Vector3 max);
 
-        // How many particles go into the spawn-pool sphere vs the background lattice
+        // how many particles go into the spawn-pool sphere vs the background lattice
         int reservedForSpawn = Mathf.Clamp(spawnPoolReserve, 0, count);
         int latticeCount = count - reservedForSpawn;
 
         Particle[] particles = new Particle[count];
         int idx = 0;
 
-        // Spawn-pool sphere(s)
+        // Spawn-pool sphere
         if (reservedForSpawn > 0)
         {
             WaterSource[] sources = FindObjectsByType<WaterSource>(FindObjectsSortMode.None);
@@ -616,7 +616,8 @@ public class UseComputePlugin : MonoBehaviour
                     if (thisCount <= 0)
                         continue;
 
-                    // TAP MODE: Particles are emitted from a circular area with initial velocity. Park them as dormant at the emission point so SpawnManager can activate them with the correct velocity and direction.
+                    // tap mode: particles are emitted from a circular area with initial velocity
+                    // they are parked as dormant at the emission point so SpawnManager can activate them with the correct velocity and direction.
                     if (sources[s].spawnMode == WaterSource.SpawnMode.Tap)
                     {
                         Vector3 dir = sources[s].emissionDirection.normalized;
@@ -625,27 +626,28 @@ public class UseComputePlugin : MonoBehaviour
                         Vector3 origin = sources[s].transform.position;
 
                         Vector3 right = Vector3.Cross(dir, Vector3.up);
-                        if (right.sqrMagnitude < 0.001f) right = Vector3.Cross(dir, Vector3.forward);
+                        if (right.sqrMagnitude < 0.001f) 
+                            right = Vector3.Cross(dir, Vector3.forward);
                         right.Normalize();
                         Vector3 up2 = Vector3.Cross(dir, right).normalized;
                         Vector3 gravity = new Vector3(0f, Physics.gravity.y, 0f);
 
-                        int tapStartIdx = idx; // remember where tap slots begin
+                        int tapStartIdx = idx; // to remember where tap slots begin
 
                         for (int k = 0; k < thisCount && idx < count; k++)
                         {
-                            // Scatter dormant particles so they don't all land in the same hash cell
+                            // scatter dormant particles so they don't all land in the same hash cell
                             Vector3 scattered = dormantParkPosition + new Vector3(idx * smoothingRadius * 2f, 0f, 0f);
                             Particle p = Particle.Create(scattered, Vector3.zero, particleMass);
                             p.fixedId = idx;
                             p.phase = -1;
                             particles[idx++] = p;
                         }
-                        // Register these indices so SpawnManager never recycles them
+                        // register these indices so SpawnManager never recycles them
                         for (int k = tapStartIdx; k < idx; k++)
                             TapReservedSlots.Add(k);
                     }
-                    // LATTICE MODE: Park as dormant; SpawnManager.TryBulkSpawn places them at grid positions.
+                    // lattice mode: park all of them as dormant; SpawnManager.TryBulkSpawn places them at grid positions.
                     else if (sources[s].spawnMode == WaterSource.SpawnMode.Lattice)
                     {
                         for (int k = 0; k < thisCount && idx < count; k++)
@@ -657,7 +659,8 @@ public class UseComputePlugin : MonoBehaviour
                             particles[idx++] = p;
                         }
                     }
-                    // SPHERE MODE: Particles are emitted from a spherical volume. Park them as dormant at the emission point so SpawnManager can activate them with the correct velocity and direction.
+                    // sphere mode: Particles are emitted from a spherical volume
+                    // they are parked as dormant at the emission point so SpawnManager can activate them with the correct velocity and direction.
                     else
                     {
                         Vector3 centre = sources[s].transform.position;
@@ -670,8 +673,8 @@ public class UseComputePlugin : MonoBehaviour
             }
         }
 
-        // Background lattice for any remaining slots
-        // If the user sets spawnPoolReserve < particleCount, the leftover slots are filled with the usual bounds-filling lattice.
+        // background lattice for any remaining slots
+        // the leftover particles are filled with bounds-filling lattice.
         if (latticeCount > 0)
         {
             Vector3 size = max - min;
@@ -682,15 +685,19 @@ public class UseComputePlugin : MonoBehaviour
             Vector3 start = min + spacing * 0.5f;
 
             for (int z = 0; z < nz && idx < count; z++)
+            {
                 for (int y = 0; y < ny && idx < count; y++)
+                {
                     for (int x = 0; x < nx && idx < count; x++)
                     {
                         Vector3 pos = start + new Vector3(x * spacing.x, y * spacing.y, z * spacing.z);
                         particles[idx++] = Particle.Create(pos, Vector3.zero, particleMass);
                     }
+                }
+            }
         }
 
-        // Any slots still unfilled (rounding) get parked dormant.
+        // any slots still unfilled (rounding) get parked dormant.
         while (idx < count)
         {
             Vector3 scattered = dormantParkPosition + new Vector3(idx * smoothingRadius * 2f, 0f, 0f);
@@ -702,7 +709,7 @@ public class UseComputePlugin : MonoBehaviour
 
         if (verbose)
         {
-            // Debug.Log($"[UseComputePlugin] Init: {reservedForSpawn} sphere + {latticeCount} lattice particles.");
+            // Debug.Log($"UseComputePlugin Init: {reservedForSpawn} sphere + {latticeCount} lattice particles.");
         }
 
         return particles;
@@ -830,10 +837,11 @@ public class UseComputePlugin : MonoBehaviour
 
     void UpdateHeatSources()
     {
-        // Re-cache if sources were destroyed or new ones added
+        // recache if sources were destroyed or new ones added
         int currentFlaggedCount = 0;
         foreach (var sm in VoxelTracerSystem.SolidMaterials)
-            if (sm != null) currentFlaggedCount++;
+            if (sm != null) 
+                currentFlaggedCount++;
         if (_cachedSources == null || _cachedSources.Length != currentFlaggedCount)
         {
             CacheHeatSources();
@@ -853,7 +861,8 @@ public class UseComputePlugin : MonoBehaviour
             }
         }
 
-        if (!dirty) return;
+        if (!dirty) 
+            return;
 
         for (int i = 0; i < MAX_HEAT_SOURCES; i++)
             _heatSources[i] = default;
