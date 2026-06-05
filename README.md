@@ -101,3 +101,27 @@ Select the **Physics** GameObject in the Hierarchy to expose the following setti
 | **Sub Step Count** | Physics sub-steps per frame — higher is more stable, lower is faster |
 | **Stiffness / Smoothing Radius** | WCSPH pressure parameters — do not change unless re-baking the scene |
 | **Use Fixed Time Step** | Enable if the simulation becomes unstable at variable frame rates |
+
+---
+
+### 6.2 Changing the Rendering Mode
+
+The fluid renderer is controlled by the **PhysicsWaterPhaseBridge** component. Three modes are available, each with a different quality/performance trade-off.
+
+**To change the mode:**
+
+1. Select the **PhysicsWaterPhaseBridge** GameObject in the Hierarchy (present in every demo scene).
+2. In the Inspector, expand the **Rendering** section.
+3. Change the **Mode** dropdown to the desired option.
+4. Ensure the corresponding material slot (described below) has a material assigned.
+5. Exit Play mode if active, then press **Play** again — the mode is locked in at scene start and cannot switch while the simulation is running.
+
+**Available modes:**
+
+| Mode | Description | Required material slot |
+|---|---|---|
+| `RaymarchVolume` | Ray-marched volumetric liquid with vapour. Best visual quality. | **Ray Marching Material** |
+| `MarchingCubesLiquidWithVapour` | Mesh-extracted liquid surface with a separate volumetric vapour pass. Lower GPU cost than full ray marching. | **Marching Cubes Material** + **Vapour Raymarch Material** |
+| `ScreenSpaceFluid` | Screen-space depth and thickness blur. Fastest option; particle radius, blur, smoothness, refraction, and reflection are all configured on the material itself. | **Screen Space Fluid Material** |
+
+> **Note:** If the material slot required by the selected mode is left empty, the component will log a validation error and disable itself at start. The demo scene already has the correct materials pre-assigned, so you only need to fill in slots when setting up a new scene from scratch.
