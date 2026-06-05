@@ -316,6 +316,12 @@ float3 SampleRawSceneSpecCube(float3 reflectDirWS)
 
 float3 SampleGlossyReflectionEnvironment(float3 reflectDirWS, float3 positionWS, float2 normalizedScreenUV)
 {
+    // GlossyEnvironmentReflection parameters:
+    // 1. reflectVector (reflectDirWS): World space direction along which to sample reflections (reflected view ray).
+    // 2. positionWS: Used by Unity to select the correct reflection probe volume and apply box projection correction.
+    // 3. perceptualRoughness (0.0h): Roughness. 0.0h is passed here for a perfectly sharp/smooth reflection.
+    // 4. occlusion (1.0h): Occlusion factor. Water surfaces do not have ambient/reflection occlusion, so 1.0h is passed.
+    // 5. normalizedScreenSpaceUV (normalizedScreenUV): Used by URP for reflection probe blending and screen-space coordinates lookup.
     return GlossyEnvironmentReflection(
         normalize(reflectDirWS),
         positionWS,

@@ -26,9 +26,9 @@ Material:
     m_Ints: []
     m_Floats:
     - _ColorBlurSigma: 0.81
-    - _FluidSmoothness: 1
-    - _FresnelPower: 10
-    - _FresnelR0: 0
+    - _FluidSmoothness: 0.96
+    - _FresnelPower: 5
+    - _FresnelR0: 0.02
     - _GaussianBlurSigma: 12.6
     - _NRF_DepthThreshold: 1.23
     - _NRF_MaxFilterSize: 20.2
@@ -36,18 +36,20 @@ Material:
     - _NRF_ProjectedParticleK: 100
     - _NormalStepPixels: 1
     - _ParticleRadius: 0.17
-    - _ReflectionStrength: 0.134
-    - _RefractionStrength: 1.4
-    - _SSF_SSR_ColorBoost: 4
+    - _ReflectionStrength: 1
+    - _RefractionStrength: 3
+    - _RefractionThicknessFade: 12
+    - _SSF_SSR_ColorBoost: 1
     - _SSF_SSR_DebugVis: 0
-    - _SSF_SSR_EdgeFadeWidth: 0.5
+    - _SSF_SSR_EdgeFadeWidth: 0.08
     - _SSF_SSR_MaxDistance: 23
     - _SSF_SSR_MaxSteps: 72.9
-    - _SSF_SSR_StepSize: 1
-    - _SSF_SSR_Strength: 2
-    - _SSF_SSR_Thickness: 0.825
-    - _ThicknessAbsorption: 1.36
+    - _SSF_SSR_StepSize: 0.1
+    - _SSF_SSR_Strength: 1
+    - _SSF_SSR_Thickness: 0.2
+    - _SpecularStrength: 1
+    - _ThicknessAbsorption: 1.75
     m_Colors:
-    - _FluidColor: {r: 0.5884246, g: 0.93727636, b: 1.0087279, a: 1}
+    - _FluidColor: {r: 0.18, g: 0.42, b: 0.55, a: 1}
   m_BuildTextureStacks: []
   m_AllowLocking: 1
