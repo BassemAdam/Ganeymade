@@ -101,3 +101,56 @@ Select the **Physics** GameObject in the Hierarchy to expose the following setti
 | **Sub Step Count** | Physics sub-steps per frame — higher is more stable, lower is faster |
 | **Stiffness / Smoothing Radius** | WCSPH pressure parameters — do not change unless re-baking the scene |
 | **Use Fixed Time Step** | Enable if the simulation becomes unstable at variable frame rates |
+
+### 6.2 Rendering — PhysicsWaterPhaseBridge
+
+#### Render modes
+
+Set **Rendering → Mode** to one of the three options:
+
+| Mode | Description |
+|---|---|
+| `RaymarchVolume` | Ray-marched volumetric liquid + vapour. Best visual quality; requires a ray-marching material. |
+| `MarchingCubesLiquidWithVapour` | Mesh-extracted liquid surface with a separate volumetric vapour pass. Lower GPU cost than full raymarching. |
+| `ScreenSpaceFluid` | Screen-space depth/thickness blur. Fastest option; particle radius, blur, and refraction are controlled on the material itself. |
+
+#### Density grid
+
+Shared by all modes that use the density pipeline (raymarch and marching cubes).
+
+| Parameter | Description |
+|---|---|
+| **Volume Dims** | Voxel resolution of the density grid (default 64³). Higher = sharper but more VRAM and compute. |
+| **Vapour Smoothing Radius WS** | World-space splat radius for vapour particles. Wider = softer, more uniform vapour presence mask. |
+
+#### Density blur (per render mode)
+
+Two independent blur profiles exist: **Raymarch Density Blur** and **Marching Cubes Density Blur**. Each has identical controls for the liquid (R) and vapour (G) density channels.
+
+| Parameter | Description |
+|---|---|
+| **Liquid Blur Enabled** | Gaussian-blur the liquid density channel before normal baking. Off by default. |
+| **Liquid Blur Radius** | Kernel half-size in voxels (1–16). Cost is `3 × (2r+1)` taps (separable). |
+| **Liquid Blur Sigma** | Gaussian sigma in voxels (0.1–8). Larger = wider spread. |
+| **Liquid Blur Detail Preserve** | 0 = fully smooth; 1 = original high-frequency detail added back on top. |
+| **Vapour Blur Enabled** | Same as above for the vapour channel. On by default. |
+| **Vapour Blur Radius / Sigma / Detail Preserve** | Same controls as the liquid channel, applied to vapour. |
+
+#### Adaptive liquid smoothing (per render mode)
+
+Two independent profiles: **Raymarch Adaptive Liquid Smoothing** and **Marching Cubes Adaptive Liquid Smoothing**.
+
+| Parameter | Description |
+|---|---|
+| **Liquid Smoothing Radius WS** | Splat radius for surface / isolated particles (low SPH density). Keep small for crisp splashes. But it does not yield that good looking but it was option we implemented|
+| **Adaptive Radius Enabled** | Lerps per-particle radius between the surface and bulk radii based on local SPH density. |
+| **Liquid Bulk Smoothing Radius WS** | Splat radius for fully-submerged bulk particles. Make larger than the surface radius for a smooth water body. |
+| **Adaptive Density Surface** | SPH density threshold below which the surface radius applies (e.g. ~175). |
+| **Adaptive Density Bulk** | SPH density threshold above which the bulk radius applies (e.g. ~300). |
+| **Adaptive Density Curve** | Gamma on the density → radius mapping. `< 1` exaggerates variation among sparse particles; `> 1` among dense ones. |
+
+#### Marching cubes only
+
+| Parameter | Description |
+|---|---|
+| **Marching Cubes Iso Level** | Normalized density threshold for surface extraction (0–1). Higher = smaller / tighter surface. |
