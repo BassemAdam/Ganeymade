@@ -9,7 +9,7 @@ Shader "Custom/WaterScreenSpaceFluid"
         _NRF_DepthThreshold       ("NRF Depth Threshold (m)",      Float) = 1.0
         _NormalStepPixels         ("Normal Step Pixels",           Range(1,4)) = 1
 
-        [HDR] _FluidColor         ("Fluid Color",                  Color) = (0.549,0.863,0.941,1)
+        _FluidColor               ("Fluid Color (transmission)",   Color) = (0.18,0.42,0.55,1)
 
         _FluidSmoothness          ("Smoothness",                   Range(0,1)) = 0.96
         _FresnelPower             ("Fresnel Power",                Float) = 5
@@ -17,6 +17,11 @@ Shader "Custom/WaterScreenSpaceFluid"
         _ThicknessAbsorption      ("Thickness Absorption",         Float) = 1.75
         _ReflectionStrength       ("Reflection Strength",          Range(0,1)) = 1.0
         _RefractionStrength       ("Refraction Strength",          Range(0,8)) = 3.0
+        _SpecularStrength         ("Specular Strength",            Range(0,4)) = 1.0
+        // Inverse cap on the refraction screen-space offset. Higher values clamp the
+        // refraction shift tighter, which removes the circular "bubble" halos at thin
+        // silhouette edges. Lower values allow stronger bending through thick water.
+        _RefractionThicknessFade  ("Refraction Edge Clamp",        Range(0.5,50)) = 12.0
 
         [Header(Screen Space Reflections)]
         _SSF_SSR_Strength         ("SSR Blend Strength",           Range(0,2)) = 1.0

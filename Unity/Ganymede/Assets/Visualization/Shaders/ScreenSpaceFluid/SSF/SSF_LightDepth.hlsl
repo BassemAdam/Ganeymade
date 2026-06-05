@@ -1,1 +1,0 @@
-// SSF_LightDepth.hlsl — removed, no longer used.

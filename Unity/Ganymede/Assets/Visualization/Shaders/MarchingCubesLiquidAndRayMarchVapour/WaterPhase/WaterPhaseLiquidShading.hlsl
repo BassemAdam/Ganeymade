@@ -12,9 +12,6 @@
     }
 
     // ── Subsurface scattering: physically-motivated translucency approximation ──
-    // Based on GDC 2011 "Fast Subsurface Scattering" (Jimenez et al.)
-    // Models light transmitting through thin liquid edges with
-    // forward-scatter lobe distorted by the surface normal.
     half3 ComputeSSS(float3 viewDir, float3 lightDir, float3 normal,
     half3 lightColor, half3 sssColor,
     float strength, float power, float distortion,

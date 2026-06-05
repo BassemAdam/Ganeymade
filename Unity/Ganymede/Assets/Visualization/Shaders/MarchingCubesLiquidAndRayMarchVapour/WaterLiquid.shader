@@ -7,7 +7,7 @@ Shader "Custom/WaterLiquid"
         _Smoothness("Smoothness", Range(0.0, 1.0)) = 0.9
         _SpecularStrength("Specular Strength", Range(0.0, 5.0)) = 1.5
         _ReflectionStrength("Reflection Strength", Range(0.0, 1.0)) = 0.5
-        _RefractionStrength("Refraction Strength", Range(0.0, 0.3)) = 0.05
+        _RefractionStrength("Refraction Strength", Range(0.0, 2.0)) = 0.5
         _BlurRadius("Blur Radius", Range(0.0, 0.08)) = 0.03
         _MinAlpha("Min Alpha", Range(0.0, 1.0)) = 1
 
@@ -24,6 +24,7 @@ Shader "Custom/WaterLiquid"
         Pass
         {
             Name "WaterShading"
+            Tags { "LightMode" = "UniversalForward" }
             Blend SrcAlpha OneMinusSrcAlpha
             ZWrite Off
             ZTest LEqual
