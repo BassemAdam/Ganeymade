@@ -185,7 +185,7 @@ public class PhysicsWaterPhaseBridge : MonoBehaviour
         // SSF renderer subscribes to global draw events in its constructor.
         // Creating it unconditionally is fine because it only produces output when IsActive is set to true.
         if (_screenSpaceFluidRenderer == null)
-            _screenSpaceFluidRenderer = new WaterPhaseScreenSpaceFluidRenderer(_sourceMeshRenderer);
+            _screenSpaceFluidRenderer = new WaterPhaseScreenSpaceFluidRenderer();
     }
 
     private bool ValidateConfiguration()
