@@ -30,6 +30,13 @@ half3 CalculateReflection(float3 normalWS, float3 positionWS, float smoothness, 
     float3 R = reflect(-V, N);                                   // bounce view ray off surface
     half perceptualRoughness = 1.0 - smoothness;                 // smooth=sharp mip, rough=blurry mip
     float2 screenUV = screenPos.xy / screenPos.w;                // normalized screen space UV
+
+    // GlossyEnvironmentReflection parameters:
+    // 1. reflectVector (R): World space direction along which to sample reflections (reflected view ray).
+    // 2. positionWS: Used by Unity to select the correct reflection probe volume and apply box projection correction.
+    // 3. perceptualRoughness: Roughness (1.0 - smoothness) to select the corresponding cubemap mipmap level (sharp vs blurry).
+    // 4. occlusion (1.0): Occlusion factor. Water surfaces do not have ambient/reflection occlusion, so 1.0 is passed.
+    // 5. normalizedScreenSpaceUV: Used by URP for reflection probe blending and screen-space coordinates lookup.
     return GlossyEnvironmentReflection(R, positionWS, perceptualRoughness, 1.0, screenUV);
 }
 
@@ -37,8 +44,9 @@ half3 CalculateReflection(float3 normalWS, float3 positionWS, float smoothness, 
 half3 CalculateRefraction(float3 normalWS, float4 screenPos, float strength, float thickness, float blurRadius)
 {
     float2 screenUV = screenPos.xy / screenPos.w;
-    float2 offset = normalize(normalWS).xy * strength * thickness;
-    float2 centerUV = screenUV + offset;
+    float3 normalVS = mul((float3x3)UNITY_MATRIX_V, normalize(normalWS));
+    float2 offset = normalVS.xy * strength * thickness;
+    float2 centerUV = clamp(screenUV + offset, 0.01, 0.99);
 
     float r = blurRadius * thickness;
 
