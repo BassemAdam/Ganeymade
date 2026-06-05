@@ -138,10 +138,18 @@ float2 CalculateRefractedSceneUV(
     // Without this, an above-water object that overlaps the refracted UV in screen-space
     // would appear distorted through the water (and simultaneously in SSR reflection).
     // Soft ramp instead of step() to avoid hard popping.
-    float surfaceDistanceAlongRay = length(surfaceHit.posWS - viewData.cameraPositionWS);
-    float refractedSceneDistance  = SampleSceneDistanceAlongRay(physicallyRefractedUV, viewData.viewDepthDenominator);
-    float depthMargin    = max(_StepSize * 4.0, 0.05);
-    float depthValidity  = saturate((refractedSceneDistance - surfaceDistanceAlongRay) / depthMargin);
+    //
+    // Compare eye-depths (LinearEyeDepth — distance along camera Z axis) rather than
+    // ray-distances, so that the comparison is correct regardless of how far
+    // physicallyRefractedUV is from viewData.screenUV.  Using ray-distance would
+    // require the denominator (dot(rayDir, camFwd)) for the *refracted* UV direction,
+    // not the original ray's denominator; the mismatch can make an above-water object
+    // appear to be behind the surface when the two UVs differ significantly.
+    float surfaceEyeDepth   = length(surfaceHit.posWS - viewData.cameraPositionWS)
+                              * viewData.viewDepthDenominator;   // world dist → eye depth
+    float refractedEyeDepth = LinearEyeDepth(SampleSceneDepth(physicallyRefractedUV), _ZBufferParams);
+    float depthMarginEye    = max(_StepSize * 4.0, 0.05) * viewData.viewDepthDenominator;
+    float depthValidity     = saturate((refractedEyeDepth - surfaceEyeDepth) / depthMarginEye);
 
     float2 uvOvershoot = max(float2(0, 0), abs(physicallyRefractedUV - 0.5) - 0.5);
     float  offScreen   = max(uvOvershoot.x, uvOvershoot.y);

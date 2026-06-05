@@ -39,16 +39,16 @@ Material:
     m_TexEnvs: []
     m_Ints: []
     m_Floats:
-    - _AbsorptionRate: 2.09
+    - _AbsorptionRate: 0.19
     - _BlurRadius: 0.08
     - _FresnelPower: 10
-    - _MinAlpha: 0.653
-    - _ReflectionStrength: 0.317
-    - _RefractionStrength: 0.3
+    - _MinAlpha: 1
+    - _ReflectionStrength: 0.048
+    - _RefractionStrength: 1.397
     - _Smoothness: 1
     - _SpecularStrength: 3.83
     m_Colors:
-    - _DeepColor: {r: 0.02, g: 0.049999982, b: 0.14999998, a: 1}
+    - _DeepColor: {r: 0.02, g: 0.049999952, b: 0.665, a: 1}
     - _ShallowColor: {r: 0.29999998, g: 0.8, b: 0.8, a: 1}
     - _WaterColor: {r: 0.09999997, g: 0.39999998, b: 0.6, a: 1}
   m_BuildTextureStacks: []

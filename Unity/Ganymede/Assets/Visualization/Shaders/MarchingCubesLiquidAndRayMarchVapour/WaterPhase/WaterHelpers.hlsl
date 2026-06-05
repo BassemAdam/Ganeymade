@@ -44,8 +44,9 @@ half3 CalculateReflection(float3 normalWS, float3 positionWS, float smoothness, 
 half3 CalculateRefraction(float3 normalWS, float4 screenPos, float strength, float thickness, float blurRadius)
 {
     float2 screenUV = screenPos.xy / screenPos.w;
-    float2 offset = normalize(normalWS).xy * strength * thickness;
-    float2 centerUV = screenUV + offset;
+    float3 normalVS = mul((float3x3)UNITY_MATRIX_V, normalize(normalWS));
+    float2 offset = normalVS.xy * strength * thickness;
+    float2 centerUV = clamp(screenUV + offset, 0.01, 0.99);
 
     float r = blurRadius * thickness;
 

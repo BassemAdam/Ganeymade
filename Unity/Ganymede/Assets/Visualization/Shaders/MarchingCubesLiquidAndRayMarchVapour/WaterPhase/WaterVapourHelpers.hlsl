@@ -1,12 +1,5 @@
 #ifndef WATER_VAPOUR_HELPERS_INCLUDED
 #define WATER_VAPOUR_HELPERS_INCLUDED
-
-// =============================================================================
-//  WaterVapourHelpers.hlsl
-//  All pure-function helpers for the WaterVapour shader.
-//  The main shader only calls these — no math logic lives there.
-// =============================================================================
-
 // -----------------------------------------------------------------------------
 //  SECTION 1 — NOISE
 // -----------------------------------------------------------------------------

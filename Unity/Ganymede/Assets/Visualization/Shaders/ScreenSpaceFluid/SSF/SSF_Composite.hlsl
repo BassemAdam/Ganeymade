@@ -115,6 +115,17 @@ CompositeOut fragSSFComposite(Varyings IN)
 
     float2 refrUV = clamp(uv + deltaUV, 0.002, 0.998);
 
+    // Depth guard: only use the refracted UV if the scene there is behind the water
+    // surface.  Without this, an object above the water whose screen projection
+    // overlaps refrUV will be incorrectly bent/distorted through the surface.
+    // eyeDepth is already the water surface eye-depth (from _WaterSSFDepthSmooth).
+    // We compare it directly against the scene eye-depth at the refracted UV —
+    // both are in the same LinearEyeDepth space so no per-ray denominator is needed.
+    float refrSceneEyeDepth = LinearEyeDepth(SampleSceneDepth(refrUV), _ZBufferParams);
+    float refrDepthMargin   = 0.05;   // 5 cm soft ramp to avoid hard-edge popping
+    float refrDepthValidity = saturate((refrSceneEyeDepth - eyeDepth) / refrDepthMargin);
+    refrUV = lerp(uv, refrUV, refrDepthValidity);
+
     half3 bgColor = SAMPLE_TEXTURE2D(_WaterSSFSceneCopy, sampler_WaterSSFSceneCopy, refrUV).rgb;
 
     // Beer-Lambert absorption. The fluid colour is treated as transmission colour:
