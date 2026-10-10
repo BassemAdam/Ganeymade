@@ -4,6 +4,8 @@ Real-time SPH fluid simulation with thermal coupling, built as a Unity native pl
 
 ---
 
+[![Graduation Project Trailer](https://img.youtube.com/vi/rE_DmeuSvq8/maxresdefault.jpg)](https://www.youtube.com/watch?v=rE_DmeuSvq8)
+
 ## Prerequisites
 
 Before opening the project, ensure the following minimum hardware is available:
